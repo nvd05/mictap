@@ -49,14 +49,15 @@ tests/MicTap.Hub.Tests/
 
 ## Данные на диске
 - Настройки: `%APPDATA%\mictap\settings.json` — rootFolder, deviceName, chunkSeconds (по умолчанию 60),
-  language (ru / ja).
+  language (ru / ja), hotkeys {toggleLanguage, toggleRecording}.
 - Логи: `%APPDATA%\mictap\logs\`.
-- Модель: `%APPDATA%\mictap\models\ggml-large-v3-turbo.bin`, скачивается при первом запуске.
+- Модели: `%APPDATA%\mictap\models\` — ggml-large-v3-turbo.bin и ggml-silero-v6.2.0.bin (VAD), скачиваются
+  при первом запуске.
 - Сессия: `<rootFolder>\<yyyy-MM-dd_HH-mm-ss>\` (до v0.2.1 — `<yyyy-MM-dd_HHmm>`)
   - `audio\000.wav`, `001.wav`, … — чанки по chunkSeconds
-  - `meta.json` — schemaVersion (1), started, device, format, chunkSeconds, appVersion
-  - `transcript.jsonl` — строка на готовый чанк: schemaVersion (1), chunk, start, end (секунды от начала
-    сессии), text. Правка текста в окне переписывает строку своего чанка.
+  - `meta.json` — schemaVersion 2, starts[] {time, offset}, device, format, chunkSeconds, appVersion,
+    languageMarks[] {at, lang} (первая метка — 0 с, язык начала)
+  - `transcript.jsonl` — сегмент на строку: schemaVersion 2, seq, start, end, lang, text, edited
 
 ## Надёжность (обязательно)
 - Flush на диск не реже раза в 2 с. Падение приложения теряет секунды, не сессию.

@@ -8,6 +8,8 @@ namespace MicTap.App;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
+    private bool _stopping;
+    private bool _closeConfirmed;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -34,6 +36,34 @@ public partial class MainWindow : Window
     {
         TrayIcon.Dispose();
         base.OnClosed(e);
+    }
+
+    private async void OnWindowClosing(object? sender, CancelEventArgs e)
+    {
+        if (_closeConfirmed || !_viewModel.IsRecording)
+        {
+            return;
+        }
+
+        e.Cancel = true;
+        if (_stopping)
+        {
+            return;
+        }
+
+        ShowFromTray();
+        MessageBoxResult answer = MessageBox.Show(
+            this, "Идёт запись. Остановить её и закрыть mictap?", "mictap",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
+        if (answer != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        _stopping = true;
+        await _viewModel.StopRecordingAsync();
+        _closeConfirmed = true;
+        Close();
     }
 
     private void ShowFromTray()

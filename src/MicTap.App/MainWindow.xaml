@@ -8,7 +8,7 @@
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=local:MainViewModel}"
         Title="mictap" Width="600" SizeToContent="Height" ResizeMode="CanMinimize"
-        WindowStartupLocation="CenterScreen">
+        WindowStartupLocation="CenterScreen" Closing="OnWindowClosing">
     <Window.Resources>
         <tb:GeneratedIconSource x:Key="IdleIcon" Text="M" FontSize="44" FontWeight="Bold"
                                 Foreground="White" Background="#FF616161" />

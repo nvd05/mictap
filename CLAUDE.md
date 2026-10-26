@@ -43,7 +43,7 @@ tests/MicTap.Core.Tests/
 - Логи: `%APPDATA%\mictap\logs\`.
 - Сессия: `<rootFolder>\<yyyy-MM-dd_HHmm>\`
   - `audio\000.wav`, `001.wav`, … — чанки по chunkSeconds
-  - `meta.json` — started, device, format, chunkSeconds, appVersion
+  - `meta.json` — schemaVersion (1), started, device, format, chunkSeconds, appVersion
   - `transcript.jsonl` — зарезервировано для v0.2, в v0.1 не создавать
 
 ## Надёжность (обязательно)

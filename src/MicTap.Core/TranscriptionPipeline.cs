@@ -133,7 +133,17 @@ public sealed class TranscriptionPipeline : IDisposable
         _janitors.GetValueOrDefault(chunk.Session.Folder)?.ChunkClosed(chunk.Chunk.Path, chunk.End);
 
     /// <summary>All audio of the session has been enqueued: its last speech becomes a segment.</summary>
-    public void EnqueueEnd(SessionInfo session) => _stream.Writer.TryWrite(new SessionEnd(session));
+    public void EnqueueEnd(SessionInfo session)
+    {
+        _stream.Writer.TryWrite(new SessionEnd(session));
+
+        // No draft once the recording is over: its last phrases go to the transcript only.
+        LiveLanguage? live = Volatile.Read(ref _liveLanguage);
+        if (live?.Session == session)
+        {
+            Interlocked.CompareExchange(ref _liveLanguage, null, live);
+        }
+    }
 
     /// <summary>The transcript of a session; the user's edits go through <see cref="ITranscriptSink.Edit"/>.</summary>
     public JsonlTranscriptSink SinkFor(SessionInfo session)
@@ -285,7 +295,11 @@ public sealed class TranscriptionPipeline : IDisposable
             {
                 await NextLivePassAsync(cancellation);
                 LiveLanguage? latest = Volatile.Read(ref _liveLanguage);
-                if (!ReferenceEquals(latest, language) && latest is not null)
+                if (latest is null)
+                {
+                    language = null; // not recording
+                }
+                else if (!ReferenceEquals(latest, language))
                 {
                     // A new recording or a new language: what was said before belongs to the old one.
                     language = latest;

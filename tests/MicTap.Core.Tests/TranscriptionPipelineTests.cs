@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using Serilog.Core;
@@ -23,7 +24,12 @@ public sealed class TranscriptionPipelineTests : IDisposable
     [Fact]
     public async Task Speech_segments_become_lines_of_transcript_v2_and_silence_never_reaches_whisper()
     {
-        var transcriber = FakeTranscriber.Saying((samples, language) => $"{language}:{samples.Length / 16}ms");
+        var heard = new ConcurrentQueue<float[]>();
+        var transcriber = FakeTranscriber.Saying((samples, language) =>
+        {
+            heard.Enqueue(samples);
+            return $"{language}:{samples.Length / 16}ms";
+        });
         using TranscriptionPipeline pipeline = Run(transcriber);
         SessionInfo session = _recorder.Start(Options("ru"), _source);
 
@@ -37,7 +43,9 @@ public sealed class TranscriptionPipelineTests : IDisposable
                 """{"schemaVersion":2,"seq":2,"start":4,"end":5.5,"lang":"ru","text":"ru:1500ms","edited":false}""",
             ],
             File.ReadAllLines(Path.Combine(session.Folder, "transcript.jsonl")));
-        Assert.Equal(2, transcriber.Calls); // ten seconds of silence: no call
+
+        // Live drafts may ask too, but nothing Whisper gets is silence alone: ten seconds of it make no call.
+        Assert.All(heard, samples => Assert.Contains(samples, sample => sample != 0));
     }
 
     [Fact]

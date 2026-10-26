@@ -59,7 +59,8 @@ public sealed class RecorderTests : IDisposable
 
         using var meta = JsonDocument.Parse(File.ReadAllText(session.MetaFile));
         JsonElement root = meta.RootElement;
-        Assert.Equal(["started", "device", "format", "chunkSeconds", "appVersion"], root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(["schemaVersion", "started", "device", "format", "chunkSeconds", "appVersion"], root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
         DateTimeOffset started = root.GetProperty("started").GetDateTimeOffset();
         Assert.Equal(StartedAt, started);
         Assert.Equal(StartedAt.Offset, started.Offset);

@@ -46,10 +46,28 @@ dotnet run --project src/MicTap.App
 При первом запуске модели (Whisper 1,6 ГБ и VAD 0,9 МБ) скачиваются в `%APPDATA%\mictap\models\` — прогресс
 в окне. Записывать можно сразу: фразы ждут в очереди, пока модель не загрузится.
 
+## Агенты: команда mictap
+
+Пока mictap запущен, внутри него работает хаб на `127.0.0.1:47310` (порт — `hubPort` в `settings.json`;
+занят — внизу «ХАБ: выключен», запись работает). Агенты читают текст командой `mictap`:
+
+```
+powershell -File tools\install-cli.ps1    # один раз: mictap.exe в %LOCALAPPDATA%\mictap\bin и в PATH
+mictap wait --min-words 20                # ждёт 20 слов в активной записи, печатает JSON и выходит
+mictap wait --project Японский --session "Пара 1" --agent claude --max-wait 60
+mictap status | mictap projects | mictap sessions --project Японский | mictap tail --session "Пара 1" --seq 10
+```
+
+`wait` — петля: вызвать, обработать сегменты, вызвать снова; следующий вызов продолжает с курсора
+(`agents\<agent>.json`), `--from-start` читает сессию сначала. Ответ — одна строка:
+`{"project":…,"session":…,"reason":"min_words","from_seq":1,"to_seq":4,"lang_now":"ru","segments":[{"seq":1,"start":3.2,"end":7.9,"lang":"ru","text":"…"}]}`.
+Коды выхода: 2 — нет проекта или сессии (или ничего не записывается), 3 — mictap не запущен, 4 — неверные
+аргументы. Справа в окне видно агентов сессии: «ждёт», «думает · N с», «ушёл» (больше 10 минут).
+
 ## Данные на диске
 
 - Настройки: `%APPDATA%\mictap\settings.json` — `rootFolder` (папка проектов), `deviceName`, `chunkSeconds`
-  (по умолчанию 60), `hotkeys` (`toggleLanguage`, `toggleRecording`).
+  (по умолчанию 60), `hotkeys` (`toggleLanguage`, `toggleRecording`), `hubPort` (47310).
 - Журнал: `%APPDATA%\mictap\logs\`.
 - Модели: `%APPDATA%\mictap\models\ggml-large-v3-turbo.bin` и `ggml-silero-v6.2.0.bin` (VAD); SHA-256
   проверяется после скачивания.
@@ -61,7 +79,8 @@ dotnet run --project src/MicTap.App
     при `deleteAfterTranscript` чанк удаляется, когда вся его речь записана в текст, при `none` не пишется;
   - `meta.json` — `schemaVersion` (2), `starts` [{`time`, `offset`, `duration`}] — каждая запись в сессию,
     `device`, `format`, `chunkSeconds`, `appVersion`, `languageMarks` [{`at`, `lang`}] — первая метка в 0 с;
-  - `agents\` — курсоры агентов, `notes\` — для заметок агентов, mictap туда не пишет;
+  - `agents\<agent>.json` — `{cursor, lastSeen, policy}`: последний выданный `seq`, когда агент был,
+    его последние `--min-words` / `--max-wait`; `notes\` — для заметок агентов, mictap туда не пишет;
   - `transcript.jsonl` — строка на фразу:
     `{"schemaVersion":2,"seq":1,"start":3.2,"end":7.9,"lang":"ru","text":"…","edited":false}`,
     `start`/`end` — секунды от начала сессии, `edited` — текст исправлен в окне.
@@ -104,3 +123,6 @@ dotnet run --project src/MicTap.App
 8. «+» в «Проектах»: «Японский», языки `ja, ru`, звук «Удалять после распознавания». Запись, пара фраз,
    стоп — в `<проект>\<сессия>\audio\` пусто, `transcript.jsonl` на месте, в заголовке окна «Японский · <сессия>».
 9. Выбрать ту же сессию и записать ещё — в `transcript.jsonl` `seq` продолжается, в `meta.json` второй старт.
+10. Внизу «ХАБ: 127.0.0.1:47310». Запись идёт; в новом окне Git Bash `mictap wait --min-words 20` — пока
+    агент ждёт, справа «claude · ждёт»; после 20 сказанных слов печатается JSON, команда выходит, справа
+    «claude · думает · N с».

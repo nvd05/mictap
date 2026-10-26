@@ -93,7 +93,13 @@ public sealed class SessionRetranscriber(
         }
 
         string text = string.Join(" ", recognized.Select(s => s.Text).Where(t => t.Length > 0));
-        if (text.Length > 0)
+        if (WhisperArtifacts.IsArtifact(text))
+        {
+            _logger.Information(
+                "Segment {Start:0.00}-{End:0.00} s left out: Whisper made up «{Text}»",
+                segment.Start.TotalSeconds, segment.End.TotalSeconds, text);
+        }
+        else if (text.Length > 0)
         {
             sink.Append(Math.Round(segment.Start.TotalSeconds, 2), Math.Round(segment.End.TotalSeconds, 2), segment.Language, text);
         }

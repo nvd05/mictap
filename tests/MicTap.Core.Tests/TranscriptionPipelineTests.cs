@@ -159,6 +159,21 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Segment_that_whisper_made_up_is_left_out_of_the_transcript()
+    {
+        var said = new Queue<string>([ "Продолжение следует...", "настоящая фраза" ]);
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => said.Dequeue()));
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
+
+        Push(FakeSpeech.SpeechPcm(0.5), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        TranscriptLine line = Assert.Single(new JsonlTranscriptSink(session.Folder).Lines);
+        Assert.Equal((1, "настоящая фраза"), (line.Seq, line.Text));
+    }
+
+    [Fact]
     public async Task Edit_through_the_sink_rewrites_the_line_by_seq()
     {
         using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "черновик"));

@@ -242,7 +242,13 @@ public sealed class TranscriptionPipeline : IDisposable
                     "Segment {Start:0.00}-{End:0.00} s ({Language}) recognized in {Elapsed:0.0} s, {Chars} chars",
                     segment.Start.TotalSeconds, segment.End.TotalSeconds, segment.Language,
                     Stopwatch.GetElapsedTime(started).TotalSeconds, text.Length);
-                if (text.Length > 0) // empty: the VAD heard a sound Whisper did not take for words
+                if (WhisperArtifacts.IsArtifact(text))
+                {
+                    _logger.Information(
+                        "Segment {Start:0.00}-{End:0.00} s left out: Whisper made up «{Text}»",
+                        segment.Start.TotalSeconds, segment.End.TotalSeconds, text);
+                }
+                else if (text.Length > 0) // empty: the VAD heard a sound Whisper did not take for words
                 {
                     TranscriptLine line = SinkFor(pending.Session).Append(
                         Seconds(segment.Start), Seconds(segment.End), segment.Language, text);
@@ -340,7 +346,8 @@ public sealed class TranscriptionPipeline : IDisposable
                     _logger.Debug(
                         "Live pass: {Audio:0.0} s in {Elapsed:0.0} s",
                         window.Length / (double)PcmFormat.Mono16k.SampleRate, Stopwatch.GetElapsedTime(started).TotalSeconds);
-                    LiveTextChanged?.Invoke(this, new LiveTranscript(session, Join(segments), Silence: false));
+                    string draft = Join(segments);
+                    LiveTextChanged?.Invoke(this, new LiveTranscript(session, WhisperArtifacts.IsArtifact(draft) ? "" : draft, Silence: false));
                 }
                 catch (TranscriberFailedException)
                 {

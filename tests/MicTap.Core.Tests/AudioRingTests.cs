@@ -35,7 +35,7 @@ public sealed class AudioRingTests
 
         ring.Write(Pcm(short.MinValue, short.MaxValue));
 
-        Assert.Equal([-1f, 32767 / 32768f], ring.Snapshot());
+        Assert.Equal([ -1f, 32767 / 32768f ], ring.Snapshot());
     }
 
     [Fact]

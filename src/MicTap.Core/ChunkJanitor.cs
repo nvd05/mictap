@@ -10,7 +10,7 @@ namespace MicTap.Core;
 internal sealed class ChunkJanitor(ILogger logger)
 {
     private readonly Lock _gate = new();
-    private readonly List<(string Path, TimeSpan End)> _closed = [];
+    private readonly List<(string Path, TimeSpan End)> _closed = [ ];
     private readonly Queue<TimeSpan> _unwritten = new();
     private TimeSpan _committed;
 

@@ -12,11 +12,11 @@ public sealed class HubFixture : IAsyncDisposable
     private HubFixture()
     {
         Directory.CreateDirectory(_root);
-        Project = Projects.Create(_root, new ProjectSettings("Японский", ["ja", "ru"], AudioRetention.Keep));
+        Project = Projects.Create(_root, new ProjectSettings("Японский", [ "ja", "ru" ], AudioRetention.Keep));
         Session = SessionFolders.Open(Project.Folder, "Пара 1");
         new SessionMeta(
-            [new SessionStart(DateTimeOffset.Now, 0)], "Mic", MetaFormat.From(PcmFormat.Mono16k), 60, "0.5.0-test",
-            [new LanguageMark(0, "ja")]).WriteTo(Session);
+            [ new SessionStart(DateTimeOffset.Now, 0) ], "Mic", MetaFormat.From(PcmFormat.Mono16k), 60, "0.5.0-test",
+            [ new LanguageMark(0, "ja") ]).WriteTo(Session);
         Transcript = new JsonlTranscriptSink(Session.Folder);
         State = new AgentsState(_root, s => new JsonlTranscriptSink(s.Folder).Lines, TimeProvider.System, "0.5.0-test");
     }
@@ -67,5 +67,5 @@ public sealed record CliResult(int Code, string Output, string Error)
 
     public string Reason => Json.GetProperty("reason").GetString()!;
 
-    public int[] Seqs => [.. Json.GetProperty("segments").EnumerateArray().Select(s => s.GetProperty("seq").GetInt32())];
+    public int[] Seqs => [ .. Json.GetProperty("segments").EnumerateArray().Select(s => s.GetProperty("seq").GetInt32()) ];
 }

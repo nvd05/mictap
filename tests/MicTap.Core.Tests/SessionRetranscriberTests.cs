@@ -36,7 +36,7 @@ public sealed class SessionRetranscriberTests : IDisposable
         RetranscribeResult result = await Retranscriber().RunAsync(_session, "ru", new Progress<double>(), CancellationToken.None);
 
         Assert.Equal(
-            [(1, 0.0, 1.5, "ru", "ru:1500ms"), (2, 2.5, 3.5, "ru", "ru:1000ms"), (3, 3.5, 4.5, "ja", "ja:1000ms")],
+            [ (1, 0.0, 1.5, "ru", "ru:1500ms"), (2, 2.5, 3.5, "ru", "ru:1000ms"), (3, 3.5, 4.5, "ja", "ja:1000ms") ],
             result.Lines.Select(l => (l.Seq, l.Start, l.End, l.Lang, l.Text)));
         Assert.Equal(Path.Combine(_temp.Path, "transcript.2026-10-26_21-00-05.bak"), result.Backup);
         Assert.Equal("старый текст\n", File.ReadAllText(result.Backup!));
@@ -61,9 +61,9 @@ public sealed class SessionRetranscriberTests : IDisposable
     private void WriteChunks(int chunkSeconds, params byte[][] parts)
     {
         using var writer = new ChunkedWavWriter(_session.AudioFolder, PcmFormat.Mono16k, chunkSeconds);
-        writer.Write([.. parts.SelectMany(p => p)]);
+        writer.Write([ .. parts.SelectMany(p => p) ]);
     }
 
     private void WriteMeta(params LanguageMark[] marks) =>
-        new SessionMeta([new SessionStart(Now, 0)], "Mic", MetaFormat.From(PcmFormat.Mono16k), 2, "0.3.0-test", marks).WriteTo(_session);
+        new SessionMeta([ new SessionStart(Now, 0) ], "Mic", MetaFormat.From(PcmFormat.Mono16k), 2, "0.3.0-test", marks).WriteTo(_session);
 }

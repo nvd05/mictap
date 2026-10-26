@@ -34,7 +34,7 @@ public sealed class ModelStoreTests : IDisposable
         var store = new ModelStore(_temp.Path, SpecFor(Model));
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => store.DownloadAsync(Serving(corrupted), new SyncProgress([]), CancellationToken.None));
+            () => store.DownloadAsync(Serving(corrupted), new SyncProgress([ ]), CancellationToken.None));
 
         Assert.Contains("SHA-256", error.Message);
         Assert.False(store.IsReady);
@@ -49,7 +49,7 @@ public sealed class ModelStoreTests : IDisposable
         using var http = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)));
 
         await Assert.ThrowsAsync<HttpRequestException>(
-            () => store.DownloadAsync(http, new SyncProgress([]), CancellationToken.None));
+            () => store.DownloadAsync(http, new SyncProgress([ ]), CancellationToken.None));
 
         Assert.False(File.Exists(store.ModelPath));
     }

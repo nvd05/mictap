@@ -61,7 +61,7 @@ public sealed class WhisperTranscriber : ITranscriber
     public async Task<IReadOnlyList<TranscriptSegment>> TranscribeAsync(
         float[] samples, string language, CancellationToken cancellation)
     {
-        ConcurrentBag<WhisperProcessor> idle = _idle.GetOrAdd(language, _ => []);
+        ConcurrentBag<WhisperProcessor> idle = _idle.GetOrAdd(language, _ => [ ]);
         WhisperProcessor processor = idle.TryTake(out WhisperProcessor? free)
             ? free
             : _factory.CreateBuilder().WithLanguage(language).WithThreads(_threads).Build();

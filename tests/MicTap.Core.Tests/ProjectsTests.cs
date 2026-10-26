@@ -11,7 +11,7 @@ public sealed class ProjectsTests : IDisposable
     [Fact]
     public void Project_json_round_trips_with_schema_version_first()
     {
-        var settings = new ProjectSettings("Японский", ["ja", "ru"], AudioRetention.DeleteAfterTranscript);
+        var settings = new ProjectSettings("Японский", [ "ja", "ru" ], AudioRetention.DeleteAfterTranscript);
 
         ProjectInfo project = Projects.Create(_temp.Path, settings);
         ProjectInfo loaded = Projects.Load(project.Folder);
@@ -22,7 +22,7 @@ public sealed class ProjectsTests : IDisposable
         Assert.Equal(AudioRetention.DeleteAfterTranscript, loaded.Settings.AudioRetention);
         Assert.Equal("ja", loaded.Settings.DefaultLanguage);
         JsonElement root = JsonDocument.Parse(File.ReadAllText(project.SettingsFile)).RootElement;
-        Assert.Equal(["schemaVersion", "name", "languages", "audioRetention"], root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal([ "schemaVersion", "name", "languages", "audioRetention" ], root.EnumerateObject().Select(p => p.Name));
         Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("deleteAfterTranscript", root.GetProperty("audioRetention").GetString());
     }
@@ -30,18 +30,18 @@ public sealed class ProjectsTests : IDisposable
     [Fact]
     public void Projects_are_listed_by_name_and_folders_without_project_json_ignored()
     {
-        Projects.Create(_temp.Path, new ProjectSettings("Матан", ["ru"], AudioRetention.Keep));
-        Projects.Create(_temp.Path, new ProjectSettings("Английский", ["en", "ru"], AudioRetention.None));
+        Projects.Create(_temp.Path, new ProjectSettings("Матан", [ "ru" ], AudioRetention.Keep));
+        Projects.Create(_temp.Path, new ProjectSettings("Английский", [ "en", "ru" ], AudioRetention.None));
         Directory.CreateDirectory(Path.Combine(_temp.Path, "2026-10-26_16-08-00"));
 
-        Assert.Equal(["Английский", "Матан"], Projects.List(_temp.Path).Select(p => p.Name));
+        Assert.Equal([ "Английский", "Матан" ], Projects.List(_temp.Path).Select(p => p.Name));
     }
 
     [Fact]
     public void Same_name_twice_gets_its_own_folder_and_unsafe_characters_are_dropped()
     {
-        ProjectInfo first = Projects.Create(_temp.Path, new ProjectSettings("Физика: лабы", ["ru"], AudioRetention.Keep));
-        ProjectInfo second = Projects.Create(_temp.Path, new ProjectSettings("Физика: лабы", ["ru"], AudioRetention.Keep));
+        ProjectInfo first = Projects.Create(_temp.Path, new ProjectSettings("Физика: лабы", [ "ru" ], AudioRetention.Keep));
+        ProjectInfo second = Projects.Create(_temp.Path, new ProjectSettings("Физика: лабы", [ "ru" ], AudioRetention.Keep));
 
         Assert.Equal("Физика лабы", Path.GetFileName(first.Folder));
         Assert.Equal("Физика лабы_2", Path.GetFileName(second.Folder));
@@ -51,12 +51,12 @@ public sealed class ProjectsTests : IDisposable
     [Fact]
     public void Saved_settings_keep_the_folder()
     {
-        ProjectInfo project = Projects.Create(_temp.Path, new ProjectSettings("Японский", ["ja"], AudioRetention.Keep));
+        ProjectInfo project = Projects.Create(_temp.Path, new ProjectSettings("Японский", [ "ja" ], AudioRetention.Keep));
 
-        ProjectInfo saved = Projects.Save(project, project.Settings with { Languages = ["ja", "ru"], AudioRetention = AudioRetention.None });
+        ProjectInfo saved = Projects.Save(project, project.Settings with { Languages = [ "ja", "ru" ], AudioRetention = AudioRetention.None });
 
         Assert.Equal(project.Folder, saved.Folder);
-        Assert.Equal(["ja", "ru"], Projects.Load(project.Folder).Settings.Languages);
+        Assert.Equal([ "ja", "ru" ], Projects.Load(project.Folder).Settings.Languages);
         Assert.Equal(AudioRetention.None, Projects.Load(project.Folder).Settings.AudioRetention);
     }
 
@@ -74,7 +74,7 @@ public sealed class ProjectsTests : IDisposable
     [Fact]
     public void Languages_are_parsed_from_a_typed_list()
     {
-        Assert.Equal(["ja", "ru", "en"], Projects.ParseLanguages(" JA, ru;en "));
+        Assert.Equal([ "ja", "ru", "en" ], Projects.ParseLanguages(" JA, ru;en "));
     }
 
     [Fact]

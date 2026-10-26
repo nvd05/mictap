@@ -59,7 +59,8 @@ public partial class App : Application
 
         _hotkeys = new GlobalHotkeys();
         HotkeySettings keys = viewModel.Hotkeys;
-        viewModel.ShowHotkeyProblems([
+        viewModel.ShowHotkeyProblems(
+        [
             .. new[] { _hotkeys.Register(keys.ToggleLanguage, viewModel.ToggleLanguage), _hotkeys.Register(keys.ToggleRecording, viewModel.ToggleRecording) }
                 .OfType<string>(),
         ]);

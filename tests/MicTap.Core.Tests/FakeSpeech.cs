@@ -27,11 +27,11 @@ internal static class FakeSpeech
             }
         }
 
-        return [.. spans.Select(s => new SpeechSpan(Time(s.Start), Time(s.End)))];
+        return [ .. spans.Select(s => new SpeechSpan(Time(s.Start), Time(s.End))) ];
     }
 
     public static float[] Speech(double seconds) =>
-        [.. Enumerable.Range(0, (int)(seconds * Rate)).Select(i => (float)Math.Sin(i * 0.05) * 0.3f + 0.01f)];
+        [ .. Enumerable.Range(0, (int)(seconds * Rate)).Select(i => (float)Math.Sin(i * 0.05) * 0.3f + 0.01f) ];
 
     public static float[] Silence(double seconds) => new float[(int)(seconds * Rate)];
 
@@ -62,7 +62,7 @@ internal sealed class FakeTranscriber(Func<float[], string, CancellationToken, T
         float[] samples, string language, CancellationToken cancellation)
     {
         Interlocked.Increment(ref _calls);
-        return [new TranscriptSegment(TimeSpan.Zero, TimeSpan.Zero, await recognize(samples, language, cancellation))];
+        return [ new TranscriptSegment(TimeSpan.Zero, TimeSpan.Zero, await recognize(samples, language, cancellation)) ];
     }
 
     public void Dispose() => Disposed = true;

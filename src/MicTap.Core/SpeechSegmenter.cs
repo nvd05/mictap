@@ -21,7 +21,7 @@ public sealed class SpeechSegmenter
     private static readonly int LeadSamples = ToSamples(TimeSpan.FromMilliseconds(200));
 
     private readonly SpeechDetector _detect;
-    private readonly List<(long Position, string Language)> _marks = [];
+    private readonly List<(long Position, string Language)> _marks = [ ];
     private float[] _pending = new float[Rate * 40];
     private int _count;
     private long _pendingStart;

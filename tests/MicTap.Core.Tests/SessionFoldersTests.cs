@@ -49,7 +49,7 @@ public sealed class SessionFoldersTests : IDisposable
         File.SetLastWriteTimeUtc(older.MetaFile, new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc));
         Directory.CreateDirectory(Path.Combine(_temp.Path, "не сессия"));
 
-        Assert.Equal(["новая", "старая"], SessionFolders.List(_temp.Path).Select(s => s.Name));
+        Assert.Equal([ "новая", "старая" ], SessionFolders.List(_temp.Path).Select(s => s.Name));
     }
 
     [Fact]

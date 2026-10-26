@@ -39,7 +39,7 @@ public sealed class HeaderRepairTests : IDisposable
     public void Trailing_partial_sample_is_cut_off()
     {
         byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(0.5));
-        string chunk = WriteOpenChunk("000.wav", [.. pcm, 0x7F]);
+        string chunk = WriteOpenChunk("000.wav", [ .. pcm, 0x7F ]);
 
         Assert.Equal(WavRepairResult.Repaired, WavHeader.RepairIfOpen(chunk));
 
@@ -50,7 +50,7 @@ public sealed class HeaderRepairTests : IDisposable
     [Fact]
     public void Open_chunk_without_audio_becomes_an_empty_wav()
     {
-        string chunk = WriteOpenChunk("000.wav", []);
+        string chunk = WriteOpenChunk("000.wav", [ ]);
 
         Assert.Equal(WavRepairResult.Repaired, WavHeader.RepairIfOpen(chunk));
 
@@ -94,8 +94,8 @@ public sealed class HeaderRepairTests : IDisposable
     public void Only_the_latest_session_of_each_project_is_repaired()
     {
         byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(0.25));
-        Projects.Create(_temp.Path, new ProjectSettings("Матан", ["ru"], AudioRetention.Keep));
-        Projects.Create(_temp.Path, new ProjectSettings("Японский", ["ja"], AudioRetention.Keep));
+        Projects.Create(_temp.Path, new ProjectSettings("Матан", [ "ru" ], AudioRetention.Keep));
+        Projects.Create(_temp.Path, new ProjectSettings("Японский", [ "ja" ], AudioRetention.Keep));
         string older = WriteOpenChunk(@"Матан\старая\audio\000.wav", pcm);
         string latestClosed = WriteClosedChunk(@"Матан\новая\audio", pcm);
         string latestOpen = WriteOpenChunk(@"Матан\новая\audio\001.wav", pcm);
@@ -108,9 +108,9 @@ public sealed class HeaderRepairTests : IDisposable
 
         IReadOnlyList<RepairReport> reports = SessionRepair.RepairProjects(_temp.Path);
 
-        Assert.Equal(["новая", "урок"], reports.Select(r => r.Session.Name));
-        Assert.Equal([latestOpen], reports[0].Repaired);
-        Assert.Equal([otherProject], reports[1].Repaired);
+        Assert.Equal([ "новая", "урок" ], reports.Select(r => r.Session.Name));
+        Assert.Equal([ latestOpen ], reports[0].Repaired);
+        Assert.Equal([ otherProject ], reports[1].Repaired);
         Assert.Equal(pcm, WavFiles.ReadAudio(latestOpen));
         Assert.Equal(pcm, WavFiles.ReadAudio(latestClosed));
         Assert.Equal((0u, 0u), WavFiles.HeaderSizes(older));
@@ -131,7 +131,7 @@ public sealed class HeaderRepairTests : IDisposable
     {
         string path = Path.Combine(_temp.Path, relativePath);
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllBytes(path, [.. WavHeader.CreateOpen(PcmFormat.Mono16k), .. pcm]);
+        File.WriteAllBytes(path, [ .. WavHeader.CreateOpen(PcmFormat.Mono16k), .. pcm ]);
         return path;
     }
 

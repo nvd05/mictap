@@ -35,12 +35,15 @@ public sealed class VadFixture : IDisposable
 
         using var synth = new SpeechSynthesizer();
         synth.SelectVoice(voice.Name);
-        Phrases = [.. new[] { "Добрый вечер", "Сегодня мы проверяем деление речи на фразы", "Спасибо за внимание" }
-            .Select(text => Audible(Speak(synth, text)))];
+        Phrases =
+        [
+            .. new[] { "Добрый вечер", "Сегодня мы проверяем деление речи на фразы", "Спасибо за внимание" }
+                .Select(text => Audible(Speak(synth, text))),
+        ];
         Model = VoiceActivityModel.Load(Store.ModelPath);
     }
 
-    public float[][] Phrases { get; } = [];
+    public float[][] Phrases { get; } = [ ];
 
     public VoiceActivityModel? Model { get; }
 
@@ -84,7 +87,7 @@ public sealed class SileroSegmentationTests(VadFixture fixture, ITestOutputHelpe
 
         var segmenter = new SpeechSegmenter(fixture.Model!.CreateDetector(), "ru");
         var segments = new List<SpeechSegment>();
-        float[] samples = [.. audio];
+        float[] samples = [ .. audio ];
         for (int at = 0; at < samples.Length; at += Rate / 10)
         {
             segments.AddRange(segmenter.Add(samples.AsSpan(at, Math.Min(Rate / 10, samples.Length - at))));
@@ -110,7 +113,7 @@ public sealed class SileroSegmentationTests(VadFixture fixture, ITestOutputHelpe
     {
         var segmenter = new SpeechSegmenter(fixture.Model!.CreateDetector(), "ru");
         var random = new Random(1);
-        float[] roomNoise = [.. Enumerable.Range(0, Rate * 30).Select(_ => (float)(random.NextDouble() - 0.5) * 0.002f)];
+        float[] roomNoise = [ .. Enumerable.Range(0, Rate * 30).Select(_ => (float)(random.NextDouble() - 0.5) * 0.002f) ];
 
         var segments = new List<SpeechSegment>();
         for (int at = 0; at < roomNoise.Length; at += Rate / 10)

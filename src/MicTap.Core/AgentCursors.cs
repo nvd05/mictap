@@ -35,13 +35,16 @@ public static class AgentCursors
     /// <summary>Agents that have a cursor in the session, by name.</summary>
     public static IReadOnlyList<(string Agent, AgentCursor Cursor)> List(SessionInfo session) =>
         !Directory.Exists(session.AgentsFolder)
-            ? []
-            : [.. Directory.EnumerateFiles(session.AgentsFolder, "*.json")
-                .Select(file => Path.GetFileNameWithoutExtension(file))
-                .Select(agent => (agent, Read(session, agent)))
-                .Where(entry => entry.Item2 is not null)
-                .Select(entry => (entry.agent, entry.Item2!))
-                .OrderBy(entry => entry.agent, StringComparer.OrdinalIgnoreCase)];
+            ? [ ]
+            :
+            [
+                .. Directory.EnumerateFiles(session.AgentsFolder, "*.json")
+                    .Select(file => Path.GetFileNameWithoutExtension(file))
+                    .Select(agent => (agent, Read(session, agent)))
+                    .Where(entry => entry.Item2 is not null)
+                    .Select(entry => (entry.agent, entry.Item2!))
+                    .OrderBy(entry => entry.agent, StringComparer.OrdinalIgnoreCase),
+            ];
 
     /// <summary>An agent name as a file name: characters Windows forbids are dropped.</summary>
     public static string FileName(string agent) => SessionFolders.Sanitize(agent) is { Length: > 0 } name ? name : "agent";

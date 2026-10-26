@@ -36,7 +36,7 @@ public sealed class JsonlTranscriptSink : ITranscriptSink
     private static readonly JsonSerializerOptions Options = new(JsonFiles.Options) { WriteIndented = false };
 
     private readonly Lock _gate = new();
-    private readonly List<TranscriptLine> _lines = [];
+    private readonly List<TranscriptLine> _lines = [ ];
 
     public JsonlTranscriptSink(string sessionFolder)
     {
@@ -77,7 +77,7 @@ public sealed class JsonlTranscriptSink : ITranscriptSink
         {
             lock (_gate)
             {
-                return [.. _lines];
+                return [ .. _lines ];
             }
         }
     }

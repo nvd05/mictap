@@ -9,7 +9,7 @@ public sealed class SpeechSegmenterTests
     {
         var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
 
-        IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, FakeSpeech.Silence(40)), .. segmenter.Flush()];
+        IReadOnlyList<SpeechSegment> segments = [ .. FeedInBlocks(segmenter, FakeSpeech.Silence(40)), .. segmenter.Flush() ];
 
         Assert.Empty(segments);
     }
@@ -18,11 +18,11 @@ public sealed class SpeechSegmenterTests
     public void Phrases_split_by_a_second_of_silence_become_segments_with_their_bounds()
     {
         var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
-        float[] audio = [.. FakeSpeech.Silence(0.5), .. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1), .. FakeSpeech.Speech(1.5), .. FakeSpeech.Silence(1)];
+        float[] audio = [ .. FakeSpeech.Silence(0.5), .. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1), .. FakeSpeech.Speech(1.5), .. FakeSpeech.Silence(1) ];
 
-        IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, audio), .. segmenter.Flush()];
+        IReadOnlyList<SpeechSegment> segments = [ .. FeedInBlocks(segmenter, audio), .. segmenter.Flush() ];
 
-        Assert.Equal([(0.5, 2.5), (3.5, 5.0)], segments.Select(Bounds));
+        Assert.Equal([ (0.5, 2.5), (3.5, 5.0) ], segments.Select(Bounds));
         Assert.All(segments, s => Assert.Equal(s.Samples.Length, (int)Math.Round((s.End - s.Start).TotalSeconds * Rate)));
     }
 
@@ -31,10 +31,10 @@ public sealed class SpeechSegmenterTests
     {
         var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
 
-        Assert.Empty(FeedInBlocks(segmenter, [.. FakeSpeech.Speech(2), .. FakeSpeech.Silence(0.3)]));
+        Assert.Empty(FeedInBlocks(segmenter, [ .. FakeSpeech.Speech(2), .. FakeSpeech.Silence(0.3) ]));
         IReadOnlyList<SpeechSegment> closed = FeedInBlocks(segmenter, FakeSpeech.Silence(0.7));
 
-        Assert.Equal([(0.0, 2.0)], closed.Select(Bounds));
+        Assert.Equal([ (0.0, 2.0) ], closed.Select(Bounds));
     }
 
     [Fact]
@@ -45,8 +45,8 @@ public sealed class SpeechSegmenterTests
         IReadOnlyList<SpeechSegment> whileSpeaking = FeedInBlocks(segmenter, FakeSpeech.Speech(40));
         IReadOnlyList<SpeechSegment> rest = segmenter.Flush();
 
-        Assert.Equal([(0.0, 30.0)], whileSpeaking.Select(Bounds));
-        Assert.Equal([(30.0, 40.0)], rest.Select(Bounds));
+        Assert.Equal([ (0.0, 30.0) ], whileSpeaking.Select(Bounds));
+        Assert.Equal([ (30.0, 40.0) ], rest.Select(Bounds));
     }
 
     [Fact]
@@ -56,10 +56,10 @@ public sealed class SpeechSegmenterTests
         FeedInBlocks(segmenter, FakeSpeech.Speech(3));
 
         IReadOnlyList<SpeechSegment> cut = segmenter.Mark(TimeSpan.FromSeconds(3), "ja");
-        IReadOnlyList<SpeechSegment> after = [.. FeedInBlocks(segmenter, [.. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1)]), .. segmenter.Flush()];
+        IReadOnlyList<SpeechSegment> after = [ .. FeedInBlocks(segmenter, [ .. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1) ]), .. segmenter.Flush() ];
 
-        Assert.Equal([(0.0, 3.0, "ru")], cut.Select(BoundsAndLanguage));
-        Assert.Equal([(3.0, 5.0, "ja")], after.Select(BoundsAndLanguage));
+        Assert.Equal([ (0.0, 3.0, "ru") ], cut.Select(BoundsAndLanguage));
+        Assert.Equal([ (3.0, 5.0, "ja") ], after.Select(BoundsAndLanguage));
     }
 
     [Fact]
@@ -68,18 +68,18 @@ public sealed class SpeechSegmenterTests
         var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
         segmenter.Mark(TimeSpan.FromSeconds(2), "ja");
 
-        IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, [.. FakeSpeech.Speech(4), .. FakeSpeech.Silence(1)]), .. segmenter.Flush()];
+        IReadOnlyList<SpeechSegment> segments = [ .. FeedInBlocks(segmenter, [ .. FakeSpeech.Speech(4), .. FakeSpeech.Silence(1) ]), .. segmenter.Flush() ];
 
-        Assert.Equal([(0.0, 2.0, "ru"), (2.0, 4.0, "ja")], segments.Select(BoundsAndLanguage));
+        Assert.Equal([ (0.0, 2.0, "ru"), (2.0, 4.0, "ja") ], segments.Select(BoundsAndLanguage));
     }
 
     [Fact]
     public void Flush_ends_speech_that_is_still_going_on()
     {
         var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ja");
-        FeedInBlocks(segmenter, [.. FakeSpeech.Silence(2), .. FakeSpeech.Speech(1.2)]);
+        FeedInBlocks(segmenter, [ .. FakeSpeech.Silence(2), .. FakeSpeech.Speech(1.2) ]);
 
-        Assert.Equal([(2.0, 3.2, "ja")], segmenter.Flush().Select(BoundsAndLanguage));
+        Assert.Equal([ (2.0, 3.2, "ja") ], segmenter.Flush().Select(BoundsAndLanguage));
     }
 
     /// <summary>Feeds 100 ms blocks, as the microphone delivers them.</summary>

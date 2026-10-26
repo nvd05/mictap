@@ -19,7 +19,7 @@ public sealed record SessionInfo(string Name, string Folder)
 public static class SessionFolders
 {
     private static readonly string[] ReservedNames =
-        ["CON", "PRN", "AUX", "NUL", .. Enumerable.Range(1, 9).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" })];
+        [ "CON", "PRN", "AUX", "NUL", .. Enumerable.Range(1, 9).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" }) ];
 
     /// <summary>The name a new session is offered: its start time, yyyy-MM-dd_HH-mm-ss.</summary>
     public static string DefaultName(DateTimeOffset now) => now.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
@@ -31,7 +31,7 @@ public static class SessionFolders
     public static string Sanitize(string name)
     {
         char[] invalid = Path.GetInvalidFileNameChars();
-        string kept = new([.. name.Where(c => !invalid.Contains(c))]);
+        string kept = new([ .. name.Where(c => !invalid.Contains(c)) ]);
         kept = string.Join(' ', kept.Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim('.', ' ');
         return ReservedNames.Contains(kept.Split('.')[0], StringComparer.OrdinalIgnoreCase) ? kept + "_" : kept;
     }
@@ -49,9 +49,12 @@ public static class SessionFolders
     /// <summary>Sessions of a project, the most recently recorded first (by the time meta.json was last written).</summary>
     public static IReadOnlyList<SessionInfo> List(string projectFolder) =>
         !Directory.Exists(projectFolder)
-            ? []
-            : [.. Directory.EnumerateDirectories(projectFolder)
-                .Select(folder => new SessionInfo(Path.GetFileName(folder), folder))
-                .Where(session => File.Exists(session.MetaFile))
-                .OrderByDescending(session => File.GetLastWriteTimeUtc(session.MetaFile))];
+            ? [ ]
+            :
+            [
+                .. Directory.EnumerateDirectories(projectFolder)
+                    .Select(folder => new SessionInfo(Path.GetFileName(folder), folder))
+                    .Where(session => File.Exists(session.MetaFile))
+                    .OrderByDescending(session => File.GetLastWriteTimeUtc(session.MetaFile)),
+            ];
 }

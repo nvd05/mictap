@@ -8,7 +8,7 @@ public static class SessionRepair
 {
     /// <summary>Repairs open chunks of the latest session of every project under <paramref name="root"/>.</summary>
     public static IReadOnlyList<RepairReport> RepairProjects(string root) =>
-        [.. Projects.List(root).Select(project => RepairLatest(project.Folder)).OfType<RepairReport>()];
+        [ .. Projects.List(root).Select(project => RepairLatest(project.Folder)).OfType<RepairReport>() ];
 
     /// <summary>Repairs open chunks of the most recently recorded session of a project; null if it has none.</summary>
     public static RepairReport? RepairLatest(string projectFolder)

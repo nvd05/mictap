@@ -121,7 +121,7 @@ public sealed class Recorder
 
             TimeSpan at = session.Offset + PcmFormat.Mono16k.DurationOf(Interlocked.Read(ref session.CapturedBytes));
             var mark = new LanguageMark(Math.Round(at.TotalSeconds, 3), language);
-            session.Meta = session.Meta with { LanguageMarks = [.. session.Meta.LanguageMarks, mark] };
+            session.Meta = session.Meta with { LanguageMarks = [ .. session.Meta.LanguageMarks, mark ] };
             session.Meta.WriteTo(session.Info);
             marked = new LanguageMarked(session.Info, mark);
         }
@@ -242,18 +242,18 @@ public sealed class Recorder
                 double at = Math.Round(offset.TotalSeconds, 3);
                 meta = previous with
                 {
-                    Starts = [.. previous.Starts, new SessionStart(started, at)],
+                    Starts = [ .. previous.Starts, new SessionStart(started, at) ],
                     Device = options.DeviceName,
                     ChunkSeconds = options.ChunkSeconds,
                     AppVersion = options.AppVersion,
-                    LanguageMarks = [.. previous.LanguageMarks, new LanguageMark(at, options.Language)],
+                    LanguageMarks = [ .. previous.LanguageMarks, new LanguageMark(at, options.Language) ],
                 };
             }
             else
             {
                 meta = new SessionMeta(
-                    [new SessionStart(started, 0)], options.DeviceName, MetaFormat.From(format), options.ChunkSeconds,
-                    options.AppVersion, [new LanguageMark(0, options.Language)]);
+                    [ new SessionStart(started, 0) ], options.DeviceName, MetaFormat.From(format), options.ChunkSeconds,
+                    options.AppVersion, [ new LanguageMark(0, options.Language) ]);
             }
 
             meta.WriteTo(info);
@@ -444,7 +444,7 @@ public sealed class Recorder
             IReadOnlyList<SessionStart> starts = session.Meta.Starts;
             session.Meta = session.Meta with
             {
-                Starts = [.. starts.Take(starts.Count - 1), starts[^1] with { Duration = Math.Round(recorded.TotalSeconds, 3) }],
+                Starts = [ .. starts.Take(starts.Count - 1), starts[^1] with { Duration = Math.Round(recorded.TotalSeconds, 3) } ],
             };
             try
             {

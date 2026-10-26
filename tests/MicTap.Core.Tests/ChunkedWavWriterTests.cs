@@ -26,9 +26,9 @@ public sealed class ChunkedWavWriterTests : IDisposable
         }
 
         string[] chunks = WavFiles.Chunks(_temp.Path);
-        Assert.Equal(["000.wav", "001.wav", "002.wav", "003.wav"], chunks.Select(Path.GetFileName));
+        Assert.Equal([ "000.wav", "001.wav", "002.wav", "003.wav" ], chunks.Select(Path.GetFileName));
         Assert.Equal(
-            [OneSecond, OneSecond, OneSecond, OneSecond / 2],
+            [ OneSecond, OneSecond, OneSecond, OneSecond / 2 ],
             chunks.Select(chunk => WavFiles.ReadAudio(chunk).Length));
         Assert.Equal(pcm, WavFiles.ReadAudio(chunks));
     }
@@ -48,7 +48,7 @@ public sealed class ChunkedWavWriterTests : IDisposable
 
         writer.Dispose();
 
-        Assert.Equal([(0, 1, true), (1, 2, true), (2, 2, false)], closes);
+        Assert.Equal([ (0, 1, true), (1, 2, true), (2, 2, false) ], closes);
     }
 
     [Fact]
@@ -77,16 +77,16 @@ public sealed class ChunkedWavWriterTests : IDisposable
             writer.Write(SyntheticPcm.Create(TimeSpan.FromSeconds(2)));
         }
 
-        Assert.Equal(["000.wav", "001.wav"], WavFiles.Chunks(_temp.Path).Select(Path.GetFileName));
+        Assert.Equal([ "000.wav", "001.wav" ], WavFiles.Chunks(_temp.Path).Select(Path.GetFileName));
     }
 
     [Fact]
     public void Existing_chunk_is_never_overwritten()
     {
         string chunk = Path.Combine(_temp.Path, "000.wav");
-        File.WriteAllBytes(chunk, [1, 2, 3]);
+        File.WriteAllBytes(chunk, [ 1, 2, 3 ]);
 
         Assert.Throws<IOException>(() => new ChunkedWavWriter(_temp.Path, PcmFormat.Mono16k, chunkSeconds: 60));
-        Assert.Equal([1, 2, 3], File.ReadAllBytes(chunk));
+        Assert.Equal([ 1, 2, 3 ], File.ReadAllBytes(chunk));
     }
 }

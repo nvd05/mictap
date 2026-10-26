@@ -22,8 +22,8 @@ public sealed class SessionRetranscriber(TranscriberHost host, Func<SpeechDetect
     {
         SessionMeta meta = SessionMeta.Read(session, languageOfSchema1);
         string[] chunks = Directory.Exists(session.AudioFolder)
-            ? [.. Directory.EnumerateFiles(session.AudioFolder, "*.wav").OrderBy(ChunkNumber)]
-            : [];
+            ? [ .. Directory.EnumerateFiles(session.AudioFolder, "*.wav").OrderBy(ChunkNumber) ]
+            : [ ];
         if (chunks.Length == 0)
         {
             throw new InvalidOperationException($"В {session.AudioFolder} нет звука — распознавать заново нечего.");

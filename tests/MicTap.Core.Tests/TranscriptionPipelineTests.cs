@@ -11,7 +11,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
     private readonly TempFolder _temp = new();
     private readonly FakeAudioSource _source = new();
     private readonly Recorder _recorder = new(Logger.None, new ManualTimeProvider(new DateTimeOffset(2026, 10, 26, 16, 0, 0, TimeSpan.FromHours(3))));
-    private readonly List<SegmentTranscript> _lines = [];
+    private readonly List<SegmentTranscript> _lines = [ ];
     private TranscriberHost? _host;
 
     public void Dispose()
@@ -52,7 +52,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         await _recorder.StopAsync();
         await Eventually(() => Lines().Length == 2);
 
-        Assert.Equal([(1, 0.0, 2.0, "ru", "русский"), (2, 2.0, 4.0, "ja", "日本語")], Lines().Select(l => (l.Seq, l.Start, l.End, l.Lang, l.Text)));
+        Assert.Equal([ (1, 0.0, 2.0, "ru", "русский"), (2, 2.0, 4.0, "ja", "日本語") ], Lines().Select(l => (l.Seq, l.Start, l.End, l.Lang, l.Text)));
     }
 
     [Fact]
@@ -76,10 +76,10 @@ public sealed class TranscriptionPipelineTests : IDisposable
     public async Task Failed_transcriber_comes_back_and_the_segment_is_recognized_after_all()
     {
         var broken = new FakeTranscriber((_, _, _) => throw new InvalidOperationException("CUDA error"));
-        var queue = new Queue<ITranscriber>([broken, FakeTranscriber.Saying((_, _) => "после сбоя")]);
+        var queue = new Queue<ITranscriber>([ broken, FakeTranscriber.Saying((_, _) => "после сбоя") ]);
         using TranscriptionPipeline pipeline = Run(_ => Task.FromResult(queue.Dequeue()));
         SessionInfo session = _recorder.Start(Options("ru"), _source);
-        byte[] pcm = [.. FakeSpeech.SpeechPcm(1), .. FakeSpeech.SilencePcm(1)];
+        byte[] pcm = [ .. FakeSpeech.SpeechPcm(1), .. FakeSpeech.SilencePcm(1) ];
 
         Push(pcm);
         Assert.True(_recorder.IsRecording);
@@ -96,7 +96,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
     {
         using TranscriptionPipeline pipeline = Run(new FakeTranscriber((_, _, cancel) => Task.Delay(Timeout.Infinite, cancel).ContinueWith(_ => "", TaskScheduler.Default)));
         SessionInfo session = _recorder.Start(Options("ru"), _source);
-        byte[] pcm = [.. FakeSpeech.SpeechPcm(1), .. FakeSpeech.SilencePcm(1), .. FakeSpeech.SpeechPcm(1)];
+        byte[] pcm = [ .. FakeSpeech.SpeechPcm(1), .. FakeSpeech.SilencePcm(1), .. FakeSpeech.SpeechPcm(1) ];
 
         var capture = Stopwatch.StartNew();
         foreach (byte[] block in SyntheticPcm.Split(pcm, 3200))
@@ -161,7 +161,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         await Eventually(() => Lines().Length == 2);
 
         Assert.Equal(
-            [(1, 0.0, 1.0, "ru"), (2, 2.5, 3.5, "ja")],
+            [ (1, 0.0, 1.0, "ru"), (2, 2.5, 3.5, "ja") ],
             new JsonlTranscriptSink(session.Folder).Lines.Select(l => (l.Seq, l.Start, l.End, l.Lang)));
     }
 
@@ -214,7 +214,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
     {
         lock (_lines)
         {
-            return [.. _lines.Select(l => l.Line)];
+            return [ .. _lines.Select(l => l.Line) ];
         }
     }
 
@@ -222,7 +222,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
 
     private static void PushTo(FakeAudioSource source, params byte[][] parts)
     {
-        foreach (byte[] block in SyntheticPcm.Split([.. parts.SelectMany(p => p)], 3200))
+        foreach (byte[] block in SyntheticPcm.Split([ .. parts.SelectMany(p => p) ], 3200))
         {
             source.Push(block);
         }

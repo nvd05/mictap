@@ -15,7 +15,7 @@ public sealed class GlobalHotkeys : IDisposable
     private static readonly IntPtr MessageOnlyParent = new(-3); // HWND_MESSAGE
 
     private readonly HwndSource _window;
-    private readonly Dictionary<int, Action> _actions = [];
+    private readonly Dictionary<int, Action> _actions = [ ];
 
     public GlobalHotkeys()
     {

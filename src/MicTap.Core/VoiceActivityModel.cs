@@ -18,7 +18,7 @@ public sealed class VoiceActivityModel : IDisposable
     private static readonly TimeSpan Padding = TimeSpan.FromMilliseconds(30); // whisper.cpp default
 
     private readonly WhisperVadFactory _factory;
-    private readonly List<WhisperVadProcessor> _processors = [];
+    private readonly List<WhisperVadProcessor> _processors = [ ];
     private readonly Lock _gate = new();
 
     private VoiceActivityModel(WhisperVadFactory factory) => _factory = factory;
@@ -42,7 +42,7 @@ public sealed class VoiceActivityModel : IDisposable
             _processors.Add(processor);
         }
 
-        return samples => [.. processor.DetectSpeech(samples).Select(s => new SpeechSpan(s.Start, s.End))];
+        return samples => [ .. processor.DetectSpeech(samples).Select(s => new SpeechSpan(s.Start, s.End)) ];
     }
 
     public void Dispose()

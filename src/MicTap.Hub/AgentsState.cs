@@ -128,21 +128,25 @@ public sealed class AgentsState
         return new StatusReply(
             _version,
             active is null ? null : new RecordingDto(active.Project, active.Session.Name, active.Language),
-            [.. AllAgents()]);
+            [ .. AllAgents() ]);
     }
 
     public IReadOnlyList<ProjectDto> ListProjects() =>
-        [.. Projects.List(Root).Select(p => new ProjectDto(
-            p.Name, p.Settings.Languages, RetentionName(p.Settings.AudioRetention), SessionFolders.List(p.Folder).Count))];
+    [
+        .. Projects.List(Root).Select(p => new ProjectDto(
+            p.Name, p.Settings.Languages, RetentionName(p.Settings.AudioRetention), SessionFolders.List(p.Folder).Count)),
+    ];
 
     public IReadOnlyList<SessionDto> ListSessions(string project) =>
-        [.. SessionFolders.List(FindProject(project).Folder).Select(s => new SessionDto(
-            s.Name, File.GetLastWriteTime(s.MetaFile), _readLines(s).Count))];
+    [
+        .. SessionFolders.List(FindProject(project).Folder).Select(s => new SessionDto(
+            s.Name, File.GetLastWriteTime(s.MetaFile), _readLines(s).Count)),
+    ];
 
     public IReadOnlyList<SegmentDto> Tail(TailRequest request)
     {
         (_, SessionInfo session) = Resolve(request.Project, request.Session);
-        return [.. _readLines(session).Where(l => l.Seq >= request.FromSeq).Select(ToDto)];
+        return [ .. _readLines(session).Where(l => l.Seq >= request.FromSeq).Select(ToDto) ];
     }
 
     /// <summary>
@@ -163,7 +167,7 @@ public sealed class AgentsState
         while (true)
         {
             Task change = ChangeOf(session.Folder); // taken before reading, so a segment written meanwhile wakes us
-            unread = [.. _readLines(session).Where(l => l.Seq > cursor)];
+            unread = [ .. _readLines(session).Where(l => l.Seq > cursor) ];
             if (unconditional && unread.Count > 0)
             {
                 reason = WaitReasons.FirstEvent;
@@ -203,7 +207,7 @@ public sealed class AgentsState
         AgentCursors.Write(session, request.Agent, new AgentCursor(
             toSeq, _time.GetUtcNow(), new AgentPolicy(request.MinWords, request.MaxWaitSeconds)));
         Answered(request.Agent, toSeq);
-        return new WaitReply(project.Name, session.Name, reason, cursor + 1, toSeq, LanguageNow(session), [.. unread.Select(ToDto)]);
+        return new WaitReply(project.Name, session.Name, reason, cursor + 1, toSeq, LanguageNow(session), [ .. unread.Select(ToDto) ]);
     }
 
     public void Connected(string agent, string connectionId)
@@ -246,17 +250,20 @@ public sealed class AgentsState
             }
         }
 
-        return [.. agents.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)];
+        return [ .. agents.Values.OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase) ];
     }
 
     private IEnumerable<AgentDto> AllAgents()
     {
         lock (_gate)
         {
-            return [.. _agents.Where(a => a.Value.Session is not null).Select(a => new AgentDto(
-                a.Key, a.Value.Project, a.Value.Session!.Name,
-                StateAt(a.Value.Connections.Count > 0, a.Value.LastSeen).ToString().ToLowerInvariant(),
-                a.Value.LastSeen, a.Value.Cursor))];
+            return
+            [
+                .. _agents.Where(a => a.Value.Session is not null).Select(a => new AgentDto(
+                    a.Key, a.Value.Project, a.Value.Session!.Name,
+                    StateAt(a.Value.Connections.Count > 0, a.Value.LastSeen).ToString().ToLowerInvariant(),
+                    a.Value.LastSeen, a.Value.Cursor)),
+            ];
         }
     }
 
@@ -362,7 +369,7 @@ public sealed class AgentsState
             throw new HubException($"{AgentHub.NotFound} --session is required with --project");
         }
 
-        IEnumerable<ProjectInfo> candidates = project is null ? Projects.List(Root) : [FindProject(project)];
+        IEnumerable<ProjectInfo> candidates = project is null ? Projects.List(Root) : [ FindProject(project) ];
         var matches = candidates
             .Select(p => (Project: p, Session: new SessionInfo(session, Path.Combine(p.Folder, session))))
             .Where(m => File.Exists(m.Session.MetaFile))
@@ -401,7 +408,7 @@ public sealed class AgentsState
 
     private sealed class Presence
     {
-        public readonly HashSet<string> Connections = [];
+        public readonly HashSet<string> Connections = [ ];
         public string Project = "";
         public SessionInfo? Session;
         public DateTimeOffset LastSeen;

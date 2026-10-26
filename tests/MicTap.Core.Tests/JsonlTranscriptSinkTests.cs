@@ -38,7 +38,7 @@ public sealed class JsonlTranscriptSinkTests : IDisposable
 
         Assert.Equal(new TranscriptLine(2, 1, 2, "ru", "второй, исправлен", Edited: true), edited);
         Assert.Equal(
-            [("первый", false), ("второй, исправлен", true), ("三番目", false)],
+            [ ("первый", false), ("второй, исправлен", true), ("三番目", false) ],
             File.ReadAllLines(FilePath).Select(Parse));
         Assert.False(File.Exists(FilePath + ".tmp"));
     }

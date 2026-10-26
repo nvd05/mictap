@@ -110,7 +110,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _pipeline.Attach(recorder);
     }
 
-    public ObservableCollection<TranscriptItem> Items { get; } = [];
+    public ObservableCollection<TranscriptItem> Items { get; } = [ ];
 
     /// <summary>Recognized segments and their sinks, for the agents hub.</summary>
     public TranscriptionPipeline Pipeline => _pipeline;

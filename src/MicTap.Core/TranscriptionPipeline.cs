@@ -42,7 +42,7 @@ public sealed class TranscriptionPipeline : IDisposable
 
     private readonly CancellationTokenSource _stop = new();
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, JsonlTranscriptSink> _sinks = [];
+    private readonly Dictionary<string, JsonlTranscriptSink> _sinks = [ ];
     private readonly ConcurrentDictionary<string, ChunkJanitor> _janitors = new();
     private LiveLanguage? _liveLanguage;
     private Task _loops = Task.CompletedTask;

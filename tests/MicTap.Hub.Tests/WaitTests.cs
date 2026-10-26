@@ -34,13 +34,13 @@ public sealed class WaitTests : IAsyncLifetime
 
         Assert.Equal(MicTapCli.Ok, first.Code);
         Assert.Equal("first_event", first.Reason);
-        Assert.Equal([1, 2], first.Seqs);
+        Assert.Equal([ 1, 2 ], first.Seqs);
         Assert.Equal("Японский", first.Json.GetProperty("project").GetString());
         Assert.Equal("Пара 1", first.Json.GetProperty("session").GetString());
         Assert.Equal(1, first.Json.GetProperty("from_seq").GetInt32());
         Assert.Equal(2, first.Json.GetProperty("to_seq").GetInt32());
         Assert.Equal("ja", first.Json.GetProperty("lang_now").GetString());
-        Assert.Equal([3], next.Seqs);
+        Assert.Equal([ 3 ], next.Seqs);
         Assert.Equal(3, next.Json.GetProperty("from_seq").GetInt32());
     }
 
@@ -55,7 +55,7 @@ public sealed class WaitTests : IAsyncLifetime
         CliResult result = await waiting.WaitAsync(Patience);
 
         Assert.Equal("first_event", result.Reason);
-        Assert.Equal([1], result.Seqs);
+        Assert.Equal([ 1 ], result.Seqs);
         Assert.Equal("はじめまして", result.Json.GetProperty("segments")[0].GetProperty("text").GetString());
     }
 
@@ -71,7 +71,7 @@ public sealed class WaitTests : IAsyncLifetime
         CliResult result = await waiting.WaitAsync(Patience);
 
         Assert.Equal("min_words", result.Reason);
-        Assert.Equal([1, 2], result.Seqs);
+        Assert.Equal([ 1, 2 ], result.Seqs);
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public sealed class WaitTests : IAsyncLifetime
         CliResult result = await _hub.RunAsync("wait", "--max-wait", "0.6");
 
         Assert.Equal("max_wait", result.Reason);
-        Assert.Equal([1], result.Seqs);
+        Assert.Equal([ 1 ], result.Seqs);
         Assert.InRange(waited.Elapsed, TimeSpan.FromSeconds(0.5), Patience);
     }
 
@@ -107,7 +107,7 @@ public sealed class WaitTests : IAsyncLifetime
 
         CliResult again = await _hub.RunAsync("wait", "--from-start");
 
-        Assert.Equal([1, 2], again.Seqs);
+        Assert.Equal([ 1, 2 ], again.Seqs);
         Assert.Equal(1, again.Json.GetProperty("from_seq").GetInt32());
     }
 
@@ -134,7 +134,7 @@ public sealed class WaitTests : IAsyncLifetime
         CliResult result = await _hub.RunAsync("wait", "--project", "Японский", "--session", "Пара 1");
 
         Assert.Equal("first_event", result.Reason);
-        Assert.Equal([1], result.Seqs);
+        Assert.Equal([ 1 ], result.Seqs);
     }
 
     [Fact]
@@ -171,7 +171,7 @@ public sealed class WaitTests : IAsyncLifetime
         Assert.Equal("Японский", projects.Json[0].GetProperty("name").GetString());
         Assert.Equal(1, projects.Json[0].GetProperty("sessions").GetInt32());
         Assert.Equal(2, sessions.Json[0].GetProperty("lines").GetInt32());
-        Assert.Equal([2], tail.Json.EnumerateArray().Select(s => s.GetProperty("seq").GetInt32()));
+        Assert.Equal([ 2 ], tail.Json.EnumerateArray().Select(s => s.GetProperty("seq").GetInt32()));
     }
 
     [Fact]
@@ -210,7 +210,7 @@ public sealed class WaitTests : IAsyncLifetime
         int port = FreePort();
         var error = new StringWriter();
 
-        int code = await MicTapCli.RunAsync(["status"], port, new StringWriter(), error, CancellationToken.None);
+        int code = await MicTapCli.RunAsync([ "status" ], port, new StringWriter(), error, CancellationToken.None);
 
         Assert.Equal(MicTapCli.HubDown, code);
         Assert.Contains("not running", error.ToString());

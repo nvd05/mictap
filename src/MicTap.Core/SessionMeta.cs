@@ -61,8 +61,8 @@ public sealed record SessionMeta(
                 MetaOfSchema1 old = JsonSerializer.Deserialize<MetaOfSchema1>(json, JsonFiles.Options)
                     ?? throw new InvalidDataException($"{session.MetaFile} contains null.");
                 return new SessionMeta(
-                    [new SessionStart(old.Started, 0)], old.Device, old.Format, old.ChunkSeconds, old.AppVersion,
-                    [new LanguageMark(0, languageOfSchema1)]);
+                    [ new SessionStart(old.Started, 0) ], old.Device, old.Format, old.ChunkSeconds, old.AppVersion,
+                    [ new LanguageMark(0, languageOfSchema1) ]);
             default:
                 throw new InvalidDataException($"{session.MetaFile}: unknown schemaVersion {version}.");
         }

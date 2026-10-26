@@ -13,7 +13,7 @@ public sealed class TranscriberHostTests
         using var host = new TranscriberHost(_ => loaded.Task, Logger.None, TimeProvider.System);
         host.Start();
 
-        Task<IReadOnlyList<TranscriptSegment>> pass = host.TranscribeAsync([0f], "ru", CancellationToken.None);
+        Task<IReadOnlyList<TranscriptSegment>> pass = host.TranscribeAsync([ 0f ], "ru", CancellationToken.None);
         await Task.Delay(100);
         Assert.False(pass.IsCompleted);
 
@@ -29,14 +29,14 @@ public sealed class TranscriberHostTests
     {
         var broken = new FakeTranscriber((_, _, _) => throw new InvalidOperationException("CUDA error"));
         var healthy = FakeTranscriber.Saying((_, _) => "снова работает");
-        var queue = new Queue<ITranscriber>([broken, healthy]);
+        var queue = new Queue<ITranscriber>([ broken, healthy ]);
         var states = new List<TranscriberState>();
         using var host = Host(_ => Task.FromResult(queue.Dequeue()));
         host.StateChanged += (_, state) => { lock (states) states.Add(state); };
         host.Start();
 
-        var error = await Assert.ThrowsAsync<TranscriberFailedException>(() => host.TranscribeAsync([0f], "ru", CancellationToken.None));
-        IReadOnlyList<TranscriptSegment> after = await host.TranscribeAsync([0f], "ru", CancellationToken.None).WaitAsync(Patience);
+        var error = await Assert.ThrowsAsync<TranscriberFailedException>(() => host.TranscribeAsync([ 0f ], "ru", CancellationToken.None));
+        IReadOnlyList<TranscriptSegment> after = await host.TranscribeAsync([ 0f ], "ru", CancellationToken.None).WaitAsync(Patience);
 
         Assert.Equal("CUDA error", error.InnerException!.Message);
         Assert.Equal("снова работает", Assert.Single(after).Text);
@@ -65,11 +65,11 @@ public sealed class TranscriberHostTests
         };
         host.Start();
 
-        await host.TranscribeAsync([0f], "ru", CancellationToken.None).WaitAsync(Patience);
+        await host.TranscribeAsync([ 0f ], "ru", CancellationToken.None).WaitAsync(Patience);
 
         lock (retries)
         {
-            Assert.Equal([10, 20, 40, 80, 80], retries.Select(r => r.TotalMilliseconds));
+            Assert.Equal([ 10, 20, 40, 80, 80 ], retries.Select(r => r.TotalMilliseconds));
         }
     }
 
@@ -81,12 +81,12 @@ public sealed class TranscriberHostTests
         var shared = new FakeTranscriber((_, _, _) => Interlocked.Increment(ref calls) == 1
             ? slowPass.Task
             : throw new InvalidOperationException("second pass fails"));
-        var queue = new Queue<ITranscriber>([shared, FakeTranscriber.Saying((_, _) => "")]);
+        var queue = new Queue<ITranscriber>([ shared, FakeTranscriber.Saying((_, _) => "") ]);
         using var host = Host(_ => Task.FromResult(queue.Dequeue()));
         host.Start();
 
-        Task<IReadOnlyList<TranscriptSegment>> running = host.TranscribeAsync([0f], "ru", CancellationToken.None);
-        await Assert.ThrowsAsync<TranscriberFailedException>(() => host.TranscribeAsync([0f], "ru", CancellationToken.None));
+        Task<IReadOnlyList<TranscriptSegment>> running = host.TranscribeAsync([ 0f ], "ru", CancellationToken.None);
+        await Assert.ThrowsAsync<TranscriberFailedException>(() => host.TranscribeAsync([ 0f ], "ru", CancellationToken.None));
         Assert.False(shared.Disposed);
 
         slowPass.SetResult("дошёл");
@@ -105,12 +105,12 @@ public sealed class TranscriberHostTests
             return Task.FromResult<ITranscriber>(FakeTranscriber.Saying((_, _) => "текст"));
         });
         host.Start();
-        await host.TranscribeAsync([0f], "ru", CancellationToken.None).WaitAsync(Patience);
+        await host.TranscribeAsync([ 0f ], "ru", CancellationToken.None).WaitAsync(Patience);
 
         host.InjectFailure();
 
-        await Assert.ThrowsAsync<TranscriberFailedException>(() => host.TranscribeAsync([0f], "ru", CancellationToken.None));
-        Assert.Equal("текст", Assert.Single(await host.TranscribeAsync([0f], "ru", CancellationToken.None).WaitAsync(Patience)).Text);
+        await Assert.ThrowsAsync<TranscriberFailedException>(() => host.TranscribeAsync([ 0f ], "ru", CancellationToken.None));
+        Assert.Equal("текст", Assert.Single(await host.TranscribeAsync([ 0f ], "ru", CancellationToken.None).WaitAsync(Patience)).Text);
         Assert.Equal(2, loads);
     }
 

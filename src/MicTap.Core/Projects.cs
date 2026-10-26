@@ -50,11 +50,14 @@ public static partial class Projects
     /// <summary>Projects under <paramref name="root"/>: subfolders with project.json, by name. Other folders are ignored.</summary>
     public static IReadOnlyList<ProjectInfo> List(string root) =>
         !Directory.Exists(root)
-            ? []
-            : [.. Directory.EnumerateDirectories(root)
-                .Where(folder => File.Exists(Path.Combine(folder, FileName)))
-                .Select(Load)
-                .OrderBy(project => project.Name, StringComparer.CurrentCultureIgnoreCase)];
+            ? [ ]
+            :
+            [
+                .. Directory.EnumerateDirectories(root)
+                    .Where(folder => File.Exists(Path.Combine(folder, FileName)))
+                    .Select(Load)
+                    .OrderBy(project => project.Name, StringComparer.CurrentCultureIgnoreCase),
+            ];
 
     /// <summary>Creates a project in a folder named after it (with _2, _3 … if that folder exists).</summary>
     public static ProjectInfo Create(string root, ProjectSettings settings)
@@ -115,11 +118,11 @@ public static partial class Projects
     }
 
     /// <summary>The project made when the root has none yet, so recording works from the first start.</summary>
-    public static ProjectSettings FirstProject { get; } = new("Общий", ["ru", "ja"], AudioRetention.Keep);
+    public static ProjectSettings FirstProject { get; } = new("Общий", [ "ru", "ja" ], AudioRetention.Keep);
 
     /// <summary>Parses "ja, ru" into language codes.</summary>
     public static IReadOnlyList<string> ParseLanguages(string text) =>
-        [.. text.Split([',', ' ', ';'], StringSplitOptions.RemoveEmptyEntries).Select(code => code.Trim().ToLowerInvariant())];
+        [ .. text.Split([ ',', ' ', ';' ], StringSplitOptions.RemoveEmptyEntries).Select(code => code.Trim().ToLowerInvariant()) ];
 
     /// <exception cref="ArgumentException">The settings are not usable; the message says why, in Russian.</exception>
     public static void Validate(ProjectSettings settings)

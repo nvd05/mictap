@@ -13,7 +13,7 @@ public sealed class RecorderTests : IDisposable
     private readonly ManualTimeProvider _time = new(StartedAt);
     private readonly FakeAudioSource _source = new();
     private readonly Recorder _recorder;
-    private readonly List<RecordingStopped> _stops = [];
+    private readonly List<RecordingStopped> _stops = [ ];
     private readonly TaskCompletionSource<RecordingStopped> _firstStop = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public RecorderTests()
@@ -46,9 +46,9 @@ public sealed class RecorderTests : IDisposable
         Assert.Equal(TimeSpan.FromSeconds(2.5), stopped.Recorded);
 
         string[] chunks = WavFiles.Chunks(session.AudioFolder);
-        Assert.Equal(["000.wav", "001.wav", "002.wav"], chunks.Select(Path.GetFileName));
+        Assert.Equal([ "000.wav", "001.wav", "002.wav" ], chunks.Select(Path.GetFileName));
         Assert.Equal(pcm, WavFiles.ReadAudio(chunks));
-        Assert.Equal(["agents", "audio", "meta.json", "notes"], Directory.EnumerateFileSystemEntries(session.Folder).Select(Path.GetFileName).Order());
+        Assert.Equal([ "agents", "audio", "meta.json", "notes" ], Directory.EnumerateFileSystemEntries(session.Folder).Select(Path.GetFileName).Order());
     }
 
     [Fact]
@@ -60,7 +60,7 @@ public sealed class RecorderTests : IDisposable
         using var meta = JsonDocument.Parse(File.ReadAllText(session.MetaFile));
         JsonElement root = meta.RootElement;
         Assert.Equal(
-            ["schemaVersion", "starts", "device", "format", "chunkSeconds", "appVersion", "languageMarks"],
+            [ "schemaVersion", "starts", "device", "format", "chunkSeconds", "appVersion", "languageMarks" ],
             root.EnumerateObject().Select(p => p.Name));
         Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
         JsonElement start = Assert.Single(root.GetProperty("starts").EnumerateArray());
@@ -96,10 +96,10 @@ public sealed class RecorderTests : IDisposable
         await _recorder.StopAsync();
 
         Assert.Equal(new LanguageMark(1.5, "ja"), mark);
-        Assert.Equal([new LanguageMark(1.5, "ja")], marks.Select(m => m.Mark)); // the starting language comes with Started
+        Assert.Equal([ new LanguageMark(1.5, "ja") ], marks.Select(m => m.Mark)); // the starting language comes with Started
         Assert.All(marks, m => Assert.Equal(session, m.Session));
         Assert.Equal(
-            [new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja")],
+            [ new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja") ],
             SessionMeta.Read(session, languageOfSchema1: "ru").LanguageMarks);
     }
 
@@ -121,8 +121,8 @@ public sealed class RecorderTests : IDisposable
 
         SessionMeta meta = SessionMeta.Read(session, languageOfSchema1: "ja");
 
-        Assert.Equal([new SessionStart(StartedAt, 0)], meta.Starts);
-        Assert.Equal([new LanguageMark(0, "ja")], meta.LanguageMarks);
+        Assert.Equal([ new SessionStart(StartedAt, 0) ], meta.Starts);
+        Assert.Equal([ new LanguageMark(0, "ja") ], meta.LanguageMarks);
         Assert.Equal(60, meta.ChunkSeconds);
     }
 
@@ -261,12 +261,12 @@ public sealed class RecorderTests : IDisposable
         Start(chunkSeconds: 1);
 
         _source.Push(new byte[3200]);
-        _source.Push([.. Enumerable.Repeat<byte>(0, 3198), 0x00, 0x40]); // one sample at 16384 = half scale
+        _source.Push([ .. Enumerable.Repeat<byte>(0, 3198), 0x00, 0x40 ]); // one sample at 16384 = half scale
         _source.Push(new byte[32000]);
         await _recorder.StopAsync();
 
-        Assert.Equal([0.0, 0.5, 0.0], levels);
-        Assert.Equal([0, 0, 1], progress.Select(p => p.ChunkIndex));
+        Assert.Equal([ 0.0, 0.5, 0.0 ], levels);
+        Assert.Equal([ 0, 0, 1 ], progress.Select(p => p.ChunkIndex));
         Assert.Equal(TimeSpan.FromSeconds(1.2), progress[^1].Recorded);
     }
 
@@ -302,15 +302,15 @@ public sealed class RecorderTests : IDisposable
         LanguageMark? mark = _recorder.MarkLanguage("ru");
         await _recorder.StopAsync();
 
-        Assert.Equal(["000.wav", "001.wav", "002.wav"], Directory.EnumerateFiles(session.AudioFolder).Select(Path.GetFileName).Order());
-        Assert.Equal([.. first, .. second], WavFiles.ReadAudio(WavFiles.Chunks(session.AudioFolder)));
-        Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(1.5)], starts.Select(s => s.Offset));
+        Assert.Equal([ "000.wav", "001.wav", "002.wav" ], Directory.EnumerateFiles(session.AudioFolder).Select(Path.GetFileName).Order());
+        Assert.Equal([ .. first, .. second ], WavFiles.ReadAudio(WavFiles.Chunks(session.AudioFolder)));
+        Assert.Equal([ TimeSpan.Zero, TimeSpan.FromSeconds(1.5) ], starts.Select(s => s.Offset));
         Assert.Equal(new LanguageMark(2.5, "ru"), mark);
         SessionMeta meta = SessionMeta.Read(session, languageOfSchema1: "ru");
         Assert.Equal(
-            [new SessionStart(StartedAt, 0, 1.5), new SessionStart(StartedAt.AddMinutes(5), 1.5, 1)],
+            [ new SessionStart(StartedAt, 0, 1.5), new SessionStart(StartedAt.AddMinutes(5), 1.5, 1) ],
             meta.Starts);
-        Assert.Equal([new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja"), new LanguageMark(2.5, "ru")], meta.LanguageMarks);
+        Assert.Equal([ new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja"), new LanguageMark(2.5, "ru") ], meta.LanguageMarks);
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public sealed class RecorderTests : IDisposable
         Push(_source, SyntheticPcm.Create(TimeSpan.FromSeconds(2.5)));
         await _recorder.StopAsync();
 
-        Assert.Equal([(0.0, 1.0), (1.0, 2.0), (2.0, 2.5)], chunks.Select(c => (c.Start.TotalSeconds, c.End.TotalSeconds)));
+        Assert.Equal([ (0.0, 1.0), (1.0, 2.0), (2.0, 2.5) ], chunks.Select(c => (c.Start.TotalSeconds, c.End.TotalSeconds)));
     }
 
     [Fact]
@@ -380,7 +380,7 @@ public sealed class RecorderTests : IDisposable
     {
         lock (_stops)
         {
-            return [.. _stops];
+            return [ .. _stops ];
         }
     }
 

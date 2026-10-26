@@ -1,0 +1,6 @@
+﻿<Window x:Class="MicTap.App.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="mictap" Height="300" Width="560">
+    <Grid />
+</Window>

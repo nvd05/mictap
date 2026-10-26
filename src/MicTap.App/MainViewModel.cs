@@ -74,7 +74,6 @@ public sealed partial class MainViewModel : ObservableObject
         _logger = logger.ForContext<MainViewModel>();
         RootFolder = settings.RootFolder;
         Language = settings.Language;
-        transcript.Language = settings.Language;
         recorder.LevelChanged += OnLevelChanged;
         recorder.ProgressChanged += OnProgressChanged;
         recorder.Stopped += OnRecordingStopped;
@@ -177,7 +176,8 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnLanguageChanged(string value)
     {
-        Transcript.Language = value;
+        // During a recording the switch is a mark: speech from here on is recognized in the new language.
+        _recorder.MarkLanguage(value);
         if (value != _settings.Language)
         {
             Save(_settings with { Language = value });
@@ -199,7 +199,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         string root = RootFolder!;
         string device = SelectedDevice!.Name;
-        var options = new RecordingOptions(root, device, _settings.ChunkSeconds, _appVersion);
+        var options = new RecordingOptions(root, device, _settings.ChunkSeconds, _appVersion, Language);
         SessionInfo session;
         IsStarting = true;
         try

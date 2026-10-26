@@ -59,11 +59,18 @@ public sealed class RecorderTests : IDisposable
 
         using var meta = JsonDocument.Parse(File.ReadAllText(session.MetaFile));
         JsonElement root = meta.RootElement;
-        Assert.Equal(["schemaVersion", "started", "device", "format", "chunkSeconds", "appVersion"], root.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
-        DateTimeOffset started = root.GetProperty("started").GetDateTimeOffset();
+        Assert.Equal(
+            ["schemaVersion", "starts", "device", "format", "chunkSeconds", "appVersion", "languageMarks"],
+            root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        JsonElement start = Assert.Single(root.GetProperty("starts").EnumerateArray());
+        DateTimeOffset started = start.GetProperty("time").GetDateTimeOffset();
         Assert.Equal(StartedAt, started);
         Assert.Equal(StartedAt.Offset, started.Offset);
+        Assert.Equal(0, start.GetProperty("offset").GetDouble());
+        JsonElement mark = Assert.Single(root.GetProperty("languageMarks").EnumerateArray());
+        Assert.Equal(0, mark.GetProperty("at").GetDouble());
+        Assert.Equal("ru", mark.GetProperty("lang").GetString());
         Assert.Equal("Fake microphone", root.GetProperty("device").GetString());
         JsonElement format = root.GetProperty("format");
         Assert.Equal("pcm_s16le", format.GetProperty("encoding").GetString());
@@ -72,6 +79,51 @@ public sealed class RecorderTests : IDisposable
         Assert.Equal(16, format.GetProperty("bitsPerSample").GetInt32());
         Assert.Equal(1, root.GetProperty("chunkSeconds").GetInt32());
         Assert.Equal("1.0.0-test", root.GetProperty("appVersion").GetString());
+    }
+
+    [Fact]
+    public async Task Language_mark_is_stored_at_the_audio_captured_so_far()
+    {
+        var marks = new List<LanguageMarked>();
+        _recorder.LanguageMarked += (_, marked) => marks.Add(marked);
+        SessionInfo session = Start(chunkSeconds: 60);
+        foreach (byte[] block in SyntheticPcm.Split(SyntheticPcm.Create(TimeSpan.FromSeconds(1.5)), 3200))
+        {
+            _source.Push(block);
+        }
+
+        LanguageMark? mark = _recorder.MarkLanguage("ja");
+        await _recorder.StopAsync();
+
+        Assert.Equal(new LanguageMark(1.5, "ja"), mark);
+        Assert.Equal([new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja")], marks.Select(m => m.Mark));
+        Assert.All(marks, m => Assert.Equal(session, m.Session));
+        Assert.Equal(
+            [new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja")],
+            SessionMeta.Read(session, languageOfSchema1: "ru").LanguageMarks);
+    }
+
+    [Fact]
+    public void Language_mark_without_a_recording_is_ignored()
+    {
+        Assert.Null(_recorder.MarkLanguage("ja"));
+    }
+
+    [Fact]
+    public void Meta_json_of_schema_1_reads_as_one_start_in_the_given_language()
+    {
+        var session = new SessionInfo("2026-10-26_1405", _temp.Path);
+        File.WriteAllText(session.MetaFile, """
+            {"schemaVersion":1,"started":"2026-10-26T14:05:30+03:00","device":"Mic",
+             "format":{"encoding":"pcm_s16le","sampleRate":16000,"channels":1,"bitsPerSample":16},
+             "chunkSeconds":60,"appVersion":"0.2.1"}
+            """);
+
+        SessionMeta meta = SessionMeta.Read(session, languageOfSchema1: "ja");
+
+        Assert.Equal([new SessionStart(StartedAt, 0)], meta.Starts);
+        Assert.Equal([new LanguageMark(0, "ja")], meta.LanguageMarks);
+        Assert.Equal(60, meta.ChunkSeconds);
     }
 
     [Fact]
@@ -280,5 +332,5 @@ public sealed class RecorderTests : IDisposable
     private SessionInfo Start(int chunkSeconds) => _recorder.Start(Options(chunkSeconds), _source);
 
     private RecordingOptions Options(int chunkSeconds) =>
-        new(_temp.Path, "Fake microphone", chunkSeconds, "1.0.0-test");
+        new(_temp.Path, "Fake microphone", chunkSeconds, "1.0.0-test", "ru");
 }

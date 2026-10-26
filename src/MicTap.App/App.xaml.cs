@@ -38,12 +38,14 @@ public partial class App : Application
 
         var settingsStore = new SettingsStore(AppPaths.SettingsFile);
         var recorder = new Recorder(Log.Logger, TimeProvider.System);
-        _transcript = new TranscriptViewModel(new ModelStore(AppPaths.ModelsFolder, ModelSpec.LargeV3Turbo), recorder, Log.Logger);
+        _transcript = new TranscriptViewModel(
+            new ModelStore(AppPaths.ModelsFolder, ModelSpec.LargeV3Turbo), new ModelStore(AppPaths.ModelsFolder, ModelSpec.SileroVad),
+            recorder, Log.Logger);
         var viewModel = new MainViewModel(settingsStore, settingsStore.Load(), recorder, _transcript, version, Log.Logger);
         MainWindow = new MainWindow(viewModel);
         MainWindow.Show();
         viewModel.Initialize();
-        _ = _transcript.InitializeAsync(); // reports its own failures in the window
+        _transcript.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)

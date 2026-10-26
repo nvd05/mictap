@@ -3,7 +3,7 @@ using Serilog;
 
 namespace MicTap.Core;
 
-public sealed record RecordingOptions(string RootFolder, string DeviceName, int ChunkSeconds, string AppVersion);
+public sealed record RecordingOptions(string RootFolder, string DeviceName, int ChunkSeconds, string AppVersion, string Language);
 
 public enum StopReason
 {
@@ -29,6 +29,8 @@ public sealed record RecordingStopped(SessionInfo Session, StopReason Reason, Ex
 
 /// <summary>A copy of one captured block of 16 kHz mono 16-bit PCM; shared by consumers, never modified.</summary>
 public sealed record CapturedAudio(SessionInfo Session, ReadOnlyMemory<byte> Pcm);
+
+public sealed record LanguageMarked(SessionInfo Session, LanguageMark Mark);
 
 /// <summary>A closed chunk; <paramref name="Start"/> is its offset from the session start.</summary>
 public sealed record ChunkCompleted(SessionInfo Session, ChunkInfo Chunk, TimeSpan Start);
@@ -84,8 +86,41 @@ public sealed class Recorder
     /// <summary>Raised once per started session, after the last queued audio reached its chunk and the chunk got its final header.</summary>
     public event EventHandler<RecordingStopped>? Stopped;
 
+    /// <summary>
+    /// The language of speech from a point of the session on: raised at start with the session's language (at 0)
+    /// and by <see cref="MarkLanguage"/>. Raised on the thread that started or marked.
+    /// </summary>
+    public event EventHandler<LanguageMarked>? LanguageMarked;
+
     /// <summary>True from start until the session has finished writing.</summary>
     public bool IsRecording => Volatile.Read(ref _active) is not null;
+
+    /// <summary>
+    /// Marks that speech is in <paramref name="language"/> from the audio captured so far on, and stores the mark in
+    /// meta.json. Returns null when no recording runs.
+    /// </summary>
+    public LanguageMark? MarkLanguage(string language)
+    {
+        LanguageMarked marked;
+        lock (_gate)
+        {
+            Session? session = _active;
+            if (session is null || session.IsEnding)
+            {
+                return null;
+            }
+
+            TimeSpan at = PcmFormat.Mono16k.DurationOf(Interlocked.Read(ref session.CapturedBytes));
+            var mark = new LanguageMark(Math.Round(at.TotalSeconds, 3), language);
+            session.Meta = session.Meta with { LanguageMarks = [.. session.Meta.LanguageMarks, mark] };
+            session.Meta.WriteTo(session.Info);
+            marked = new LanguageMarked(session.Info, mark);
+        }
+
+        _logger.Information("Language {Language} from {At} s of {Session}", marked.Mark.Lang, marked.Mark.At, marked.Session.Name);
+        LanguageMarked?.Invoke(this, marked);
+        return marked.Mark;
+    }
 
     /// <summary>Test hook: runs on the writer thread before each block is written.</summary>
     internal Action? BeforeDiskWrite { get; set; }
@@ -107,6 +142,7 @@ public sealed class Recorder
             throw;
         }
 
+        LanguageMarked?.Invoke(this, new LanguageMarked(session.Info, session.Meta.LanguageMarks[0]));
         source.DataAvailable += OnData;
         source.Stopped += OnSourceStopped;
         session.Timer = _time.CreateTimer(_ => Tick(), null, WatchdogInterval, WatchdogInterval);
@@ -187,8 +223,10 @@ public sealed class Recorder
             PcmFormat format = PcmFormat.Mono16k;
             DateTimeOffset started = _time.GetLocalNow();
             SessionInfo info = SessionFolders.Create(options.RootFolder, started);
-            new SessionMeta(started, options.DeviceName, MetaFormat.From(format), options.ChunkSeconds, options.AppVersion)
-                .WriteTo(info);
+            var meta = new SessionMeta(
+                [new SessionStart(started, 0)], options.DeviceName, MetaFormat.From(format), options.ChunkSeconds,
+                options.AppVersion, [new LanguageMark(0, options.Language)]);
+            meta.WriteTo(info);
             var writer = new ChunkedWavWriter(info.AudioFolder, format, options.ChunkSeconds);
             writer.ChunkClosed += (_, chunk) =>
             {
@@ -202,7 +240,7 @@ public sealed class Recorder
                 new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
             var stage = new ChunkWriterStage(writer, channel.Reader, _time, BeforeDiskWrite);
             long writeBufferBytes = (long)(format.ByteRate * _writeBuffer.TotalSeconds);
-            var session = new Session(info, source, writer, channel, stage, writeBufferBytes, _time.GetTimestamp());
+            var session = new Session(info, meta, source, writer, channel, stage, writeBufferBytes, _time.GetTimestamp());
 
             stage.Written += bytes =>
             {
@@ -232,6 +270,7 @@ public sealed class Recorder
             return;
         }
 
+        Interlocked.Add(ref session.CapturedBytes, block.Length);
         session.Channel.Writer.TryWrite(block);
         Volatile.Write(ref session.LastDataAt, _time.GetTimestamp());
         LevelChanged?.Invoke(this, AudioLevel.Peak(block));
@@ -325,7 +364,7 @@ public sealed class Recorder
     }
 
     private sealed class Session(
-        SessionInfo info, IAudioSource source, ChunkedWavWriter writer, Channel<byte[]> channel,
+        SessionInfo info, SessionMeta meta, IAudioSource source, ChunkedWavWriter writer, Channel<byte[]> channel,
         ChunkWriterStage stage, long writeBufferBytes, long startedAt)
     {
         public readonly SessionInfo Info = info;
@@ -337,6 +376,7 @@ public sealed class Recorder
         public readonly TaskCompletionSource Ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public readonly TaskCompletionSource Finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
+        public long CapturedBytes;
         public long QueuedBytes;
         public long LastDataAt = startedAt;
         public int Ending;
@@ -346,6 +386,7 @@ public sealed class Recorder
         public StopReason Reason;
         public Exception? Error;
         public ITimer? Timer;
+        public SessionMeta Meta = meta;
 
         public bool IsEnding => Volatile.Read(ref Ending) != 0;
     }

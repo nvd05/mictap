@@ -11,91 +11,98 @@ public sealed class TranscriptionPipelineTests : IDisposable
     private readonly TempFolder _temp = new();
     private readonly FakeAudioSource _source = new();
     private readonly Recorder _recorder = new(Logger.None, new ManualTimeProvider(new DateTimeOffset(2026, 10, 26, 16, 0, 0, TimeSpan.FromHours(3))));
+    private readonly List<SegmentTranscript> _lines = [];
+    private TranscriberHost? _host;
 
-    public void Dispose() => _temp.Dispose();
+    public void Dispose()
+    {
+        _host?.Dispose();
+        _temp.Dispose();
+    }
 
     [Fact]
-    public async Task Every_closed_chunk_becomes_a_line_in_transcript_jsonl()
+    public async Task Speech_segments_become_lines_of_transcript_v2_and_silence_never_reaches_whisper()
     {
-        using TranscriptionPipeline pipeline = Run(new FakeTranscriber((samples, _) => Task.FromResult($"{samples.Length} samples")));
-        var transcribed = new List<ChunkTranscript>();
-        pipeline.ChunkTranscribed += (_, chunk) => { lock (transcribed) transcribed.Add(chunk); };
-        SessionInfo session = _recorder.Start(Options(chunkSeconds: 1), _source);
+        var transcriber = FakeTranscriber.Saying((samples, language) => $"{language}:{samples.Length / 16}ms");
+        using TranscriptionPipeline pipeline = Run(transcriber);
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
 
-        foreach (byte[] block in SyntheticPcm.Split(SyntheticPcm.Create(TimeSpan.FromSeconds(2.5)), 3200))
-        {
-            _source.Push(block);
-        }
-
+        Push(FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(2), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1.5), FakeSpeech.SilencePcm(10));
         await _recorder.StopAsync();
-        await Eventually(() => { lock (transcribed) return transcribed.Count == 3; });
+        await Eventually(() => Lines().Length == 2);
 
-        string[] lines = File.ReadAllLines(Path.Combine(session.Folder, "transcript.jsonl"));
         Assert.Equal(
             [
-                """{"schemaVersion":1,"chunk":0,"start":0,"end":1,"text":"16000 samples"}""",
-                """{"schemaVersion":1,"chunk":1,"start":1,"end":2,"text":"16000 samples"}""",
-                """{"schemaVersion":1,"chunk":2,"start":2,"end":2.5,"text":"8000 samples"}""",
+                """{"schemaVersion":2,"seq":1,"start":1,"end":3,"lang":"ru","text":"ru:2000ms","edited":false}""",
+                """{"schemaVersion":2,"seq":2,"start":4,"end":5.5,"lang":"ru","text":"ru:1500ms","edited":false}""",
             ],
-            lines);
+            File.ReadAllLines(Path.Combine(session.Folder, "transcript.jsonl")));
+        Assert.Equal(2, transcriber.Calls); // ten seconds of silence: no call
     }
 
     [Fact]
-    public async Task Live_text_covers_at_most_the_last_ten_seconds()
+    public async Task Language_mark_cuts_speech_and_each_part_is_recognized_in_its_language()
     {
-        using TranscriptionPipeline pipeline = Run(new FakeTranscriber((samples, _) => Task.FromResult($"{samples.Length}")));
-        var live = new List<string>();
-        pipeline.LiveTextChanged += (_, text) => { lock (live) live.Add(text.Text); };
-        _recorder.Start(Options(chunkSeconds: 60), _source);
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, language) => language == "ja" ? "日本語" : "русский"));
+        _recorder.Start(Options("ru"), _source);
 
-        foreach (byte[] block in SyntheticPcm.Split(SyntheticPcm.Create(TimeSpan.FromSeconds(12)), 3200))
-        {
-            _source.Push(block);
-        }
-
-        await Eventually(() => { lock (live) return live.Contains("160000"); });
+        Push(FakeSpeech.SpeechPcm(2));
+        _recorder.MarkLanguage("ja");
+        Push(FakeSpeech.SpeechPcm(2), FakeSpeech.SilencePcm(1));
         await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 2);
+
+        Assert.Equal([(1, 0.0, 2.0, "ru", "русский"), (2, 2.0, 4.0, "ja", "日本語")], Lines().Select(l => (l.Seq, l.Start, l.End, l.Lang, l.Text)));
     }
 
     [Fact]
-    public async Task Failed_transcriber_is_reported_once_and_recording_goes_on()
+    public async Task Segments_recorded_before_the_model_loads_wait_and_are_not_lost()
     {
-        using TranscriptionPipeline pipeline = Run(new FakeTranscriber((_, _) => throw new InvalidOperationException("CUDA out of memory")));
-        var failures = new List<Exception>();
-        pipeline.Failed += (_, error) => { lock (failures) failures.Add(error); };
-        SessionInfo session = _recorder.Start(Options(chunkSeconds: 1), _source);
-        byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(3));
-        byte[][] blocks = SyntheticPcm.Split(pcm, 3200).ToArray();
+        var loaded = new TaskCompletionSource<ITranscriber>();
+        using TranscriptionPipeline pipeline = Run(_ => loaded.Task);
+        _recorder.Start(Options("ru"), _source);
 
-        foreach (byte[] block in blocks[..10])
-        {
-            _source.Push(block);
-        }
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Task.Delay(200);
+        Assert.Empty(Lines());
 
-        await Eventually(() => { lock (failures) return failures.Count == 1; });
-        foreach (byte[] block in blocks[10..])
-        {
-            _source.Push(block);
-        }
+        loaded.SetResult(FakeTranscriber.Saying((_, _) => "дождался"));
 
+        await Eventually(() => Lines().Length == 2);
+    }
+
+    [Fact]
+    public async Task Failed_transcriber_comes_back_and_the_segment_is_recognized_after_all()
+    {
+        var broken = new FakeTranscriber((_, _, _) => throw new InvalidOperationException("CUDA error"));
+        var queue = new Queue<ITranscriber>([broken, FakeTranscriber.Saying((_, _) => "после сбоя")]);
+        using TranscriptionPipeline pipeline = Run(_ => Task.FromResult(queue.Dequeue()));
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
+        byte[] pcm = [.. FakeSpeech.SpeechPcm(1), .. FakeSpeech.SilencePcm(1)];
+
+        Push(pcm);
         Assert.True(_recorder.IsRecording);
         await _recorder.StopAsync();
-        Assert.Equal("CUDA out of memory", Assert.Single(failures).Message);
+        await Eventually(() => Lines().Length == 1);
+
+        Assert.Equal("после сбоя", Lines()[0].Text);
+        Assert.True(broken.Disposed);
         Assert.Equal(pcm, WavFiles.ReadAudio(WavFiles.Chunks(session.AudioFolder)));
     }
 
     [Fact]
     public async Task Stuck_transcriber_neither_blocks_capture_nor_loses_audio()
     {
-        using TranscriptionPipeline pipeline = Run(new FakeTranscriber((_, cancel) => Task.Delay(Timeout.Infinite, cancel).ContinueWith(_ => "", TaskScheduler.Default)));
-        SessionInfo session = _recorder.Start(Options(chunkSeconds: 1), _source);
-        byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(3));
+        using TranscriptionPipeline pipeline = Run(new FakeTranscriber((_, _, cancel) => Task.Delay(Timeout.Infinite, cancel).ContinueWith(_ => "", TaskScheduler.Default)));
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
+        byte[] pcm = [.. FakeSpeech.SpeechPcm(1), .. FakeSpeech.SilencePcm(1), .. FakeSpeech.SpeechPcm(1)];
 
         var capture = Stopwatch.StartNew();
         foreach (byte[] block in SyntheticPcm.Split(pcm, 3200))
         {
             _source.Push(block);
-            Thread.Sleep(1); // let live passes start and hang
+            Thread.Sleep(1); // let passes start and hang
         }
 
         capture.Stop();
@@ -105,31 +112,70 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task Edit_through_the_sink_rewrites_the_line()
+    public async Task Live_text_shows_silence_without_calling_whisper_and_speech_with_it()
     {
-        using TranscriptionPipeline pipeline = Run(new FakeTranscriber((_, _) => Task.FromResult("черновик")));
-        var transcribed = new List<ChunkTranscript>();
-        pipeline.ChunkTranscribed += (_, chunk) => { lock (transcribed) transcribed.Add(chunk); };
-        SessionInfo session = _recorder.Start(Options(chunkSeconds: 60), _source);
-        _source.Push(SyntheticPcm.Create(TimeSpan.FromSeconds(1)));
+        var transcriber = FakeTranscriber.Saying((_, language) => $"живой {language}");
+        using TranscriptionPipeline pipeline = Run(transcriber);
+        var live = new List<LiveTranscript>();
+        pipeline.LiveTextChanged += (_, text) => { lock (live) live.Add(text); };
+        _recorder.Start(Options("ru"), _source);
+
+        Push(FakeSpeech.SilencePcm(3));
+        await Eventually(() => { lock (live) return live.Any(l => l.Silence); });
+        Assert.Equal(0, transcriber.Calls);
+
+        Push(FakeSpeech.SpeechPcm(2));
+        await Eventually(() => { lock (live) return live.Any(l => l.Text == "живой ru"); });
         await _recorder.StopAsync();
-        await Eventually(() => { lock (transcribed) return transcribed.Count == 1; });
-
-        pipeline.SinkFor(session).Put(transcribed[0].Line with { Text = "исправлено" });
-
-        string line = Assert.Single(File.ReadAllLines(Path.Combine(session.Folder, "transcript.jsonl")));
-        Assert.Equal("исправлено", JsonDocument.Parse(line).RootElement.GetProperty("text").GetString());
     }
 
-    private TranscriptionPipeline Run(FakeTranscriber transcriber)
+    [Fact]
+    public async Task Edit_through_the_sink_rewrites_the_line_by_seq()
     {
-        var pipeline = new TranscriptionPipeline(transcriber, () => "ru", Logger.None, TimeSpan.FromMilliseconds(50));
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "черновик"));
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
+        Push(FakeSpeech.SpeechPcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        pipeline.SinkFor(session).Edit(Lines()[0].Seq, "исправлено");
+
+        JsonElement line = JsonDocument.Parse(Assert.Single(File.ReadAllLines(Path.Combine(session.Folder, "transcript.jsonl")))).RootElement;
+        Assert.Equal("исправлено", line.GetProperty("text").GetString());
+        Assert.True(line.GetProperty("edited").GetBoolean());
+    }
+
+    private TranscriptionPipeline Run(FakeTranscriber transcriber) => Run(_ => Task.FromResult<ITranscriber>(transcriber));
+
+    private TranscriptionPipeline Run(Func<CancellationToken, Task<ITranscriber>> load)
+    {
+        _host = new TranscriberHost(load, Logger.None, TimeProvider.System, TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(80));
+        var pipeline = new TranscriptionPipeline(
+            _host, Task.FromResult<Func<SpeechDetector>>(() => FakeSpeech.Detect), Logger.None, TimeSpan.FromMilliseconds(50));
+        pipeline.SegmentTranscribed += (_, line) => { lock (_lines) _lines.Add(line); };
         pipeline.Attach(_recorder);
+        _host.Start();
         pipeline.Start();
         return pipeline;
     }
 
-    private RecordingOptions Options(int chunkSeconds) => new(_temp.Path, "Fake microphone", chunkSeconds, "0.2.0-test");
+    private TranscriptLine[] Lines()
+    {
+        lock (_lines)
+        {
+            return [.. _lines.Select(l => l.Line)];
+        }
+    }
+
+    private void Push(params byte[][] parts)
+    {
+        foreach (byte[] block in SyntheticPcm.Split([.. parts.SelectMany(p => p)], 3200))
+        {
+            _source.Push(block);
+        }
+    }
+
+    private RecordingOptions Options(string language) => new(_temp.Path, "Fake microphone", 60, "0.3.0-test", language);
 
     private static async Task Eventually(Func<bool> condition)
     {
@@ -138,21 +184,6 @@ public sealed class TranscriptionPipelineTests : IDisposable
         {
             Assert.True(waited.Elapsed < Patience, "condition not met in time");
             await Task.Delay(20);
-        }
-    }
-
-    private sealed class FakeTranscriber(Func<float[], CancellationToken, Task<string>> recognize) : ITranscriber
-    {
-        public string Runtime => "fake";
-
-        public bool OnGpu => false;
-
-        public async Task<IReadOnlyList<TranscriptSegment>> TranscribeAsync(
-            float[] samples, string language, CancellationToken cancellation) =>
-            [new TranscriptSegment(TimeSpan.Zero, TimeSpan.Zero, await recognize(samples, cancellation))];
-
-        public void Dispose()
-        {
         }
     }
 }

@@ -28,7 +28,7 @@ public sealed partial class MainViewModel : ObservableObject
     private AudioDevice? _selectedDevice;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanEditSettings))]
+    [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(TrayToolTip))]
     [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand))]
     private bool _isRecording;
 
@@ -42,6 +42,7 @@ public sealed partial class MainViewModel : ObservableObject
     private string _chunkText = "—";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TrayToolTip))]
     private string _recordedText = FormatMinutes(TimeSpan.Zero);
 
     [ObservableProperty]
@@ -69,6 +70,8 @@ public sealed partial class MainViewModel : ObservableObject
     public ObservableCollection<AudioDevice> Devices { get; } = [];
 
     public bool CanEditSettings => !IsRecording;
+
+    public string TrayToolTip => IsRecording ? $"mictap: идёт запись, {RecordedText}" : "mictap: запись не идёт";
 
     /// <summary>Lists microphones and repairs chunks that a crash left open in the latest session.</summary>
     public void Initialize()

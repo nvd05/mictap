@@ -3,12 +3,30 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:tb="clr-namespace:H.NotifyIcon;assembly=H.NotifyIcon.Wpf"
         xmlns:local="clr-namespace:MicTap.App"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=local:MainViewModel}"
         Title="mictap" Width="600" SizeToContent="Height" ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <tb:GeneratedIconSource x:Key="IdleIcon" Text="M" FontSize="44" FontWeight="Bold"
+                                Foreground="White" Background="#FF616161" />
+        <tb:GeneratedIconSource x:Key="RecordingIcon" Text="M" FontSize="44" FontWeight="Bold"
+                                Foreground="White" Background="#FFD32F2F" />
+    </Window.Resources>
+
     <DockPanel>
+        <tb:TaskbarIcon x:Name="TrayIcon" DockPanel.Dock="Top" ToolTipText="{Binding TrayToolTip}"
+                        NoLeftClickDelay="True" TrayLeftMouseUp="OnTrayOpen">
+            <tb:TaskbarIcon.ContextMenu>
+                <ContextMenu>
+                    <MenuItem Header="Открыть" Click="OnTrayOpen" />
+                    <MenuItem Header="Выход" Click="OnTrayExit" />
+                </ContextMenu>
+            </tb:TaskbarIcon.ContextMenu>
+        </tb:TaskbarIcon>
+
         <StatusBar DockPanel.Dock="Bottom">
             <StatusBarItem>
                 <TextBlock Text="{Binding SessionText, StringFormat='Сессия: {0}'}" />

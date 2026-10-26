@@ -146,11 +146,10 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
-    public async Task Phrase_pause_set_on_the_pipeline_joins_speech_into_one_line()
+    public async Task Phrase_pause_of_the_project_joins_speech_into_one_line()
     {
         using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((samples, _) => $"{samples.Length / 16}ms"));
-        pipeline.PhrasePause = TimeSpan.FromSeconds(3);
-        _recorder.Start(Options("ru"), _source);
+        _recorder.Start(Options("ru") with { PhrasePause = TimeSpan.FromSeconds(3) }, _source);
 
         Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(4));
         await _recorder.StopAsync();

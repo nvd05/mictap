@@ -56,7 +56,6 @@ public sealed class TranscriptionPipeline : IDisposable
     private LiveLanguage? _liveLanguage;
     private Finished? _finished;
     private Task _loops = Task.CompletedTask;
-    private long _pauseTicks = SpeechSegmenter.DefaultPause.Ticks;
     private int _pending;
     private int _failed;
 
@@ -88,13 +87,6 @@ public sealed class TranscriptionPipeline : IDisposable
     /// <summary>Raised once: recognition stopped on this error. Recording is not affected.</summary>
     public event EventHandler<Exception>? Failed;
 
-    /// <summary>Silence that ends a phrase; a change applies from the next recording.</summary>
-    public TimeSpan PhrasePause
-    {
-        get => TimeSpan.FromTicks(Interlocked.Read(ref _pauseTicks));
-        set => Interlocked.Exchange(ref _pauseTicks, value.Ticks);
-    }
-
     public void Start() => _loops = Task.WhenAll(Task.Run(SegmentLoopAsync), Task.Run(FinalLoopAsync), Task.Run(LiveLoopAsync));
 
     public void Attach(Recorder recorder)
@@ -106,7 +98,7 @@ public sealed class TranscriptionPipeline : IDisposable
         recorder.Stopped += (_, stopped) => EnqueueEnd(stopped.Session);
     }
 
-    /// <summary>A recording begins: its segments start at its offset, in its language; its retention applies.</summary>
+    /// <summary>A recording begins: its segments start at its offset, in its language; its retention and phrase pause apply.</summary>
     public void Enqueue(RecordingStarted started)
     {
         if (started.Retention == AudioRetention.DeleteAfterTranscript)
@@ -194,7 +186,7 @@ public sealed class TranscriptionPipeline : IDisposable
                 {
                     case RecordingStarted started:
                         session = started.Session;
-                        segmenter = new SpeechSegmenter(detect, started.Language, started.Offset, PhrasePause);
+                        segmenter = new SpeechSegmenter(detect, started.Language, started.Offset, started.PhrasePause);
                         janitor = _janitors.GetValueOrDefault(session.Folder);
                         break;
                     case LanguageMarked marked when marked.Session == session:

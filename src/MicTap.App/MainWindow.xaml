@@ -53,6 +53,15 @@
                       materialDesign:HintAssist.Hint="Звук после распознавания" AutomationProperties.Name="Звук после распознавания"
                       ItemsSource="{x:Static local:ProjectEditor.RetentionOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
                       SelectedValue="{Binding Retention}" />
+            <TextBlock Margin="0,18,0,0" Text="Фраза заканчивается после паузы" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+            <DockPanel Margin="0,4,0,0">
+                <TextBlock DockPanel.Dock="Right" Width="52" TextAlignment="Right" VerticalAlignment="Center"
+                           Text="{Binding PhrasePauseText}" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
+                <Slider Minimum="0.5" Maximum="10" TickFrequency="0.1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                        AutomationProperties.Name="Пауза, после которой фраза закончена" Value="{Binding PhrasePauseSeconds}" />
+            </DockPanel>
+            <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Opacity="0.7" Style="{StaticResource MaterialDesignBodySmallTextBlock}"
+                       Text="Лекция — около 1 с: фразы короче, агент получает текст быстрее. Разговор, где думают перед ответом, — 2–3 с. Действует со следующей записи." />
             <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Text="{Binding Error}" Foreground="{StaticResource RecordBrush}"
                        Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
             <StackPanel Margin="0,16,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
@@ -127,17 +136,6 @@
                                   AutomationProperties.Name="Микрофон" DisplayMemberPath="Name"
                                   ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsEnabled="{Binding CanEditSettings}" />
                     </DockPanel>
-
-                    <TextBlock Text="Фраза заканчивается после паузы" Style="{StaticResource SettingsHeader}" />
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Right" Width="56" TextAlignment="Right" VerticalAlignment="Center"
-                                   Text="{Binding PhrasePauseText}" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
-                        <Slider Minimum="0.5" Maximum="10" TickFrequency="0.5" IsSnapToTickEnabled="True" VerticalAlignment="Center"
-                                AutomationProperties.Name="Пауза, после которой фраза закончена"
-                                Value="{Binding PhrasePauseSeconds, Delay=300}" />
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource SettingsNote}"
-                               Text="Короче — больше коротких строк. Длиннее — строки длиннее, но готовый текст появляется позже. Действует со следующей записи." />
 
                     <TextBlock Text="Хоткеи" Style="{StaticResource SettingsHeader}" />
                     <Border CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">

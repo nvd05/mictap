@@ -131,7 +131,6 @@ public sealed partial class MainViewModel : ObservableObject
         _appVersion = appVersion;
         _logger = logger.ForContext<MainViewModel>();
         RootFolder = settings.RootFolder ?? Core.Projects.DefaultRoot;
-        transcript.Pipeline.PhrasePause = TimeSpan.FromSeconds(settings.PhrasePauseSeconds);
         _infoTimer = new DispatcherTimer(InfoShownFor, DispatcherPriority.Background, (_, _) => ClearInfo(), _dispatcher);
         _infoTimer.Stop();
         recorder.LevelChanged += OnLevelChanged;
@@ -211,25 +210,6 @@ public sealed partial class MainViewModel : ObservableObject
     public HotkeySettings Hotkeys => _settings.Hotkeys;
 
     public string SettingsFile => _settingsStore.FilePath;
-
-    /// <summary>Silence that ends a phrase, in half seconds; saved at once, applies from the next recording.</summary>
-    public double PhrasePauseSeconds
-    {
-        get => _settings.PhrasePauseSeconds;
-        set
-        {
-            double seconds = Math.Round(Math.Clamp(value, SpeechSegmenter.MinSilence.TotalSeconds, AppSettings.MaxPhrasePauseSeconds) * 2) / 2;
-            if (seconds != _settings.PhrasePauseSeconds)
-            {
-                Save(_settings with { PhrasePauseSeconds = seconds });
-                Transcript.Pipeline.PhrasePause = TimeSpan.FromSeconds(seconds);
-                OnPropertyChanged();
-                OnPropertyChanged(nameof(PhrasePauseText));
-            }
-        }
-    }
-
-    public string PhrasePauseText => $"{PhrasePauseSeconds:0.#} с";
 
     public string TrayToolTip => IsRecording
         ? $"mictap: идёт запись, {RecordedText}, язык {LanguageText}"
@@ -669,7 +649,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             session = SessionFolders.Open(project.Folder, name);
             var options = new RecordingOptions(
-                session, device, _settings.ChunkSeconds, _appVersion, Language, project.Settings.AudioRetention);
+                session, device, _settings.ChunkSeconds, _appVersion, Language, project.Settings.AudioRetention, project.Settings.PhrasePause);
 
             // Opening a capture device can take seconds; the window stays responsive meanwhile.
             session = await Task.Run(() => _recorder.Start(options, WaveInAudioSource.Open(device)));
@@ -738,7 +718,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         SessionInfo session = node?.Session ?? SelectedSession!;
         ProjectInfo project = node?.Project.Project ?? SelectedProject!;
-        return Transcript.RetranscribeAsync(session, project.Settings.DefaultLanguage);
+        return Transcript.RetranscribeAsync(session, project.Settings.DefaultLanguage, project.Settings.PhrasePause);
     }
 
     /// <summary>Reads the projects of the root; an empty root gets a first project so recording works at once.</summary>

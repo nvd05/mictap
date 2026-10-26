@@ -19,16 +19,29 @@ public enum AudioRetention
 
 /// <summary>
 /// Contents of project.json. The first language is the default; the language hotkey goes round the list.
+/// <paramref name="PhrasePauseSeconds"/> is the silence that ends a phrase: short for lectures, longer for a
+/// conversation where one thinks before answering. Schema 2 added it; a schema 1 file reads with the default.
 /// </summary>
-public sealed record ProjectSettings(string Name, IReadOnlyList<string> Languages, AudioRetention AudioRetention)
+public sealed record ProjectSettings(
+    string Name,
+    IReadOnlyList<string> Languages,
+    AudioRetention AudioRetention,
+    double PhrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds)
 {
-    public const int CurrentSchemaVersion = 1;
+    public const int CurrentSchemaVersion = 2;
+
+    public const double DefaultPhrasePauseSeconds = 1.2;
+
+    public const double MaxPhrasePauseSeconds = 10;
 
     [JsonPropertyOrder(-1)]
     public int SchemaVersion => CurrentSchemaVersion;
 
     [JsonIgnore]
     public string DefaultLanguage => Languages[0];
+
+    [JsonIgnore]
+    public TimeSpan PhrasePause => TimeSpan.FromSeconds(PhrasePauseSeconds);
 }
 
 /// <summary>A project folder under the root: &lt;root&gt;\&lt;project&gt;\project.json and its sessions.</summary>
@@ -145,6 +158,13 @@ public static partial class Projects
         if (settings.Languages.Distinct().Count() != settings.Languages.Count)
         {
             throw new ArgumentException("Языки повторяются.");
+        }
+
+        double minPause = SpeechSegmenter.MinSilence.TotalSeconds;
+        if (settings.PhrasePauseSeconds < minPause || settings.PhrasePauseSeconds > ProjectSettings.MaxPhrasePauseSeconds)
+        {
+            throw new ArgumentException(
+                $"Пауза фразы — от {minPause} до {ProjectSettings.MaxPhrasePauseSeconds} с, а не {settings.PhrasePauseSeconds}.");
         }
     }
 

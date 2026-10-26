@@ -22,8 +22,9 @@ public sealed class ProjectsTests : IDisposable
         Assert.Equal(AudioRetention.DeleteAfterTranscript, loaded.Settings.AudioRetention);
         Assert.Equal("ja", loaded.Settings.DefaultLanguage);
         JsonElement root = JsonDocument.Parse(File.ReadAllText(project.SettingsFile)).RootElement;
-        Assert.Equal([ "schemaVersion", "name", "languages", "audioRetention" ], root.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(1, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal([ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds" ], root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(1.2, root.GetProperty("phrasePauseSeconds").GetDouble());
         Assert.Equal("deleteAfterTranscript", root.GetProperty("audioRetention").GetString());
     }
 
@@ -69,6 +70,27 @@ public sealed class ProjectsTests : IDisposable
     {
         Assert.Throws<ArgumentException>(
             () => Projects.Create(_temp.Path, new ProjectSettings(name, Projects.ParseLanguages(languages), AudioRetention.Keep)));
+    }
+
+    [Fact]
+    public void Schema_1_project_reads_with_the_default_phrase_pause_and_its_own_pause_is_kept()
+    {
+        string folder = Path.Combine(_temp.Path, "Общий");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(Path.Combine(folder, "project.json"), """{ "schemaVersion": 1, "name": "Общий", "languages": [ "ru" ], "audioRetention": "keep" }""");
+        ProjectInfo japanese = Projects.Create(_temp.Path, new ProjectSettings("Японский", [ "ja", "ru" ], AudioRetention.Keep, 3));
+
+        Assert.Equal(TimeSpan.FromSeconds(1.2), Projects.Load(folder).Settings.PhrasePause);
+        Assert.Equal(TimeSpan.FromSeconds(3), Projects.Load(japanese.Folder).Settings.PhrasePause);
+    }
+
+    [Theory]
+    [InlineData(0.2)]
+    [InlineData(11)]
+    public void Phrase_pause_out_of_range_is_refused(double seconds)
+    {
+        Assert.Throws<ArgumentException>(
+            () => Projects.Create(_temp.Path, new ProjectSettings("Проект", [ "ru" ], AudioRetention.Keep, seconds)));
     }
 
     [Fact]

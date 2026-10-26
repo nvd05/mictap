@@ -173,10 +173,11 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>
-    /// Recognizes <paramref name="session"/> again from its audio; the old transcript is kept as a .bak file.
-    /// Sessions recorded before v0.3 are taken as spoken in <paramref name="language"/>.
+    /// Recognizes <paramref name="session"/> again from its audio, cut into phrases by the project's
+    /// <paramref name="phrasePause"/>; the old transcript is kept as a .bak file. Sessions recorded before v0.3 are
+    /// taken as spoken in <paramref name="language"/>.
     /// </summary>
-    public async Task RetranscribeAsync(SessionInfo session, string language)
+    public async Task RetranscribeAsync(SessionInfo session, string language, TimeSpan phrasePause)
     {
         IsRetranscribing = true;
         _session = session;
@@ -184,7 +185,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         QueueText = "распознаю заново…";
         try
         {
-            var retranscriber = new SessionRetranscriber(_host, await _detectors, TimeProvider.System, _logger, _pipeline.PhrasePause);
+            var retranscriber = new SessionRetranscriber(_host, await _detectors, TimeProvider.System, _logger, phrasePause);
             var progress = new Progress<double>(done => QueueText = $"распознаю заново: {done:P0}");
             RetranscribeResult result = await Task.Run(() => retranscriber.RunAsync(session, language, progress, _stop.Token));
             _pipeline.ForgetSink(session);

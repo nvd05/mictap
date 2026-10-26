@@ -34,7 +34,7 @@ public sealed partial class ProjectNode : ObservableObject
         AudioRetention.Keep => "Звук хранится в audio\\.",
         AudioRetention.DeleteAfterTranscript => "Звук удаляется, как только фраза записана в текст.",
         _ => "Звук не сохраняется: «Распознать заново» недоступно.",
-    };
+    } + $"\nФраза заканчивается после паузы {Project.Settings.PhrasePauseSeconds:0.0} с.";
 
     public ObservableCollection<SessionNode> Sessions { get; } = [ ];
 

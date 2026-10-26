@@ -4,6 +4,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MicTap.Core;
+using MicTap.Hub;
 using Microsoft.Win32;
 using Serilog;
 
@@ -34,6 +35,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _refreshingDevices;
     private bool _quietLanguage = true; // no tone and no mark while the language follows the selected project
     private bool _followRecording;
+    private AgentsState? _agentsState;
 
     [ObservableProperty]
     private string _rootFolder = Core.Projects.DefaultRoot;
@@ -98,6 +100,12 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(LanguageText), nameof(TrayToolTip))]
     private string _language = "ru";
 
+    [ObservableProperty]
+    private string _hubText = "запуск…";
+
+    [ObservableProperty]
+    private bool _hubWarning;
+
     public MainViewModel(
         SettingsStore settingsStore, AppSettings settings, Recorder recorder, TranscriptViewModel transcript, string appVersion, ILogger logger)
     {
@@ -139,6 +147,9 @@ public sealed partial class MainViewModel : ObservableObject
     public ObservableCollection<LanguageOption> Languages { get; } = [];
 
     public TranscriptViewModel Transcript { get; }
+
+    /// <summary>Agents of the shown session: waiting, thinking or gone.</summary>
+    public ObservableCollection<AgentRow> Agents { get; } = [];
 
     public bool CanEditSettings => !IsRecording && !IsStarting;
 
@@ -182,6 +193,26 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public Task StopRecordingAsync() => _recorder.StopAsync();
+
+    /// <summary>The agents hub: its presence feeds the agents list, refreshed every second for «думает · N с».</summary>
+    public void UseHub(AgentsState state)
+    {
+        _agentsState = state;
+        state.AgentsChanged += (_, _) => _dispatcher.InvokeAsync(RefreshAgents);
+        _ = new DispatcherTimer(TimeSpan.FromSeconds(1), DispatcherPriority.Background, (_, _) => RefreshAgents(), _dispatcher); // runs while the dispatcher lives
+    }
+
+    public void HubStarted(int port)
+    {
+        HubText = $"127.0.0.1:{port}";
+        HubWarning = false;
+    }
+
+    public void HubFailed(string reason)
+    {
+        HubText = $"выключен: {reason}";
+        HubWarning = true;
+    }
 
     /// <summary>Hotkey: the next language of the project, round and round.</summary>
     public void ToggleLanguage()
@@ -282,6 +313,11 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         RootFolder = dialog.FolderName;
+        if (_agentsState is not null)
+        {
+            _agentsState.Root = dialog.FolderName;
+        }
+
         Save(_settings with { RootFolder = dialog.FolderName });
         ShowMessage("Папка проектов выбрана.", isError: false);
         LoadProjects();
@@ -368,6 +404,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         Transcript.ShowSession(value);
+        RefreshAgents();
     }
 
     partial void OnSelectedDeviceChanged(AudioDevice? value)
@@ -586,6 +623,26 @@ public sealed partial class MainViewModel : ObservableObject
             RecordingFailed?.Invoke(this, text);
         });
 
+    private void RefreshAgents()
+    {
+        IReadOnlyList<AgentPresence> agents = _agentsState is null || SelectedSession is null ? [] : _agentsState.AgentsOf(SelectedSession);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        AgentRow[] rows = [.. agents.Select(a => new AgentRow(a.Name, a.State switch
+        {
+            AgentState.Waiting => "ждёт",
+            AgentState.Thinking => $"думает · {(int)(now - a.LastSeen).TotalSeconds} с",
+            _ => "ушёл",
+        }))];
+        if (!rows.SequenceEqual(Agents))
+        {
+            Agents.Clear();
+            foreach (AgentRow row in rows)
+            {
+                Agents.Add(row);
+            }
+        }
+    }
+
     private void Save(AppSettings settings)
     {
         _settingsStore.Save(settings);
@@ -631,3 +688,6 @@ public sealed partial class MainViewModel : ObservableObject
 }
 
 public sealed record LanguageOption(string Code, string Name);
+
+/// <summary>An agent of the shown session and what it is doing, in words.</summary>
+public sealed record AgentRow(string Name, string State);

@@ -38,6 +38,7 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal(60, root.GetProperty("chunkSeconds").GetInt32());
         Assert.Equal("Ctrl+Alt+L", root.GetProperty("hotkeys").GetProperty("toggleLanguage").GetString());
         Assert.Equal("Ctrl+Alt+R", root.GetProperty("hotkeys").GetProperty("toggleRecording").GetString());
+        Assert.Equal(47310, root.GetProperty("hubPort").GetInt32());
         Assert.Contains("\"Ctrl+Alt+L\"", File.ReadAllText(store.FilePath)); // editable by hand, not "Ctrl+Alt..."
     }
 

@@ -102,6 +102,9 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     public ObservableCollection<TranscriptItem> Items { get; } = [];
 
+    /// <summary>Recognized segments and their sinks, for the agents hub.</summary>
+    public TranscriptionPipeline Pipeline => _pipeline;
+
     /// <summary>Loads (and on first start downloads) the models. Recording works meanwhile; its speech waits in the queue.</summary>
     public void Start()
     {

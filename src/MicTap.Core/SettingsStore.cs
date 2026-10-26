@@ -47,5 +47,10 @@ public sealed class SettingsStore(string filePath)
             throw new InvalidDataException(
                 $"Settings file {FilePath}: chunkSeconds must be 1..{AppSettings.MaxChunkSeconds}, got {settings.ChunkSeconds}.");
         }
+
+        if (settings.HubPort is < 1 or > 65535)
+        {
+            throw new InvalidDataException($"Settings file {FilePath}: hubPort must be 1..65535, got {settings.HubPort}.");
+        }
     }
 }

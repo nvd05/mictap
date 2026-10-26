@@ -8,6 +8,8 @@ public sealed record AppSettings
     /// <summary>Upper bound that keeps a chunk far below the 4 GB WAV limit.</summary>
     public const int MaxChunkSeconds = 3600;
 
+    public const int DefaultHubPort = 47310;
+
     /// <summary>Folder of projects; null means <see cref="Projects.DefaultRoot"/>.</summary>
     public string? RootFolder { get; init; }
 
@@ -17,6 +19,9 @@ public sealed record AppSettings
     public int ChunkSeconds { get; init; } = DefaultChunkSeconds;
 
     public HotkeySettings Hotkeys { get; init; } = new();
+
+    /// <summary>Port of the agents hub on 127.0.0.1; the mictap CLI reads it from here.</summary>
+    public int HubPort { get; init; } = DefaultHubPort;
 }
 
 /// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>

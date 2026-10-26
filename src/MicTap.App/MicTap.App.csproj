@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MicTap.Core\MicTap.Core.csproj" />
+    <ProjectReference Include="..\MicTap.Hub\MicTap.Hub.csproj" />
   </ItemGroup>
 
   <ItemGroup>

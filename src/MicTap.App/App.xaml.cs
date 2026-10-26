@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Threading;
 using MicTap.Core;
+using MicTap.Hub;
 using Serilog;
 
 namespace MicTap.App;
@@ -11,6 +12,7 @@ public partial class App : Application
     private Mutex? _singleInstance;
     private TranscriptViewModel? _transcript;
     private GlobalHotkeys? _hotkeys;
+    private HubHost? _hub;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -38,15 +40,22 @@ public partial class App : Application
         Log.Information("mictap {Version} started", version);
 
         var settingsStore = new SettingsStore(AppPaths.SettingsFile);
+        AppSettings settings = settingsStore.Load();
         var recorder = new Recorder(Log.Logger, TimeProvider.System);
         _transcript = new TranscriptViewModel(
             new ModelStore(AppPaths.ModelsFolder, ModelSpec.LargeV3Turbo), new ModelStore(AppPaths.ModelsFolder, ModelSpec.SileroVad),
             recorder, Log.Logger);
-        var viewModel = new MainViewModel(settingsStore, settingsStore.Load(), recorder, _transcript, version, Log.Logger);
+        var viewModel = new MainViewModel(settingsStore, settings, recorder, _transcript, version, Log.Logger);
         MainWindow = new MainWindow(viewModel);
         MainWindow.Show();
         viewModel.Initialize();
         _transcript.Start();
+
+        TranscriptionPipeline pipeline = _transcript.Pipeline;
+        var agents = new AgentsState(viewModel.RootFolder, session => pipeline.SinkFor(session).Lines, TimeProvider.System, version);
+        agents.Attach(recorder, pipeline);
+        viewModel.UseHub(agents);
+        _ = StartHubAsync(settings.HubPort, agents, viewModel);
 
         _hotkeys = new GlobalHotkeys();
         HotkeySettings keys = viewModel.Hotkeys;
@@ -61,6 +70,7 @@ public partial class App : Application
         if (_singleInstance is not null)
         {
             _hotkeys?.Dispose();
+            _hub?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
             _transcript?.Dispose();
             Log.Information("mictap exited");
             Log.CloseAndFlush();
@@ -69,6 +79,22 @@ public partial class App : Application
         }
 
         base.OnExit(e);
+    }
+
+    /// <summary>The hub for agents; a taken port leaves the app working with the hub off.</summary>
+    private async Task StartHubAsync(int port, AgentsState agents, MainViewModel viewModel)
+    {
+        try
+        {
+            _hub = await HubHost.StartAsync(port, agents);
+            Log.Information("Agents hub listens on 127.0.0.1:{Port}", _hub.Port);
+            viewModel.HubStarted(_hub.Port);
+        }
+        catch (IOException ex)
+        {
+            Log.Warning(ex, "Agents hub is off: port {Port} is taken", port);
+            viewModel.HubFailed($"порт {port} занят");
+        }
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

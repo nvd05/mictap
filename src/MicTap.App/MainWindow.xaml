@@ -130,7 +130,7 @@
             <Border DockPanel.Dock="Bottom" Padding="24,12" BorderThickness="0,1,0,0"
                     Background="{DynamicResource MaterialDesign.Brush.Card.Background}"
                     BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">
-                <UniformGrid Columns="5">
+                <UniformGrid Columns="6">
                     <StackPanel>
                         <TextBlock Text="СЕССИЯ" Opacity="0.6" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
                         <TextBlock Margin="0,2,0,0" Text="{Binding SessionText}"
@@ -150,6 +150,20 @@
                         <TextBlock Text="ЯЗЫК" Opacity="0.6" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
                         <TextBlock Margin="0,2,0,0" Text="{Binding LanguageText}" AutomationProperties.Name="Язык"
                                    Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                    </StackPanel>
+                    <StackPanel ToolTip="Хаб для агентов: команда mictap в терминале подключается сюда">
+                        <TextBlock Text="ХАБ" Opacity="0.6" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                        <TextBlock Margin="0,2,0,0" Text="{Binding HubText}" AutomationProperties.Name="Хаб">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource MaterialDesignTitleSmallTextBlock}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding HubWarning}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource RecordBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
                     </StackPanel>
                     <StackPanel ToolTip="Где работает распознавание: CUDA (видеокарта) или CPU">
                         <TextBlock Text="РАСПОЗНАВАНИЕ" Opacity="0.6" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
@@ -397,6 +411,29 @@
                                 </Style>
                             </TextBlock.Style>
                         </TextBlock>
+
+                        <!-- Agents reading this session through the hub. -->
+                        <ItemsControl DockPanel.Dock="Bottom" Margin="0,8,0,0" AutomationProperties.Name="Агенты"
+                                      ItemsSource="{Binding DataContext.Agents, RelativeSource={RelativeSource AncestorType=Window}}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:AgentRow}">
+                                    <Border Margin="0,0,8,4" Padding="8,3" CornerRadius="12" Background="{StaticResource InfoContainerBrush}">
+                                        <StackPanel Orientation="Horizontal">
+                                            <materialDesign:PackIcon Kind="RobotOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                            <TextBlock Margin="6,0,0,0" Text="{Binding Name}" VerticalAlignment="Center"
+                                                       Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                                            <TextBlock Margin="6,0,0,0" Text="{Binding State}" Opacity="0.7" VerticalAlignment="Center"
+                                                       Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
 
                         <Separator DockPanel.Dock="Top" Margin="0,12" />
 

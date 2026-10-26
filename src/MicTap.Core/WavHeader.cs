@@ -29,19 +29,19 @@ public static class WavHeader
     /// <summary>Header of an open chunk: RIFF and data sizes are zero.</summary>
     public static byte[] CreateOpen(PcmFormat format)
     {
-        var header = new byte[Size];
+        var header = new byte[ Size ];
         Span<byte> span = header;
         "RIFF"u8.CopyTo(span);
-        "WAVE"u8.CopyTo(span[8..]);
-        "fmt "u8.CopyTo(span[12..]);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[16..], 16);
-        BinaryPrimitives.WriteUInt16LittleEndian(span[20..], 1); // WAVE_FORMAT_PCM
-        BinaryPrimitives.WriteUInt16LittleEndian(span[22..], (ushort)format.Channels);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[24..], (uint)format.SampleRate);
-        BinaryPrimitives.WriteUInt32LittleEndian(span[28..], (uint)format.ByteRate);
-        BinaryPrimitives.WriteUInt16LittleEndian(span[32..], (ushort)format.BlockAlign);
-        BinaryPrimitives.WriteUInt16LittleEndian(span[34..], (ushort)format.BitsPerSample);
-        "data"u8.CopyTo(span[36..]);
+        "WAVE"u8.CopyTo(span[ 8.. ]);
+        "fmt "u8.CopyTo(span[ 12.. ]);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[ 16.. ], 16);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[ 20.. ], 1); // WAVE_FORMAT_PCM
+        BinaryPrimitives.WriteUInt16LittleEndian(span[ 22.. ], (ushort)format.Channels);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[ 24.. ], (uint)format.SampleRate);
+        BinaryPrimitives.WriteUInt32LittleEndian(span[ 28.. ], (uint)format.ByteRate);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[ 32.. ], (ushort)format.BlockAlign);
+        BinaryPrimitives.WriteUInt16LittleEndian(span[ 34.. ], (ushort)format.BitsPerSample);
+        "data"u8.CopyTo(span[ 36.. ]);
         return header;
     }
 
@@ -50,7 +50,7 @@ public static class WavHeader
     {
         ArgumentOutOfRangeException.ThrowIfNegative(dataSize);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(dataSize, MaxDataSize);
-        Span<byte> value = stackalloc byte[4];
+        Span<byte> value = stackalloc byte[ 4 ];
         BinaryPrimitives.WriteUInt32LittleEndian(value, (uint)(dataSize + Size - 8));
         stream.Position = RiffSizeOffset;
         stream.Write(value);
@@ -71,21 +71,21 @@ public static class WavHeader
             return WavRepairResult.NotRecognized;
         }
 
-        Span<byte> header = stackalloc byte[Size];
+        Span<byte> header = stackalloc byte[ Size ];
         stream.ReadExactly(header);
         if (!IsCanonical(header))
         {
             return WavRepairResult.NotRecognized;
         }
 
-        uint riffSize = BinaryPrimitives.ReadUInt32LittleEndian(header[RiffSizeOffset..]);
-        uint dataSize = BinaryPrimitives.ReadUInt32LittleEndian(header[DataSizeOffset..]);
+        uint riffSize = BinaryPrimitives.ReadUInt32LittleEndian(header[ RiffSizeOffset.. ]);
+        uint dataSize = BinaryPrimitives.ReadUInt32LittleEndian(header[ DataSizeOffset.. ]);
         if (riffSize != 0 && dataSize != 0)
         {
             return WavRepairResult.Intact;
         }
 
-        int blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(header[32..]);
+        int blockAlign = BinaryPrimitives.ReadUInt16LittleEndian(header[ 32.. ]);
         long audio = stream.Length - Size;
         audio -= audio % blockAlign;
         if (riffSize == audio + Size - 8 && dataSize == audio)
@@ -100,11 +100,11 @@ public static class WavHeader
     }
 
     private static bool IsCanonical(ReadOnlySpan<byte> header) =>
-        header[..4].SequenceEqual("RIFF"u8)
-        && header[8..12].SequenceEqual("WAVE"u8)
-        && header[12..16].SequenceEqual("fmt "u8)
-        && BinaryPrimitives.ReadUInt32LittleEndian(header[16..]) == 16
-        && BinaryPrimitives.ReadUInt16LittleEndian(header[20..]) == 1
-        && BinaryPrimitives.ReadUInt16LittleEndian(header[32..]) != 0
-        && header[36..40].SequenceEqual("data"u8);
+        header[ ..4 ].SequenceEqual("RIFF"u8)
+        && header[ 8..12 ].SequenceEqual("WAVE"u8)
+        && header[ 12..16 ].SequenceEqual("fmt "u8)
+        && BinaryPrimitives.ReadUInt32LittleEndian(header[ 16.. ]) == 16
+        && BinaryPrimitives.ReadUInt16LittleEndian(header[ 20.. ]) == 1
+        && BinaryPrimitives.ReadUInt16LittleEndian(header[ 32.. ]) != 0
+        && header[ 36..40 ].SequenceEqual("data"u8);
 }

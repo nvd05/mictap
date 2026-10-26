@@ -112,7 +112,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _pipeline.Attach(recorder);
     }
 
-    public ObservableCollection<TranscriptItem> Items { get; } = [ ];
+    public ObservableCollection<TranscriptItem> Items { get; } = [];
 
     /// <summary>The session whose text <see cref="Items"/> holds.</summary>
     public SessionInfo? ShownSession => _session;

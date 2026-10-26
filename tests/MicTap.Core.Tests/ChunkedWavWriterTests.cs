@@ -17,7 +17,7 @@ public sealed class ChunkedWavWriterTests : IDisposable
         {
             // One write spanning two boundaries, then uneven pieces that straddle the next one.
             writer.Write(pcm.AsSpan(0, 70000));
-            foreach (byte[] piece in SyntheticPcm.Split(pcm[70000..], 3200, 2468, 6, 4000))
+            foreach (byte[] piece in SyntheticPcm.Split(pcm[ 70000.. ], 3200, 2468, 6, 4000))
             {
                 writer.Write(piece);
             }

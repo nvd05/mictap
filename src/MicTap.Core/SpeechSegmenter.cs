@@ -24,8 +24,8 @@ public sealed class SpeechSegmenter
 
     private readonly SpeechDetector _detect;
     private readonly int _pauseSamples;
-    private readonly List<(long Position, string Language)> _marks = [ ];
-    private float[] _pending = new float[Rate * 40];
+    private readonly List<(long Position, string Language)> _marks = [];
+    private float[] _pending = new float[ Rate * 40 ];
     private int _count;
     private long _pendingStart;
     private long _detectedAt;
@@ -54,12 +54,12 @@ public sealed class SpeechSegmenter
     public IReadOnlyList<SpeechSegment> Add(ReadOnlySpan<float> samples)
     {
         var output = new List<SpeechSegment>();
-        while (_marks.Count > 0 && _marks[0].Position < ReceivedSamples + samples.Length)
+        while (_marks.Count > 0 && _marks[ 0 ].Position < ReceivedSamples + samples.Length)
         {
-            int before = (int)Math.Max(0, _marks[0].Position - ReceivedSamples);
-            Append(samples[..before]);
-            samples = samples[before..];
-            string language = _marks[0].Language;
+            int before = (int)Math.Max(0, _marks[ 0 ].Position - ReceivedSamples);
+            Append(samples[ ..before ]);
+            samples = samples[ before.. ];
+            string language = _marks[ 0 ].Language;
             _marks.RemoveAt(0);
             CutAll(output, _count, language);
         }
@@ -181,7 +181,7 @@ public sealed class SpeechSegmenter
         {
             int to = Math.Min(end, from + MaxSegmentSamples);
             output.Add(new SpeechSegment(
-                FromSamples(_pendingStart + from), FromSamples(_pendingStart + to), Language, window[from..to]));
+                FromSamples(_pendingStart + from), FromSamples(_pendingStart + to), Language, window[ from..to ]));
         }
     }
 

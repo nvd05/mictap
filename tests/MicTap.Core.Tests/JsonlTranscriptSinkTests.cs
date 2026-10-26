@@ -53,7 +53,7 @@ public sealed class JsonlTranscriptSinkTests : IDisposable
         var reopened = new JsonlTranscriptSink(_temp.Path);
         TranscriptLine next = reopened.Append(2, 3, "ja", "次");
 
-        Assert.Equal(new TranscriptLine(1, 0, 1.5, "ru", "стало", Edited: true), reopened.Lines[0]);
+        Assert.Equal(new TranscriptLine(1, 0, 1.5, "ru", "стало", Edited: true), reopened.Lines[ 0 ]);
         Assert.Equal(2, next.Seq);
     }
 

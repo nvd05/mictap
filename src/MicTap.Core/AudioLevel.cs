@@ -13,7 +13,7 @@ public static class AudioLevel
         int peak = 0;
         for (int i = 0; i + 1 < pcm16.Length; i += 2)
         {
-            peak = Math.Max(peak, Math.Abs((int)BinaryPrimitives.ReadInt16LittleEndian(pcm16[i..])));
+            peak = Math.Max(peak, Math.Abs((int)BinaryPrimitives.ReadInt16LittleEndian(pcm16[ i.. ])));
         }
 
         return peak / 32768.0;

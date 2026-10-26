@@ -7,7 +7,7 @@ namespace MicTap.Hub;
 internal sealed class AgentsHub(AgentsState state) : Microsoft.AspNetCore.SignalR.Hub
 {
     private string Agent =>
-        Context.GetHttpContext()?.Request.Query[AgentHub.AgentQuery].ToString() is { Length: > 0 } name ? name : "agent";
+        Context.GetHttpContext()?.Request.Query[ AgentHub.AgentQuery ].ToString() is { Length: > 0 } name ? name : "agent";
 
     public override Task OnConnectedAsync()
     {

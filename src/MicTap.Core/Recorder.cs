@@ -451,7 +451,7 @@ public sealed class Recorder
             IReadOnlyList<SessionStart> starts = session.Meta.Starts;
             session.Meta = session.Meta with
             {
-                Starts = [ .. starts.Take(starts.Count - 1), starts[^1] with { Duration = Math.Round(recorded.TotalSeconds, 3) } ],
+                Starts = [ .. starts.Take(starts.Count - 1), starts[ ^1 ] with { Duration = Math.Round(recorded.TotalSeconds, 3) } ],
             };
             try
             {

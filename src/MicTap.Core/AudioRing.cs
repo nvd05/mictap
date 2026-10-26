@@ -8,7 +8,7 @@ namespace MicTap.Core;
 /// </summary>
 public sealed class AudioRing(int capacity)
 {
-    private readonly float[] _samples = new float[capacity];
+    private readonly float[] _samples = new float[ capacity ];
     private int _next;
 
     /// <summary>Samples written since creation or the last <see cref="Clear"/>, including overwritten ones.</summary>
@@ -22,7 +22,7 @@ public sealed class AudioRing(int capacity)
     {
         for (int i = 0; i + 1 < pcm16.Length; i += 2)
         {
-            _samples[_next] = BinaryPrimitives.ReadInt16LittleEndian(pcm16[i..]) / 32768f;
+            _samples[ _next ] = BinaryPrimitives.ReadInt16LittleEndian(pcm16[ i.. ]) / 32768f;
             _next = (_next + 1) % _samples.Length;
         }
 
@@ -32,7 +32,7 @@ public sealed class AudioRing(int capacity)
     /// <summary>The kept samples, oldest first.</summary>
     public float[] Snapshot()
     {
-        var copy = new float[Count];
+        var copy = new float[ Count ];
         int start = Count < _samples.Length ? 0 : _next;
         int tail = Math.Min(Count, _samples.Length - start);
         Array.Copy(_samples, start, copy, 0, tail);

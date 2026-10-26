@@ -53,12 +53,12 @@ public static class MicTapCli
             // "0.5" whatever the Windows locale: agents write numbers the invariant way.
             CustomParser = result =>
             {
-                if (double.TryParse(result.Tokens[0].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds))
+                if (double.TryParse(result.Tokens[ 0 ].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out double seconds))
                 {
                     return seconds;
                 }
 
-                result.AddError($"--max-wait: '{result.Tokens[0].Value}' is not a number of seconds.");
+                result.AddError($"--max-wait: '{result.Tokens[ 0 ].Value}' is not a number of seconds.");
                 return null;
             },
         };
@@ -160,7 +160,7 @@ public static class MicTapCli
         }
         catch (HubException ex) when (ex.Message.Contains(AgentHub.NotFound, StringComparison.Ordinal))
         {
-            await error.WriteLineAsync(ex.Message[(ex.Message.IndexOf(AgentHub.NotFound, StringComparison.Ordinal) + AgentHub.NotFound.Length)..].Trim());
+            await error.WriteLineAsync(ex.Message[ (ex.Message.IndexOf(AgentHub.NotFound, StringComparison.Ordinal) + AgentHub.NotFound.Length).. ].Trim());
             return NotFound;
         }
         catch (HubException ex)

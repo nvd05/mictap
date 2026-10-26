@@ -71,9 +71,9 @@ public sealed record Hotkey(HotkeyModifiers Modifiers, int VirtualKey, string Te
     private static int? ParseKey(string key)
     {
         string upper = key.ToUpperInvariant();
-        if (upper.Length == 1 && upper[0] is (>= 'A' and <= 'Z') or (>= '0' and <= '9'))
+        if (upper.Length == 1 && upper[ 0 ] is (>= 'A' and <= 'Z') or (>= '0' and <= '9'))
         {
-            return upper[0]; // VK codes of letters and digits are their ASCII codes
+            return upper[ 0 ]; // VK codes of letters and digits are their ASCII codes
         }
 
         if (upper == "SPACE")
@@ -81,7 +81,7 @@ public sealed record Hotkey(HotkeyModifiers Modifiers, int VirtualKey, string Te
             return VkSpace;
         }
 
-        if (upper.Length > 1 && upper[0] == 'F' && int.TryParse(upper[1..], out int number) && number is >= 1 and <= 24)
+        if (upper.Length > 1 && upper[ 0 ] == 'F' && int.TryParse(upper[ 1.. ], out int number) && number is >= 1 and <= 24)
         {
             return 0x70 + number - 1; // VK_F1
         }

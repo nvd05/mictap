@@ -56,7 +56,7 @@ public sealed class WaitTests : IAsyncLifetime
 
         Assert.Equal("first_event", result.Reason);
         Assert.Equal([ 1 ], result.Seqs);
-        Assert.Equal("はじめまして", result.Json.GetProperty("segments")[0].GetProperty("text").GetString());
+        Assert.Equal("はじめまして", result.Json.GetProperty("segments")[ 0 ].GetProperty("text").GetString());
     }
 
     [Fact]
@@ -168,9 +168,9 @@ public sealed class WaitTests : IAsyncLifetime
 
         Assert.Equal("Пара 1", status.Json.GetProperty("recording").GetProperty("session").GetString());
         Assert.Equal("ja", status.Json.GetProperty("recording").GetProperty("lang_now").GetString());
-        Assert.Equal("Японский", projects.Json[0].GetProperty("name").GetString());
-        Assert.Equal(1, projects.Json[0].GetProperty("sessions").GetInt32());
-        Assert.Equal(2, sessions.Json[0].GetProperty("lines").GetInt32());
+        Assert.Equal("Японский", projects.Json[ 0 ].GetProperty("name").GetString());
+        Assert.Equal(1, projects.Json[ 0 ].GetProperty("sessions").GetInt32());
+        Assert.Equal(2, sessions.Json[ 0 ].GetProperty("lines").GetInt32());
         Assert.Equal([ 2 ], tail.Json.EnumerateArray().Select(s => s.GetProperty("seq").GetInt32()));
     }
 

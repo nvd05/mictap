@@ -25,7 +25,7 @@ internal sealed class FakeAudioSource : IAudioSource
     /// <summary>Delivers <paramref name="pcm"/> inside a larger buffer, as NAudio does, so Count must be honored.</summary>
     public void Push(byte[] pcm)
     {
-        var buffer = new byte[pcm.Length + 64];
+        var buffer = new byte[ pcm.Length + 64 ];
         pcm.CopyTo(buffer, 0);
         buffer.AsSpan(pcm.Length).Fill(0xEE);
         DataAvailable?.Invoke(this, new AudioBuffer(buffer, pcm.Length));

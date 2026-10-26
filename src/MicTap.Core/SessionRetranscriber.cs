@@ -24,7 +24,7 @@ public sealed class SessionRetranscriber(
         SessionMeta meta = SessionMeta.Read(session, languageOfSchema1);
         string[] chunks = Directory.Exists(session.AudioFolder)
             ? [ .. Directory.EnumerateFiles(session.AudioFolder, "*.wav").OrderBy(ChunkNumber) ]
-            : [ ];
+            : [];
         if (chunks.Length == 0)
         {
             throw new InvalidOperationException($"В {session.AudioFolder} нет звука — распознавать заново нечего.");
@@ -40,7 +40,7 @@ public sealed class SessionRetranscriber(
 
         _logger.Information("Recognizing {Session} again from {Chunks} chunks; old transcript kept as {Backup}", session.Name, chunks.Length, backup);
         var sink = new JsonlTranscriptSink(session.Folder);
-        var segmenter = new SpeechSegmenter(createDetector(), meta.LanguageMarks[0].Lang, pause: pause);
+        var segmenter = new SpeechSegmenter(createDetector(), meta.LanguageMarks[ 0 ].Lang, pause: pause);
         foreach (LanguageMark mark in meta.LanguageMarks.Skip(1))
         {
             segmenter.Mark(TimeSpan.FromSeconds(mark.At), mark.Lang); // ahead of the audio: applied when it gets there

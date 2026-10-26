@@ -50,10 +50,10 @@ public sealed class ChunkedWavWriter : IDisposable
             }
 
             int count = (int)Math.Min(pcm.Length, _chunkBytes - _currentBytes);
-            _current.Write(pcm[..count]);
+            _current.Write(pcm[ ..count ]);
             _currentBytes += count;
             TotalBytes += count;
-            pcm = pcm[count..];
+            pcm = pcm[ count.. ];
         }
     }
 

@@ -17,9 +17,9 @@ internal static class FakeSpeech
                 continue;
             }
 
-            if (spans.Count > 0 && at - spans[^1].End < Rate / 2)
+            if (spans.Count > 0 && at - spans[ ^1 ].End < Rate / 2)
             {
-                spans[^1] = (spans[^1].Start, at + frame);
+                spans[ ^1 ] = (spans[ ^1 ].Start, at + frame);
             }
             else
             {
@@ -33,11 +33,11 @@ internal static class FakeSpeech
     public static float[] Speech(double seconds) =>
         [ .. Enumerable.Range(0, (int)(seconds * Rate)).Select(i => (float)Math.Sin(i * 0.05) * 0.3f + 0.01f) ];
 
-    public static float[] Silence(double seconds) => new float[(int)(seconds * Rate)];
+    public static float[] Silence(double seconds) => new float[ (int)(seconds * Rate) ];
 
     public static byte[] SpeechPcm(double seconds) => SyntheticPcm.Create(TimeSpan.FromSeconds(seconds));
 
-    public static byte[] SilencePcm(double seconds) => new byte[(int)(seconds * Rate) * 2];
+    public static byte[] SilencePcm(double seconds) => new byte[ (int)(seconds * Rate) * 2 ];
 
     private static TimeSpan Time(int samples) => TimeSpan.FromTicks(samples * TimeSpan.TicksPerSecond / Rate);
 }

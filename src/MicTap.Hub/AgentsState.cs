@@ -203,7 +203,7 @@ public sealed class AgentsState
             }
         }
 
-        int toSeq = unread.Count > 0 ? unread[^1].Seq : cursor;
+        int toSeq = unread.Count > 0 ? unread[ ^1 ].Seq : cursor;
         AgentCursors.Write(session, request.Agent, new AgentCursor(
             toSeq, _time.GetUtcNow(), new AgentPolicy(request.MinWords, request.MaxWaitSeconds)));
         Answered(request.Agent, toSeq);
@@ -238,7 +238,7 @@ public sealed class AgentsState
         var agents = new Dictionary<string, AgentPresence>(StringComparer.OrdinalIgnoreCase);
         foreach ((string agent, AgentCursor cursor) in AgentCursors.List(session))
         {
-            agents[agent] = new AgentPresence(agent, StateAt(connected: false, cursor.LastSeen), cursor.LastSeen);
+            agents[ agent ] = new AgentPresence(agent, StateAt(connected: false, cursor.LastSeen), cursor.LastSeen);
         }
 
         lock (_gate)
@@ -246,7 +246,7 @@ public sealed class AgentsState
             foreach ((string agent, Presence presence) in _agents.Where(a => a.Value.Session == session))
             {
                 bool connected = presence.Connections.Count > 0;
-                agents[agent] = new AgentPresence(agent, StateAt(connected, presence.LastSeen), presence.LastSeen);
+                agents[ agent ] = new AgentPresence(agent, StateAt(connected, presence.LastSeen), presence.LastSeen);
             }
         }
 
@@ -304,7 +304,7 @@ public sealed class AgentsState
         if (!_agents.TryGetValue(agent, out Presence? presence))
         {
             presence = new Presence { LastSeen = _time.GetUtcNow() };
-            _agents[agent] = presence;
+            _agents[ agent ] = presence;
         }
 
         return presence;
@@ -317,7 +317,7 @@ public sealed class AgentsState
             if (!_changes.TryGetValue(sessionFolder, out TaskCompletionSource? change))
             {
                 change = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-                _changes[sessionFolder] = change;
+                _changes[ sessionFolder ] = change;
             }
 
             return change.Task;
@@ -342,7 +342,7 @@ public sealed class AgentsState
             }
         }
 
-        return File.Exists(session.MetaFile) ? SessionMeta.Read(session, "ru").LanguageMarks[^1].Lang : null;
+        return File.Exists(session.MetaFile) ? SessionMeta.Read(session, "ru").LanguageMarks[ ^1 ].Lang : null;
     }
 
     /// <summary>
@@ -376,7 +376,7 @@ public sealed class AgentsState
             .ToList();
         return matches.Count switch
         {
-            1 => matches[0],
+            1 => matches[ 0 ],
             0 => throw new HubException($"{AgentHub.NotFound} no session '{session}'{(project is null ? "" : $" in project '{project}'")}"),
             _ => throw new HubException(
                 $"{AgentHub.NotFound} session '{session}' is in several projects ({string.Join(", ", matches.Select(m => m.Project.Name))}); name --project"),
@@ -408,7 +408,7 @@ public sealed class AgentsState
 
     private sealed class Presence
     {
-        public readonly HashSet<string> Connections = [ ];
+        public readonly HashSet<string> Connections = [];
         public string Project = "";
         public SessionInfo? Session;
         public DateTimeOffset LastSeen;

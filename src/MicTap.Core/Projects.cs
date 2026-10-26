@@ -38,7 +38,7 @@ public sealed record ProjectSettings(
     public int SchemaVersion => CurrentSchemaVersion;
 
     [JsonIgnore]
-    public string DefaultLanguage => Languages[0];
+    public string DefaultLanguage => Languages[ 0 ];
 
     [JsonIgnore]
     public TimeSpan PhrasePause => TimeSpan.FromSeconds(PhrasePauseSeconds);
@@ -63,7 +63,7 @@ public static partial class Projects
     /// <summary>Projects under <paramref name="root"/>: subfolders with project.json, by name. Other folders are ignored.</summary>
     public static IReadOnlyList<ProjectInfo> List(string root) =>
         !Directory.Exists(root)
-            ? [ ]
+            ? []
             :
             [
                 .. Directory.EnumerateDirectories(root)

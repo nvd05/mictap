@@ -12,7 +12,7 @@ internal static class WavFiles
         using var reader = new WaveFileReader(path);
         Assert.Equal(new WaveFormat(16000, 16, 1), reader.WaveFormat);
         Assert.Equal(new FileInfo(path).Length - WavHeader.Size, reader.Length);
-        var audio = new byte[reader.Length];
+        var audio = new byte[ reader.Length ];
         reader.ReadExactly(audio);
         return audio;
     }
@@ -22,7 +22,7 @@ internal static class WavFiles
     /// <summary>RIFF and data sizes as stored in the header; readable while the writer keeps the file open.</summary>
     public static (uint Riff, uint Data) HeaderSizes(string path)
     {
-        byte[] header = new byte[WavHeader.Size];
+        byte[] header = new byte[ WavHeader.Size ];
         using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
         {
             stream.ReadExactly(header);

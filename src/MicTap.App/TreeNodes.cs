@@ -36,7 +36,7 @@ public sealed partial class ProjectNode : ObservableObject
         _ => "Звук не сохраняется: «Распознать заново» недоступно.",
     } + $"\nФраза заканчивается после паузы {Project.Settings.PhrasePauseSeconds:0.0} с.";
 
-    public ObservableCollection<SessionNode> Sessions { get; } = [ ];
+    public ObservableCollection<SessionNode> Sessions { get; } = [];
 
     /// <summary>The project can be folded: hovering it shows a chevron instead of the folder.</summary>
     public bool HasSessions => Sessions.Count > 0;

@@ -23,9 +23,9 @@ public static class WavSamples
             if (tag == "fmt ")
             {
                 format = new PcmFormat(
-                    BinaryPrimitives.ReadInt32LittleEndian(body[4..]),
-                    BinaryPrimitives.ReadInt16LittleEndian(body[2..]),
-                    BinaryPrimitives.ReadInt16LittleEndian(body[14..]));
+                    BinaryPrimitives.ReadInt32LittleEndian(body[ 4.. ]),
+                    BinaryPrimitives.ReadInt16LittleEndian(body[ 2.. ]),
+                    BinaryPrimitives.ReadInt16LittleEndian(body[ 14.. ]));
             }
             else if (tag == "data")
             {
@@ -46,10 +46,10 @@ public static class WavSamples
     /// <summary>16-bit little-endian PCM as floats, -1..1.</summary>
     public static float[] FromPcm16(ReadOnlySpan<byte> pcm)
     {
-        var samples = new float[pcm.Length / 2];
+        var samples = new float[ pcm.Length / 2 ];
         for (int i = 0; i < samples.Length; i++)
         {
-            samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm[(i * 2)..]) / 32768f;
+            samples[ i ] = BinaryPrimitives.ReadInt16LittleEndian(pcm[ (i * 2).. ]) / 32768f;
         }
 
         return samples;

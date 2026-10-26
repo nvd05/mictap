@@ -21,7 +21,7 @@ public sealed class ModelStoreTests : IDisposable
 
         Assert.True(store.IsReady);
         Assert.Equal(Model, File.ReadAllBytes(store.ModelPath));
-        Assert.Equal(1.0, progress[^1]);
+        Assert.Equal(1.0, progress[ ^1 ]);
         Assert.Equal(progress.Order(), progress);
         Assert.False(File.Exists(store.ModelPath + ".part"));
     }
@@ -30,11 +30,11 @@ public sealed class ModelStoreTests : IDisposable
     public async Task Corrupted_download_is_rejected_and_leaves_no_model()
     {
         byte[] corrupted = Model.ToArray();
-        corrupted[1234] ^= 0xFF;
+        corrupted[ 1234 ] ^= 0xFF;
         var store = new ModelStore(_temp.Path, SpecFor(Model));
 
         var error = await Assert.ThrowsAsync<InvalidDataException>(
-            () => store.DownloadAsync(Serving(corrupted), new SyncProgress([ ]), CancellationToken.None));
+            () => store.DownloadAsync(Serving(corrupted), new SyncProgress([]), CancellationToken.None));
 
         Assert.Contains("SHA-256", error.Message);
         Assert.False(store.IsReady);
@@ -49,7 +49,7 @@ public sealed class ModelStoreTests : IDisposable
         using var http = new HttpClient(new Handler(_ => new HttpResponseMessage(HttpStatusCode.NotFound)));
 
         await Assert.ThrowsAsync<HttpRequestException>(
-            () => store.DownloadAsync(http, new SyncProgress([ ]), CancellationToken.None));
+            () => store.DownloadAsync(http, new SyncProgress([]), CancellationToken.None));
 
         Assert.False(File.Exists(store.ModelPath));
     }

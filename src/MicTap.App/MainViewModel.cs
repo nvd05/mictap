@@ -17,16 +17,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     private static readonly Dictionary<string, string> LanguageNames = new()
     {
-        ["ru"] = "Русский",
-        ["ja"] = "日本語",
-        ["en"] = "English",
-        ["de"] = "Deutsch",
-        ["fr"] = "Français",
-        ["es"] = "Español",
-        ["it"] = "Italiano",
-        ["uk"] = "Українська",
-        ["zh"] = "中文",
-        ["ko"] = "한국어",
+        [ "ru" ] = "Русский",
+        [ "ja" ] = "日本語",
+        [ "en" ] = "English",
+        [ "de" ] = "Deutsch",
+        [ "fr" ] = "Français",
+        [ "es" ] = "Español",
+        [ "it" ] = "Italiano",
+        [ "uk" ] = "Українська",
+        [ "zh" ] = "中文",
+        [ "ko" ] = "한국어",
     };
 
     private readonly SettingsStore _settingsStore;
@@ -160,16 +160,16 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The window shows the settings dialog.</summary>
     public event EventHandler? SettingsRequested;
 
-    public ObservableCollection<AudioDevice> Devices { get; } = [ ];
+    public ObservableCollection<AudioDevice> Devices { get; } = [];
 
     /// <summary>Projects with their sessions, for the side tree.</summary>
-    public ObservableCollection<ProjectNode> Projects { get; } = [ ];
+    public ObservableCollection<ProjectNode> Projects { get; } = [];
 
     /// <summary>Languages of the selected project; the first one is its default.</summary>
-    public ObservableCollection<LanguageOption> Languages { get; } = [ ];
+    public ObservableCollection<LanguageOption> Languages { get; } = [];
 
     /// <summary>Agents of the shown session: waiting, thinking or gone.</summary>
-    public ObservableCollection<AgentRow> Agents { get; } = [ ];
+    public ObservableCollection<AgentRow> Agents { get; } = [];
 
     public TranscriptViewModel Transcript { get; }
 
@@ -276,7 +276,7 @@ public sealed partial class MainViewModel : ObservableObject
         if (Languages.Count > 1)
         {
             int index = Languages.ToList().FindIndex(l => l.Code == Language);
-            Language = Languages[(index + 1) % Languages.Count].Code;
+            Language = Languages[ (index + 1) % Languages.Count ].Code;
         }
     }
 
@@ -611,7 +611,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _quietLanguage = true;
         Languages.Clear();
-        foreach (string code in value?.Settings.Languages ?? [ ])
+        foreach (string code in value?.Settings.Languages ?? [])
         {
             Languages.Add(new LanguageOption(code, LanguageNames.GetValueOrDefault(code, code.ToUpperInvariant())));
         }
@@ -739,7 +739,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _logger.Error(ex, "Reading projects in {Root} failed", RootFolder);
             ShowMessage($"Не удалось прочитать проекты в {RootFolder}:\n{ex.Message}", isError: true);
-            projects = [ ];
+            projects = [];
         }
 
         string? keep = select ?? SelectedProject?.Folder;
@@ -832,7 +832,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         AgentRow[] rows = SelectedSession is null
-            ? [ ]
+            ? []
             : [ .. _agentsState.AgentsOf(SelectedSession).Select(a => new AgentRow(a.Name, Describe(a, now))) ];
         if (!rows.SequenceEqual(Agents))
         {
@@ -845,7 +845,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         if (!HubWarning && HubText.StartsWith("127.", StringComparison.Ordinal))
         {
-            string address = HubText.Split(' ')[0];
+            string address = HubText.Split(' ')[ 0 ];
             HubText = connected > 0 ? $"{address} · агентов: {connected}" : address;
         }
     }

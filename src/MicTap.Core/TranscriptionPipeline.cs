@@ -51,7 +51,7 @@ public sealed class TranscriptionPipeline : IDisposable
 
     private readonly CancellationTokenSource _stop = new();
     private readonly Lock _gate = new();
-    private readonly Dictionary<string, JsonlTranscriptSink> _sinks = [ ];
+    private readonly Dictionary<string, JsonlTranscriptSink> _sinks = [];
     private readonly ConcurrentDictionary<string, ChunkJanitor> _janitors = new();
     private LiveLanguage? _liveLanguage;
     private Finished? _finished;
@@ -103,7 +103,7 @@ public sealed class TranscriptionPipeline : IDisposable
     {
         if (started.Retention == AudioRetention.DeleteAfterTranscript)
         {
-            _janitors[started.Session.Folder] = new ChunkJanitor(_logger);
+            _janitors[ started.Session.Folder ] = new ChunkJanitor(_logger);
         }
         else
         {
@@ -143,7 +143,7 @@ public sealed class TranscriptionPipeline : IDisposable
             if (!_sinks.TryGetValue(session.Folder, out JsonlTranscriptSink? sink))
             {
                 sink = new JsonlTranscriptSink(session.Folder);
-                _sinks[session.Folder] = sink;
+                _sinks[ session.Folder ] = sink;
             }
 
             return sink;
@@ -326,7 +326,7 @@ public sealed class TranscriptionPipeline : IDisposable
 
                 recognized = (from, ringEnd);
                 float[] samples = ring.Snapshot();
-                float[] window = samples[(int)Math.Min(samples.Length, (from - ringStart).Ticks * format.SampleRate / TimeSpan.TicksPerSecond)..];
+                float[] window = samples[ (int)Math.Min(samples.Length, (from - ringStart).Ticks * format.SampleRate / TimeSpan.TicksPerSecond).. ];
                 if (window.Length == 0 || detect(window).Count == 0)
                 {
                     LiveTextChanged?.Invoke(this, new LiveTranscript(session, "", Silence: true));

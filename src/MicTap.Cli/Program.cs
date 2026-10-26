@@ -1,4 +1,4 @@
-﻿using System.Globalization;
+using System.Globalization;
 using System.Text.Json;
 using MicTap.Cli;
 using MicTap.Hub.Contracts;

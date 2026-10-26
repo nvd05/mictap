@@ -43,7 +43,7 @@ public sealed class AudioRingTests
     {
         AudioRing ring = AudioRing.For(PcmFormat.Mono16k, TimeSpan.FromSeconds(10));
 
-        ring.Write(new byte[2 * 200_000]);
+        ring.Write(new byte[ 2 * 200_000 ]);
 
         Assert.Equal(160_000, ring.Snapshot().Length);
     }
@@ -63,10 +63,10 @@ public sealed class AudioRingTests
 
     private static byte[] Pcm(params short[] samples)
     {
-        var bytes = new byte[samples.Length * 2];
+        var bytes = new byte[ samples.Length * 2 ];
         for (int i = 0; i < samples.Length; i++)
         {
-            BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2), samples[i]);
+            BinaryPrimitives.WriteInt16LittleEndian(bytes.AsSpan(i * 2), samples[ i ]);
         }
 
         return bytes;

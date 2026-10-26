@@ -12,7 +12,7 @@ internal static class SyntheticPcm
     public static byte[] Create(TimeSpan duration)
     {
         int samples = (int)(PcmFormat.Mono16k.SampleRate * duration.TotalSeconds);
-        var pcm = new byte[samples * 2];
+        var pcm = new byte[ samples * 2 ];
         for (int i = 0; i < samples; i++)
         {
             BinaryPrimitives.WriteInt16LittleEndian(pcm.AsSpan(i * 2), unchecked((short)((i * 7) + 1)));
@@ -27,8 +27,8 @@ internal static class SyntheticPcm
         int offset = 0;
         for (int n = 0; offset < pcm.Length; n++)
         {
-            int size = Math.Min(sizes[n % sizes.Length], pcm.Length - offset);
-            yield return pcm[offset..(offset + size)];
+            int size = Math.Min(sizes[ n % sizes.Length ], pcm.Length - offset);
+            yield return pcm[ offset..(offset + size) ];
             offset += size;
         }
     }

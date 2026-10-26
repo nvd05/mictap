@@ -43,7 +43,7 @@ public sealed class ModelStore(string folder, ModelSpec spec)
         await using (Stream input = await response.Content.ReadAsStreamAsync(cancellation))
         await using (var output = new FileStream(part, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, useAsync: true))
         {
-            byte[] buffer = new byte[1 << 20];
+            byte[] buffer = new byte[ 1 << 20 ];
             int percent = -1;
             int read;
             while ((read = await input.ReadAsync(buffer, cancellation)) > 0)

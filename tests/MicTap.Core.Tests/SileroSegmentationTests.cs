@@ -43,7 +43,7 @@ public sealed class VadFixture : IDisposable
         Model = VoiceActivityModel.Load(Store.ModelPath);
     }
 
-    public float[][] Phrases { get; } = [ ];
+    public float[][] Phrases { get; } = [];
 
     public VoiceActivityModel? Model { get; }
 
@@ -64,7 +64,7 @@ public sealed class VadFixture : IDisposable
     {
         int first = Array.FindIndex(samples, s => Math.Abs(s) > 0.005f);
         int last = Array.FindLastIndex(samples, s => Math.Abs(s) > 0.005f);
-        return samples[first..(last + 1)];
+        return samples[ first..(last + 1) ];
     }
 }
 
@@ -76,13 +76,13 @@ public sealed class SileroSegmentationTests(VadFixture fixture, ITestOutputHelpe
     [VadFact]
     public void Phrases_with_a_second_of_silence_between_them_become_one_segment_each()
     {
-        var audio = new List<float>(new float[Rate]);
+        var audio = new List<float>(new float[ Rate ]);
         var expected = new List<(TimeSpan Start, TimeSpan End)>();
         foreach (float[] phrase in fixture.Phrases)
         {
             expected.Add((Time(audio.Count), Time(audio.Count + phrase.Length)));
             audio.AddRange(phrase);
-            audio.AddRange(new float[Rate]);
+            audio.AddRange(new float[ Rate ]);
         }
 
         var segmenter = new SpeechSegmenter(fixture.Model!.CreateDetector(), "ru");
@@ -103,8 +103,8 @@ public sealed class SileroSegmentationTests(VadFixture fixture, ITestOutputHelpe
         Assert.Equal(expected.Count, segments.Count);
         for (int i = 0; i < expected.Count; i++)
         {
-            Assert.InRange(segments[i].Start, expected[i].Start - Tolerance, expected[i].Start + Tolerance);
-            Assert.InRange(segments[i].End, expected[i].End - Tolerance, expected[i].End + Tolerance);
+            Assert.InRange(segments[ i ].Start, expected[ i ].Start - Tolerance, expected[ i ].Start + Tolerance);
+            Assert.InRange(segments[ i ].End, expected[ i ].End - Tolerance, expected[ i ].End + Tolerance);
         }
     }
 

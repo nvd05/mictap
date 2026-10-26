@@ -11,7 +11,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
     private readonly TempFolder _temp = new();
     private readonly FakeAudioSource _source = new();
     private readonly Recorder _recorder = new(Logger.None, new ManualTimeProvider(new DateTimeOffset(2026, 10, 26, 16, 0, 0, TimeSpan.FromHours(3))));
-    private readonly List<SegmentTranscript> _lines = [ ];
+    private readonly List<SegmentTranscript> _lines = [];
     private TranscriberHost? _host;
 
     public void Dispose()
@@ -86,7 +86,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         await _recorder.StopAsync();
         await Eventually(() => Lines().Length == 1);
 
-        Assert.Equal("после сбоя", Lines()[0].Text);
+        Assert.Equal("после сбоя", Lines()[ 0 ].Text);
         Assert.True(broken.Disposed);
         Assert.Equal(pcm, WavFiles.ReadAudio(WavFiles.Chunks(session.AudioFolder)));
     }
@@ -142,7 +142,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         await Eventually(() => { lock (live) return live.Contains("2000ms"); }); // 1 s of silence and 1 s of speech after the phrase
         await _recorder.StopAsync();
 
-        Assert.Equal("2500ms", Lines()[0].Text);
+        Assert.Equal("2500ms", Lines()[ 0 ].Text);
     }
 
     [Fact]
@@ -155,7 +155,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         await _recorder.StopAsync();
         await Eventually(() => Lines().Length == 1);
 
-        Assert.Equal((0.0, 3.0, "3000ms"), (Lines()[0].Start, Lines()[0].End, Lines()[0].Text));
+        Assert.Equal((0.0, 3.0, "3000ms"), (Lines()[ 0 ].Start, Lines()[ 0 ].End, Lines()[ 0 ].Text));
     }
 
     [Fact]
@@ -182,7 +182,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         await _recorder.StopAsync();
         await Eventually(() => Lines().Length == 1);
 
-        pipeline.SinkFor(session).Edit(Lines()[0].Seq, "исправлено");
+        pipeline.SinkFor(session).Edit(Lines()[ 0 ].Seq, "исправлено");
 
         JsonElement line = JsonDocument.Parse(Assert.Single(File.ReadAllLines(Path.Combine(session.Folder, "transcript.jsonl")))).RootElement;
         Assert.Equal("исправлено", line.GetProperty("text").GetString());

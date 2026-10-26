@@ -33,7 +33,7 @@ public static class SessionFolders
         char[] invalid = Path.GetInvalidFileNameChars();
         string kept = new([ .. name.Where(c => !invalid.Contains(c)) ]);
         kept = string.Join(' ', kept.Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim('.', ' ');
-        return ReservedNames.Contains(kept.Split('.')[0], StringComparer.OrdinalIgnoreCase) ? kept + "_" : kept;
+        return ReservedNames.Contains(kept.Split('.')[ 0 ], StringComparer.OrdinalIgnoreCase) ? kept + "_" : kept;
     }
 
     /// <summary>Creates the session's folders if they are missing; an existing session is kept as it is.</summary>
@@ -49,7 +49,7 @@ public static class SessionFolders
     /// <summary>Sessions of a project, the most recently recorded first (by the time meta.json was last written).</summary>
     public static IReadOnlyList<SessionInfo> List(string projectFolder) =>
         !Directory.Exists(projectFolder)
-            ? [ ]
+            ? []
             :
             [
                 .. Directory.EnumerateDirectories(projectFolder)

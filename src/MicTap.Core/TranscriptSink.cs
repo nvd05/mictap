@@ -36,7 +36,7 @@ public sealed class JsonlTranscriptSink : ITranscriptSink
     private static readonly JsonSerializerOptions Options = new(JsonFiles.Options) { WriteIndented = false };
 
     private readonly Lock _gate = new();
-    private readonly List<TranscriptLine> _lines = [ ];
+    private readonly List<TranscriptLine> _lines = [];
 
     public JsonlTranscriptSink(string sessionFolder)
     {
@@ -86,7 +86,7 @@ public sealed class JsonlTranscriptSink : ITranscriptSink
     {
         lock (_gate)
         {
-            var line = new TranscriptLine(_lines.Count == 0 ? 1 : _lines[^1].Seq + 1, start, end, lang, text, Edited: false);
+            var line = new TranscriptLine(_lines.Count == 0 ? 1 : _lines[ ^1 ].Seq + 1, start, end, lang, text, Edited: false);
             using (var stream = new FileStream(FilePath, FileMode.Append, FileAccess.Write, FileShare.Read))
             {
                 Write(stream, line);
@@ -108,20 +108,20 @@ public sealed class JsonlTranscriptSink : ITranscriptSink
                 throw new ArgumentOutOfRangeException(nameof(seq), seq, $"{FilePath} has no line {seq}.");
             }
 
-            TranscriptLine edited = _lines[index] with { Text = text, Edited = true };
+            TranscriptLine edited = _lines[ index ] with { Text = text, Edited = true };
             string temp = FilePath + ".tmp";
             using (var stream = new FileStream(temp, FileMode.Create, FileAccess.Write, FileShare.None))
             {
                 for (int i = 0; i < _lines.Count; i++)
                 {
-                    Write(stream, i == index ? edited : _lines[i]);
+                    Write(stream, i == index ? edited : _lines[ i ]);
                 }
 
                 stream.Flush(flushToDisk: true);
             }
 
             File.Move(temp, FilePath, overwrite: true);
-            _lines[index] = edited;
+            _lines[ index ] = edited;
             return edited;
         }
     }

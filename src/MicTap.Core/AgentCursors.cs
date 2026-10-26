@@ -35,7 +35,7 @@ public static class AgentCursors
     /// <summary>Agents that have a cursor in the session, by name.</summary>
     public static IReadOnlyList<(string Agent, AgentCursor Cursor)> List(SessionInfo session) =>
         !Directory.Exists(session.AgentsFolder)
-            ? [ ]
+            ? []
             :
             [
                 .. Directory.EnumerateFiles(session.AgentsFolder, "*.json")

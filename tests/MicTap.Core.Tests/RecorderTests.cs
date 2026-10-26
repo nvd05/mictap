@@ -13,7 +13,7 @@ public sealed class RecorderTests : IDisposable
     private readonly ManualTimeProvider _time = new(StartedAt);
     private readonly FakeAudioSource _source = new();
     private readonly Recorder _recorder;
-    private readonly List<RecordingStopped> _stops = [ ];
+    private readonly List<RecordingStopped> _stops = [];
     private readonly TaskCompletionSource<RecordingStopped> _firstStop = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public RecorderTests()
@@ -197,7 +197,7 @@ public sealed class RecorderTests : IDisposable
 
         Assert.Equal(StopReason.WriteStalled, stopped.Reason);
         Assert.Equal(TimeSpan.FromSeconds(1), stopped.Recorded);
-        Assert.Equal(pcm[..32000], WavFiles.ReadAudio(Path.Combine(session.AudioFolder, "000.wav")));
+        Assert.Equal(pcm[ ..32000 ], WavFiles.ReadAudio(Path.Combine(session.AudioFolder, "000.wav")));
     }
 
     [Fact]
@@ -260,14 +260,14 @@ public sealed class RecorderTests : IDisposable
         };
         Start(chunkSeconds: 1);
 
-        _source.Push(new byte[3200]);
+        _source.Push(new byte[ 3200 ]);
         _source.Push([ .. Enumerable.Repeat<byte>(0, 3198), 0x00, 0x40 ]); // one sample at 16384 = half scale
-        _source.Push(new byte[32000]);
+        _source.Push(new byte[ 32000 ]);
         await _recorder.StopAsync();
 
         Assert.Equal([ 0.0, 0.5, 0.0 ], levels);
         Assert.Equal([ 0, 0, 1 ], progress.Select(p => p.ChunkIndex));
-        Assert.Equal(TimeSpan.FromSeconds(1.2), progress[^1].Recorded);
+        Assert.Equal(TimeSpan.FromSeconds(1.2), progress[ ^1 ].Recorded);
     }
 
     [Fact]

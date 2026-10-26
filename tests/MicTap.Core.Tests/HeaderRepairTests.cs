@@ -50,7 +50,7 @@ public sealed class HeaderRepairTests : IDisposable
     [Fact]
     public void Open_chunk_without_audio_becomes_an_empty_wav()
     {
-        string chunk = WriteOpenChunk("000.wav", [ ]);
+        string chunk = WriteOpenChunk("000.wav", []);
 
         Assert.Equal(WavRepairResult.Repaired, WavHeader.RepairIfOpen(chunk));
 
@@ -109,8 +109,8 @@ public sealed class HeaderRepairTests : IDisposable
         IReadOnlyList<RepairReport> reports = SessionRepair.RepairProjects(_temp.Path);
 
         Assert.Equal([ "новая", "урок" ], reports.Select(r => r.Session.Name));
-        Assert.Equal([ latestOpen ], reports[0].Repaired);
-        Assert.Equal([ otherProject ], reports[1].Repaired);
+        Assert.Equal([ latestOpen ], reports[ 0 ].Repaired);
+        Assert.Equal([ otherProject ], reports[ 1 ].Repaired);
         Assert.Equal(pcm, WavFiles.ReadAudio(latestOpen));
         Assert.Equal(pcm, WavFiles.ReadAudio(latestClosed));
         Assert.Equal((0u, 0u), WavFiles.HeaderSizes(older));

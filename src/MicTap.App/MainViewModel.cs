@@ -150,6 +150,19 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    partial void OnIsRecordingChanged(bool value)
+    {
+        // A sleeping laptop stops capture: block system sleep for the length of the recording.
+        if (value ? SystemSleep.Block() : SystemSleep.Allow())
+        {
+            _logger.Information(value ? "System sleep blocked while recording" : "System sleep allowed again");
+        }
+        else
+        {
+            _logger.Error("Windows rejected the keep-awake change (recording: {Recording})", value);
+        }
+    }
+
     partial void OnSelectedDeviceChanged(AudioDevice? value)
     {
         if (!_refreshingDevices && value is not null && value.Name != _settings.DeviceName)
@@ -320,6 +333,8 @@ public sealed partial class MainViewModel : ObservableObject
             : $"ошибка микрофона ({stopped.Error.Message}).",
         StopReason.DeviceSilent => $"микрофон не передаёт звук {Recorder.SilenceTimeout.TotalSeconds:0} с — вероятно, он отключён.",
         StopReason.WriteFailed => $"ошибка записи на диск ({stopped.Error?.Message}).",
+        StopReason.WriteStalled => $"диск не успевает: больше {Recorder.DefaultWriteBuffer.TotalSeconds:0} с звука ждали записи. "
+            + "Проверьте, не занят ли диск (антивирус, синхронизация OneDrive) или выберите другую папку.",
         _ => "",
     };
 

@@ -50,7 +50,7 @@ public sealed partial class MainViewModel : ObservableObject
     private AudioDevice? _selectedDevice;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(IsIdle), nameof(TrayToolTip))]
+    [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(IsIdle), nameof(TrayToolTip), nameof(EmptyText), nameof(SessionNote), nameof(SessionHeader))]
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand),
         nameof(RetranscribeCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand),
@@ -87,22 +87,28 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _isError;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Title), nameof(TrayToolTip))]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RetranscribeCommand))]
+    [NotifyPropertyChangedFor(nameof(Title), nameof(TrayToolTip), nameof(EmptyText), nameof(SessionNote))]
+    [NotifyCanExecuteChangedFor(
+        nameof(StartCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RetranscribeCommand),
+        nameof(RenameSessionCommand))]
     private ProjectInfo? _selectedProject;
 
     /// <summary>The session shown in the transcript and recognized again by «Распознать заново».</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Title))]
+    [NotifyPropertyChangedFor(nameof(SessionHeader), nameof(SessionNote), nameof(EmptyText))]
     [NotifyCanExecuteChangedFor(nameof(RetranscribeCommand), nameof(RenameSessionCommand))]
     private SessionInfo? _selectedSession;
+
+    /// <summary>The tree node of <see cref="SelectedSession"/>, for the session menu above the text.</summary>
+    [ObservableProperty]
+    private SessionNode? _selectedNode;
 
     /// <summary>
     /// Name of the session the next recording goes to; empty means its start time. The name of an existing session
     /// appends to it. During a recording a new name is applied to the folder once the recording stops.
     /// </summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Title), nameof(SessionHint))]
+    [NotifyPropertyChangedFor(nameof(SessionHeader), nameof(SessionNote))]
     private string _sessionName = "";
 
     [ObservableProperty]
@@ -149,8 +155,8 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The window shows the project dialog for the settings of this project.</summary>
     public event EventHandler<ProjectInfo>? EditProjectRequested;
 
-    /// <summary>The window asks for a new name of this session.</summary>
-    public event EventHandler<SessionNode>? RenameSessionRequested;
+    /// <summary>The window asks for a new name of this session; null is the new session the next recording makes.</summary>
+    public event EventHandler<SessionNode?>? RenameSessionRequested;
 
     /// <summary>The window shows the settings dialog.</summary>
     public event EventHandler? SettingsRequested;
@@ -172,16 +178,33 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool IsIdle => !IsRecording;
 
-    public string Title => SelectedProject is null ? "" : $"{SelectedProject.Name} · {ShownSessionName}";
+    /// <summary>The project in the app bar; the session is named above its text.</summary>
+    public string Title => SelectedProject?.Name ?? "";
 
-    public string SessionHint =>
-        SessionName.Trim().Length == 0 ? "Название — время старта записи; можно ввести своё."
-        : SelectedProject is not null && SessionFolders.Sanitize(SessionName) is { Length: > 0 } name
-            && File.Exists(new SessionInfo(name, Path.Combine(SelectedProject.Folder, name)).MetaFile)
-            && name != _recordingNode?.Name
-            ? "Такая сессия есть: запись допишется в неё."
-        : IsRecording ? "Новое название применится к папке после остановки."
-        : "Новая сессия.";
+    /// <summary>Name of the shown session, or of the new one the next recording makes.</summary>
+    public string SessionHeader =>
+        SelectedSession is null ? PendingName is { Length: > 0 } pending ? pending : "Новая сессия"
+        : SelectedNode is not null && SelectedNode == _recordingNode && PendingName is { Length: > 0 } renamed && renamed != SelectedSession.Name
+            ? renamed
+        : SelectedSession.Name;
+
+    /// <summary>A line under the session name: what happens to the name.</summary>
+    public string SessionNote =>
+        SelectedProject is null ? ""
+        : SelectedSession is null
+            ? PendingName.Length > 0 && File.Exists(new SessionInfo(PendingName, Path.Combine(SelectedProject.Folder, PendingName)).MetaFile)
+                ? $"Проект «{SelectedProject.Name}». Такая сессия есть: запись допишется в неё."
+                : $"Проект «{SelectedProject.Name}». " + (PendingName.Length > 0 ? "Имя задано заранее." : "Имя — время начала записи.")
+        : SelectedNode is not null && SelectedNode == _recordingNode && PendingName.Length > 0 && PendingName != SelectedSession.Name
+            ? "Папка получит это имя после остановки записи."
+        : "";
+
+    /// <summary>What the empty transcript says.</summary>
+    public string EmptyText =>
+        SelectedProject is null ? "Создайте проект слева."
+        : IsRecording && SelectedNode is not null && SelectedNode == _recordingNode ? "Говорите — готовые фразы появятся здесь.\nТо, что звучит сейчас, — серым в панели записи."
+        : SelectedSession is null ? "Готовые фразы новой сессии появятся здесь."
+        : "В этой сессии пока нет текста.";
 
     public string LanguageText => Language.ToUpperInvariant();
 
@@ -189,12 +212,30 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string SettingsFile => _settingsStore.FilePath;
 
+    /// <summary>Silence that ends a phrase, in half seconds; saved at once, applies from the next recording.</summary>
+    public double PhrasePauseSeconds
+    {
+        get => _settings.PhrasePauseSeconds;
+        set
+        {
+            double seconds = Math.Round(Math.Clamp(value, SpeechSegmenter.MinSilence.TotalSeconds, AppSettings.MaxPhrasePauseSeconds) * 2) / 2;
+            if (seconds != _settings.PhrasePauseSeconds)
+            {
+                Save(_settings with { PhrasePauseSeconds = seconds });
+                Transcript.Pipeline.PhrasePause = TimeSpan.FromSeconds(seconds);
+                OnPropertyChanged();
+                OnPropertyChanged(nameof(PhrasePauseText));
+            }
+        }
+    }
+
+    public string PhrasePauseText => $"{PhrasePauseSeconds:0.#} с";
+
     public string TrayToolTip => IsRecording
         ? $"mictap: идёт запись, {RecordedText}, язык {LanguageText}"
         : $"mictap: запись не идёт, язык {LanguageText}";
 
-    private string ShownSessionName =>
-        SessionName.Trim().Length > 0 ? SessionName.Trim() : SelectedSession?.Name ?? "новая сессия";
+    private string PendingName => SessionFolders.Sanitize(SessionName);
 
     /// <summary>Lists microphones and projects and repairs chunks that a crash left open.</summary>
     public void Initialize()
@@ -219,6 +260,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             case ProjectNode project:
                 SelectedProject = project.Project;
+                SelectedNode = null;
                 SelectedSession = null;
                 if (!IsRecording)
                 {
@@ -229,13 +271,14 @@ public sealed partial class MainViewModel : ObservableObject
                 break;
             case SessionNode session:
                 SelectedProject = session.Project.Project;
+                SelectedNode = session;
                 SelectedSession = session.Session;
                 if (!IsRecording)
                 {
                     SessionName = session.Name;
                 }
 
-                if (session != _recordingNode)
+                if (Transcript.ShownSession != session.Session)
                 {
                     Transcript.ShowSession(session.Session);
                 }
@@ -316,6 +359,90 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>The name the rename dialog starts with.</summary>
+    public string NameToRename(SessionNode? node) =>
+        node is null || node == _recordingNode ? PendingName is { Length: > 0 } pending ? pending : node?.Name ?? "" : node.Name;
+
+    /// <summary>
+    /// A name typed in the rename dialog: a session folder is renamed at once; the recording session and the new
+    /// session of the next recording keep it until their folder can take it.
+    /// </summary>
+    public async Task ApplyRenameAsync(SessionNode? node, string typed)
+    {
+        string name = SessionFolders.Sanitize(typed);
+        if (node is null && typed.Trim().Length == 0)
+        {
+            SessionName = ""; // the new session is named by its start time again
+            return;
+        }
+
+        if (name.Length == 0)
+        {
+            ShowMessage($"«{typed}» не годится как имя сессии: в нём нет допустимых символов.", isError: true);
+            return;
+        }
+
+        if (node is null || node == _recordingNode)
+        {
+            SessionName = name;
+            OnPropertyChanged(nameof(SessionHeader));
+            return;
+        }
+
+        await RenameSessionAsync(node, name);
+    }
+
+    /// <summary>Moves a session into another project; its transcript, audio and agent cursors move with it.</summary>
+    public async Task MoveAsync(SessionNode node, ProjectNode target)
+    {
+        if (node.Project == target)
+        {
+            return;
+        }
+
+        if (node == _recordingNode)
+        {
+            ShowMessage($"Сессия «{node.Name}» записывается — перенести её можно после остановки.", isError: true);
+            return;
+        }
+
+        string folder = Path.Combine(target.Project.Folder, node.Name);
+        for (int copy = 2; Directory.Exists(folder); copy++)
+        {
+            folder = Path.Combine(target.Project.Folder, $"{node.Name}_{copy}");
+        }
+
+        if (!await Transcript.WhenIdleAsync(TimeSpan.FromSeconds(60)))
+        {
+            ShowMessage($"Сессия «{node.Name}» не перенесена: распознавание ещё не закончило её текст.", isError: true);
+            return;
+        }
+
+        SessionInfo before = node.Session;
+        try
+        {
+            Directory.Move(before.Folder, folder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Error(ex, "Moving session {Session} to {Project} failed", before.Name, target.Name);
+            ShowMessage($"Сессия «{before.Name}» не перенесена: {ex.Message}", isError: true);
+            return;
+        }
+
+        var after = new SessionInfo(Path.GetFileName(folder), folder);
+        Transcript.SessionRenamed(before, after);
+        _logger.Information("Session {Session} moved from {From} to {To}", before.Name, node.Project.Name, target.Name);
+        LoadProjects(select: target.Project.Folder);
+        if (Projects.SelectMany(p => p.Sessions).FirstOrDefault(s => s.Session == after) is { } moved)
+        {
+            moved.IsSelected = true;
+            Select(moved);
+        }
+
+        ShowMessage($"Сессия «{after.Name}» перенесена в проект «{target.Name}».", isError: false);
+    }
+
     /// <summary>Renames a session folder; its transcript, audio and agent cursors move with it.</summary>
     public async Task RenameSessionAsync(SessionNode node, string typed)
     {
@@ -388,10 +515,10 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanRenameSession(SessionNode? node) => node is not null && node != _recordingNode;
+    private bool CanRenameSession(SessionNode? node) => !IsStarting && (node is not null || SelectedProject is not null);
 
     [RelayCommand(CanExecute = nameof(CanRenameSession))]
-    private void RenameSession(SessionNode? node) => RenameSessionRequested?.Invoke(this, node!);
+    private void RenameSession(SessionNode? node) => RenameSessionRequested?.Invoke(this, node);
 
     [RelayCommand]
     private void OpenSessionFolder(SessionNode? node)
@@ -486,8 +613,6 @@ public sealed partial class MainViewModel : ObservableObject
         {
             _logger.Error("Windows rejected the keep-awake change (recording: {Recording})", value);
         }
-
-        OnPropertyChanged(nameof(SessionHint));
     }
 
     partial void OnLanguageChanged(string value)
@@ -587,6 +712,7 @@ public sealed partial class MainViewModel : ObservableObject
         projectNode.IsExpanded = true;
         _selecting = true;
         node.IsSelected = true;
+        SelectedNode = node;
         SelectedSession = session;
         _selecting = false;
         ChunkText = project.Settings.AudioRetention == AudioRetention.None ? "не пишется" : "—";
@@ -637,10 +763,11 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         string? keep = select ?? SelectedProject?.Folder;
+        HashSet<string> unfolded = [ .. Projects.Where(p => p.IsExpanded).Select(p => p.Project.Folder) ];
         Projects.Clear();
         foreach (ProjectInfo project in projects)
         {
-            var node = new ProjectNode(project);
+            var node = new ProjectNode(project) { IsExpanded = unfolded.Contains(project.Folder) };
             foreach (SessionInfo session in SessionFolders.List(project.Folder))
             {
                 node.Sessions.Add(new SessionNode(session, node));

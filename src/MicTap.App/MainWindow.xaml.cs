@@ -2,6 +2,8 @@
 using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
+using System.Windows.Media;
 using H.NotifyIcon.Core;
 using MicTap.Core;
 using MaterialDesignThemes.Wpf;
@@ -14,6 +16,7 @@ public partial class MainWindow : Window
     private bool _confirmingClose;
     private bool _closeConfirmed;
     private System.Drawing.Icon? _trayIcon;
+    private Point _dragStart;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -30,9 +33,10 @@ public partial class MainWindow : Window
         viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
         viewModel.Transcript.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName is nameof(TranscriptViewModel.NowText) or nameof(TranscriptViewModel.IsLive))
+            if (e.PropertyName is nameof(TranscriptViewModel.NowText))
             {
-                FollowTranscript();
+                // A long draft keeps its latest words in view.
+                Dispatcher.InvokeAsync(DraftScroll.ScrollToEnd, System.Windows.Threading.DispatcherPriority.Background);
             }
         };
         UpdateTrayIcon();
@@ -110,14 +114,86 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task ShowRenameDialogAsync(SessionNode session)
+    private async Task ShowRenameDialogAsync(SessionNode? session)
     {
         var content = (FrameworkElement)FindResource("RenameDialog");
-        var editor = new RenameEditor(session.Name);
+        var editor = session is null
+            ? new RenameEditor("Имя новой сессии", _viewModel.NameToRename(null), "Пустое — время начала записи.", "Сохранить")
+            : session.IsRecording
+                ? new RenameEditor("Переименовать сессию", _viewModel.NameToRename(session), "Папка получит имя после остановки записи.")
+                : new RenameEditor("Переименовать сессию", session.Name, "Папка сессии переименуется вместе с текстом и звуком.");
         content.DataContext = editor;
         if (await DialogHost.Show(content, "MainDialog") is true)
         {
-            await _viewModel.RenameSessionAsync(session, editor.Name);
+            await _viewModel.ApplyRenameAsync(session, editor.Name);
+        }
+    }
+
+    /// <summary>The session's menu, also from its name above the text; «Перенести в проект» lists the other projects.</summary>
+    private void OnSessionMenuOpened(object sender, RoutedEventArgs e)
+    {
+        var menu = (ContextMenu)sender;
+        SessionNode? session = (menu.PlacementTarget as FrameworkElement)?.DataContext as SessionNode;
+        MenuItem move = menu.Items.OfType<MenuItem>().Single(item => "Move".Equals(item.Tag));
+        move.Items.Clear();
+        foreach (ProjectNode project in _viewModel.Projects.Where(p => p != session?.Project))
+        {
+            var item = new MenuItem { Header = project.Name, Icon = new PackIcon { Kind = PackIconKind.FolderOutline } };
+            item.Click += async (_, _) => await _viewModel.MoveAsync(session!, project);
+            move.Items.Add(item);
+        }
+
+        move.IsEnabled = session is not null && !session.IsRecording && move.Items.Count > 0;
+    }
+
+    private void OnSessionMenuClick(object sender, RoutedEventArgs e)
+    {
+        var button = (Button)sender;
+        button.ContextMenu.PlacementTarget = button;
+        button.ContextMenu.Placement = System.Windows.Controls.Primitives.PlacementMode.Bottom;
+        button.ContextMenu.IsOpen = true;
+    }
+
+    private void OnSessionMouseDown(object sender, MouseButtonEventArgs e) => _dragStart = e.GetPosition(this);
+
+    /// <summary>Dragging a session onto another project moves it there.</summary>
+    private void OnSessionMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || sender is not FrameworkElement { DataContext: SessionNode session } row)
+        {
+            return;
+        }
+
+        Vector moved = e.GetPosition(this) - _dragStart;
+        if (Math.Abs(moved.X) >= SystemParameters.MinimumHorizontalDragDistance || Math.Abs(moved.Y) >= SystemParameters.MinimumVerticalDragDistance)
+        {
+            DragDrop.DoDragDrop(row, new DataObject(typeof(SessionNode), session), DragDropEffects.Move);
+        }
+    }
+
+    private void OnProjectDragOver(object sender, DragEventArgs e)
+    {
+        var row = (Border)sender;
+        bool accepts = row.DataContext is ProjectNode target && e.Data.GetData(typeof(SessionNode)) is SessionNode session
+            && session.Project != target && !session.IsRecording;
+        e.Effects = accepts ? DragDropEffects.Move : DragDropEffects.None;
+        if (accepts)
+        {
+            row.Background = (Brush)FindResource("InfoContainerBrush");
+        }
+
+        e.Handled = true;
+    }
+
+    private void OnProjectDragLeave(object sender, DragEventArgs e) => ((Border)sender).ClearValue(Border.BackgroundProperty);
+
+    private async void OnProjectDrop(object sender, DragEventArgs e)
+    {
+        var row = (Border)sender;
+        row.ClearValue(Border.BackgroundProperty);
+        if (row.DataContext is ProjectNode target && e.Data.GetData(typeof(SessionNode)) is SessionNode session)
+        {
+            await _viewModel.MoveAsync(session, target);
         }
     }
 

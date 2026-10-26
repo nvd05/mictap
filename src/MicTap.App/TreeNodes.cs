@@ -5,11 +5,17 @@ using MicTap.Core;
 namespace MicTap.App;
 
 /// <summary>A project in the side tree; its sessions are the children.</summary>
-public sealed partial class ProjectNode(ProjectInfo project) : ObservableObject
+public sealed partial class ProjectNode : ObservableObject
 {
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Name), nameof(RetentionText))]
-    private ProjectInfo _project = project;
+    private ProjectInfo _project;
+
+    public ProjectNode(ProjectInfo project)
+    {
+        _project = project;
+        Sessions.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasSessions));
+    }
 
     [ObservableProperty]
     private bool _isExpanded;
@@ -31,6 +37,9 @@ public sealed partial class ProjectNode(ProjectInfo project) : ObservableObject
     };
 
     public ObservableCollection<SessionNode> Sessions { get; } = [ ];
+
+    /// <summary>The project can be folded: hovering it shows a chevron instead of the folder.</summary>
+    public bool HasSessions => Sessions.Count > 0;
 }
 
 /// <summary>A session in the side tree, with the agents reading it.</summary>

@@ -51,7 +51,9 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private readonly Task<Func<SpeechDetector>> _detectors;
     private VoiceActivityModel? _vad;
     private SessionInfo? _session;
+    private SessionInfo? _liveSession;
     private bool _live;
+    private DateTime _endedAt;
 
     [ObservableProperty]
     private string _runtimeText = "—";
@@ -83,7 +85,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isRetranscribing;
 
-    /// <summary>A recording runs into the shown session: the pending phrase is shown under the finished ones.</summary>
+    /// <summary>A recording runs: its draft, the speech not yet in the text, is shown in the recording bar.</summary>
     [ObservableProperty]
     private bool _isLive;
 
@@ -111,6 +113,9 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     }
 
     public ObservableCollection<TranscriptItem> Items { get; } = [ ];
+
+    /// <summary>The session whose text <see cref="Items"/> holds.</summary>
+    public SessionInfo? ShownSession => _session;
 
     /// <summary>Recognized segments and their sinks, for the agents hub.</summary>
     public TranscriptionPipeline Pipeline => _pipeline;
@@ -150,6 +155,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     public void BeginSession(SessionInfo session)
     {
         ShowSession(session);
+        _liveSession = session;
         _live = true;
         IsLive = true;
         NowText = "";
@@ -158,6 +164,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     public void EndSession()
     {
+        _endedAt = DateTime.UtcNow;
         _live = false;
         IsLive = false;
         IsLiveBusy = false;
@@ -209,7 +216,12 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     public async Task<bool> WhenIdleAsync(TimeSpan limit)
     {
         // The last speech of a stopped recording reaches the queue a moment after the stop.
-        await Task.Delay(1500);
+        TimeSpan settle = TimeSpan.FromSeconds(1.5) - (DateTime.UtcNow - _endedAt);
+        if (settle > TimeSpan.Zero)
+        {
+            await Task.Delay(settle);
+        }
+
         DateTime until = DateTime.UtcNow + limit;
         while (Volatile.Read(ref _pending) > 0)
         {
@@ -344,7 +356,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private void OnLiveText(object? sender, LiveTranscript live) =>
         _dispatcher.InvokeAsync(() =>
         {
-            if (_live && live.Session == _session)
+            if (_live && live.Session == _liveSession)
             {
                 NowText = live.Text;
                 IsSilence = live.Silence;
@@ -357,6 +369,13 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             if (segment.Session == _session)
             {
                 Items.Add(new TranscriptItem(segment.Line, item => SaveEdit(segment.Session, item)));
+            }
+
+            if (_live && segment.Session == _liveSession)
+            {
+                // The draft held this phrase; the next live pass, right after, brings what follows it.
+                NowText = "";
+                IsSilence = false;
             }
         });
 

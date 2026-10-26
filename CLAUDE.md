@@ -89,6 +89,7 @@ VERIFIED = `dotnet build` без warnings, `dotnet test` зелёный, при�
 ### v0.2 — распознавание (после приёмки v0.1)
 Whisper.net + Whisper.net.Runtime.Cuda, модель ggml large-v3-turbo.
 Фоновый воркер: готовый чанк → текст → строка в `transcript.jsonl` `{start,end,text}`.
+В окне — распознанный текст серым (черновик); пользователь может его исправить.
 VAD и режимы «с коррекцией / как сказал» — отдельными задачами.
 
 ### Позже

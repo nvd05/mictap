@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- Kestrel + SignalR inside the app process only (CLAUDE.md: no separate server process). -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MicTap.Core\MicTap.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MicTap.Hub.Tests" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>mictap</AssemblyName>
+    <RootNamespace>MicTap.Cli</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- The CLI knows the hub only through its contracts, compiled in from MicTap.Hub. -->
+    <Compile Include="..\MicTap.Hub\Contracts\*.cs" Link="Contracts\%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.13" />
+    <PackageReference Include="System.CommandLine" Version="2.0.0" />
+  </ItemGroup>
+
+</Project>

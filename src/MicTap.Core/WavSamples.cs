@@ -34,15 +34,25 @@ public static class WavSamples
                     throw new InvalidDataException($"{path} is {format}, recognition needs {PcmFormat.Mono16k}.");
                 }
 
-                var ring = new AudioRing(size / 2);
-                ring.Write(body);
-                return ring.Snapshot();
+                return FromPcm16(body);
             }
 
             at += 8 + size + (size & 1);
         }
 
         throw new InvalidDataException($"{path} has no data chunk.");
+    }
+
+    /// <summary>16-bit little-endian PCM as floats, -1..1.</summary>
+    public static float[] FromPcm16(ReadOnlySpan<byte> pcm)
+    {
+        var samples = new float[pcm.Length / 2];
+        for (int i = 0; i < samples.Length; i++)
+        {
+            samples[i] = BinaryPrimitives.ReadInt16LittleEndian(pcm[(i * 2)..]) / 32768f;
+        }
+
+        return samples;
     }
 
     private static string Tag(byte[] file, int at) => Encoding.ASCII.GetString(file, at, 4);

@@ -20,14 +20,14 @@ public sealed class SpeechSegmenter
     private static readonly int KeepWithoutSpeechSamples = ToSamples(TimeSpan.FromSeconds(1));
     private static readonly int LeadSamples = ToSamples(TimeSpan.FromMilliseconds(200));
 
-    private readonly Func<float[], IReadOnlyList<SpeechSpan>> _detect;
+    private readonly SpeechDetector _detect;
     private readonly List<(long Position, string Language)> _marks = [];
     private float[] _pending = new float[Rate * 40];
     private int _count;
     private long _pendingStart;
     private long _detectedAt;
 
-    public SpeechSegmenter(Func<float[], IReadOnlyList<SpeechSpan>> detect, string language)
+    public SpeechSegmenter(SpeechDetector detect, string language)
     {
         _detect = detect;
         Language = language;

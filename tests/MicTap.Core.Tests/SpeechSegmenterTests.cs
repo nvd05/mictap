@@ -7,9 +7,9 @@ public sealed class SpeechSegmenterTests
     [Fact]
     public void Silence_never_becomes_a_segment()
     {
-        var segmenter = new SpeechSegmenter(LoudDetector, "ru");
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
 
-        IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, Silence(40)), .. segmenter.Flush()];
+        IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, FakeSpeech.Silence(40)), .. segmenter.Flush()];
 
         Assert.Empty(segments);
     }
@@ -17,8 +17,8 @@ public sealed class SpeechSegmenterTests
     [Fact]
     public void Phrases_split_by_a_second_of_silence_become_segments_with_their_bounds()
     {
-        var segmenter = new SpeechSegmenter(LoudDetector, "ru");
-        float[] audio = [.. Silence(0.5), .. Speech(2), .. Silence(1), .. Speech(1.5), .. Silence(1)];
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
+        float[] audio = [.. FakeSpeech.Silence(0.5), .. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1), .. FakeSpeech.Speech(1.5), .. FakeSpeech.Silence(1)];
 
         IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, audio), .. segmenter.Flush()];
 
@@ -29,10 +29,10 @@ public sealed class SpeechSegmenterTests
     [Fact]
     public void Segment_closes_only_after_half_a_second_of_silence()
     {
-        var segmenter = new SpeechSegmenter(LoudDetector, "ru");
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
 
-        Assert.Empty(FeedInBlocks(segmenter, [.. Speech(2), .. Silence(0.3)]));
-        IReadOnlyList<SpeechSegment> closed = FeedInBlocks(segmenter, Silence(0.7));
+        Assert.Empty(FeedInBlocks(segmenter, [.. FakeSpeech.Speech(2), .. FakeSpeech.Silence(0.3)]));
+        IReadOnlyList<SpeechSegment> closed = FeedInBlocks(segmenter, FakeSpeech.Silence(0.7));
 
         Assert.Equal([(0.0, 2.0)], closed.Select(Bounds));
     }
@@ -40,9 +40,9 @@ public sealed class SpeechSegmenterTests
     [Fact]
     public void Speech_longer_than_thirty_seconds_is_cut_at_thirty()
     {
-        var segmenter = new SpeechSegmenter(LoudDetector, "ru");
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
 
-        IReadOnlyList<SpeechSegment> whileSpeaking = FeedInBlocks(segmenter, Speech(40));
+        IReadOnlyList<SpeechSegment> whileSpeaking = FeedInBlocks(segmenter, FakeSpeech.Speech(40));
         IReadOnlyList<SpeechSegment> rest = segmenter.Flush();
 
         Assert.Equal([(0.0, 30.0)], whileSpeaking.Select(Bounds));
@@ -52,11 +52,11 @@ public sealed class SpeechSegmenterTests
     [Fact]
     public void Language_mark_cuts_speech_and_switches_the_language()
     {
-        var segmenter = new SpeechSegmenter(LoudDetector, "ru");
-        FeedInBlocks(segmenter, Speech(3));
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
+        FeedInBlocks(segmenter, FakeSpeech.Speech(3));
 
         IReadOnlyList<SpeechSegment> cut = segmenter.Mark(TimeSpan.FromSeconds(3), "ja");
-        IReadOnlyList<SpeechSegment> after = [.. FeedInBlocks(segmenter, [.. Speech(2), .. Silence(1)]), .. segmenter.Flush()];
+        IReadOnlyList<SpeechSegment> after = [.. FeedInBlocks(segmenter, [.. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1)]), .. segmenter.Flush()];
 
         Assert.Equal([(0.0, 3.0, "ru")], cut.Select(BoundsAndLanguage));
         Assert.Equal([(3.0, 5.0, "ja")], after.Select(BoundsAndLanguage));
@@ -65,10 +65,10 @@ public sealed class SpeechSegmenterTests
     [Fact]
     public void Mark_ahead_of_the_audio_applies_when_the_audio_reaches_it()
     {
-        var segmenter = new SpeechSegmenter(LoudDetector, "ru");
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");
         segmenter.Mark(TimeSpan.FromSeconds(2), "ja");
 
-        IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, [.. Speech(4), .. Silence(1)]), .. segmenter.Flush()];
+        IReadOnlyList<SpeechSegment> segments = [.. FeedInBlocks(segmenter, [.. FakeSpeech.Speech(4), .. FakeSpeech.Silence(1)]), .. segmenter.Flush()];
 
         Assert.Equal([(0.0, 2.0, "ru"), (2.0, 4.0, "ja")], segments.Select(BoundsAndLanguage));
     }
@@ -76,8 +76,8 @@ public sealed class SpeechSegmenterTests
     [Fact]
     public void Flush_ends_speech_that_is_still_going_on()
     {
-        var segmenter = new SpeechSegmenter(LoudDetector, "ja");
-        FeedInBlocks(segmenter, [.. Silence(2), .. Speech(1.2)]);
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ja");
+        FeedInBlocks(segmenter, [.. FakeSpeech.Silence(2), .. FakeSpeech.Speech(1.2)]);
 
         Assert.Equal([(2.0, 3.2, "ja")], segmenter.Flush().Select(BoundsAndLanguage));
     }
@@ -93,38 +93,6 @@ public sealed class SpeechSegmenterTests
 
         return segments;
     }
-
-    /// <summary>A stand-in for the VAD: speech is any 10 ms frame with signal; gaps under 500 ms are bridged.</summary>
-    private static IReadOnlyList<SpeechSpan> LoudDetector(float[] samples)
-    {
-        const int frame = Rate / 100;
-        var spans = new List<(int Start, int End)>();
-        for (int at = 0; at + frame <= samples.Length; at += frame)
-        {
-            if (samples.AsSpan(at, frame).IndexOfAnyExcept(0f) < 0)
-            {
-                continue;
-            }
-
-            if (spans.Count > 0 && at - spans[^1].End < Rate / 2)
-            {
-                spans[^1] = (spans[^1].Start, at + frame);
-            }
-            else
-            {
-                spans.Add((at, at + frame));
-            }
-        }
-
-        return [.. spans.Select(s => new SpeechSpan(Time(s.Start), Time(s.End)))];
-    }
-
-    private static TimeSpan Time(int samples) => TimeSpan.FromTicks(samples * TimeSpan.TicksPerSecond / Rate);
-
-    private static float[] Speech(double seconds) =>
-        [.. Enumerable.Range(0, (int)(seconds * Rate)).Select(i => (float)Math.Sin(i * 0.05) * 0.3f + 0.01f)];
-
-    private static float[] Silence(double seconds) => new float[(int)(seconds * Rate)];
 
     private static (double, double) Bounds(SpeechSegment s) => (Math.Round(s.Start.TotalSeconds, 2), Math.Round(s.End.TotalSeconds, 2));
 

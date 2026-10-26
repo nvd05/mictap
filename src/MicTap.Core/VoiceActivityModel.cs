@@ -5,6 +5,9 @@ namespace MicTap.Core;
 /// <summary>A stretch of speech, relative to the start of the analysed samples.</summary>
 public sealed record SpeechSpan(TimeSpan Start, TimeSpan End);
 
+/// <summary>Finds speech in 16 kHz mono samples. Not thread-safe: one detector per thread.</summary>
+public delegate IReadOnlyList<SpeechSpan> SpeechDetector(float[] samples);
+
 /// <summary>
 /// Whisper.net's Silero VAD on the CPU. The model is loaded once; each thread that detects speech takes its own
 /// detector from <see cref="CreateDetector"/>.
@@ -24,7 +27,7 @@ public sealed class VoiceActivityModel : IDisposable
         new(WhisperVadFactory.FromPath(modelPath, new WhisperFactoryOptions { UseGpu = false }));
 
     /// <summary>A detector for one thread: 16 kHz mono samples in, spans of speech out.</summary>
-    public Func<float[], IReadOnlyList<SpeechSpan>> CreateDetector()
+    public SpeechDetector CreateDetector()
     {
         WhisperVadProcessor processor = _factory.CreateBuilder()
             .WithUseGpu(false)

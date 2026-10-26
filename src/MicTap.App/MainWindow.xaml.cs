@@ -2,6 +2,7 @@
 using System.Windows;
 using System.Windows.Media;
 using H.NotifyIcon.Core;
+using MaterialDesignThemes.Wpf;
 
 namespace MicTap.App;
 
@@ -46,16 +47,13 @@ public partial class MainWindow : Window
         }
 
         e.Cancel = true;
-        if (_stopping)
+        if (_stopping || Dialogs.IsOpen)
         {
             return;
         }
 
         ShowFromTray();
-        MessageBoxResult answer = MessageBox.Show(
-            this, "Идёт запись. Остановить её и закрыть mictap?", "mictap",
-            MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.No);
-        if (answer != MessageBoxResult.Yes)
+        if (await DialogHost.Show(FindResource("CloseDialog"), "MainDialog") is not true)
         {
             return;
         }
@@ -95,6 +93,10 @@ public partial class MainWindow : Window
             TrayIcon.ShowNotification("mictap: запись остановлена", message, NotificationIcon.Warning);
         }
     }
+
+    private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 
     private void OnTrayOpen(object sender, RoutedEventArgs e) => ShowFromTray();
 

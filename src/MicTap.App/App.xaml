@@ -1,6 +1,22 @@
 ﻿<Application x:Class="MicTap.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:materialDesign="http://materialdesigninxaml.net/winfx/xaml/themes"
              ShutdownMode="OnMainWindowClose">
-    <Application.Resources />
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- Material Design 3 baseline palette. -->
+                <materialDesign:CustomColorTheme BaseTheme="Light" PrimaryColor="#6750A4" SecondaryColor="#7D5260" />
+                <ResourceDictionary Source="pack://application:,,,/MaterialDesignThemes.Wpf;component/Themes/MaterialDesign3.Defaults.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+
+            <SolidColorBrush x:Key="RecordBrush" Color="#D32F2F" />
+            <SolidColorBrush x:Key="SurfaceBrush" Color="#F3EDF7" />
+            <SolidColorBrush x:Key="InfoContainerBrush" Color="#E8DEF8" />
+            <SolidColorBrush x:Key="ErrorContainerBrush" Color="#F9DEDC" />
+            <SolidColorBrush x:Key="OnErrorContainerBrush" Color="#410E0B" />
+            <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+        </ResourceDictionary>
+    </Application.Resources>
 </Application>

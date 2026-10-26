@@ -9,7 +9,7 @@ Windows-приложение: непрерывно пишет микрофон �
 
 ## Стек (фиксирован)
 - .NET 10 SDK, C#, `net10.0-windows`, `Nullable=enable`, `TreatWarningsAsErrors=true`.
-- UI: WPF + CommunityToolkit.Mvvm. Трей: H.NotifyIcon.Wpf.
+- UI: WPF + CommunityToolkit.Mvvm + MaterialDesignThemes (Material Design 3). Трей: H.NotifyIcon.Wpf.
 - Звук: NAudio. Захват через `WaveInEvent`, формат 16 kHz / mono / 16-bit PCM.
   WASAPI — только если WaveInEvent не даёт этот формат на устройстве.
 - JSON: System.Text.Json. Логи: Serilog, файл.

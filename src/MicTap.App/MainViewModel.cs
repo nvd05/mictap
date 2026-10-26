@@ -20,6 +20,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _refreshingDevices;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RecordButtonText))]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
     private string? _rootFolder;
 
@@ -28,7 +29,7 @@ public sealed partial class MainViewModel : ObservableObject
     private AudioDevice? _selectedDevice;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(TrayToolTip))]
+    [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(IsIdle), nameof(RecordButtonText), nameof(TrayToolTip))]
     [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand))]
     private bool _isRecording;
 
@@ -44,6 +45,9 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TrayToolTip))]
     private string _recordedText = FormatMinutes(TimeSpan.Zero);
+
+    [ObservableProperty]
+    private string _elapsedText = FormatElapsed(TimeSpan.Zero);
 
     [ObservableProperty]
     private string _message = "";
@@ -70,6 +74,12 @@ public sealed partial class MainViewModel : ObservableObject
     public ObservableCollection<AudioDevice> Devices { get; } = [];
 
     public bool CanEditSettings => !IsRecording;
+
+    public bool IsIdle => !IsRecording;
+
+    public string RecordButtonText => IsRecording ? "Остановить запись"
+        : RootFolder is null ? "Сначала выберите папку"
+        : "Начать запись";
 
     public string TrayToolTip => IsRecording ? $"mictap: идёт запись, {RecordedText}" : "mictap: запись не идёт";
 
@@ -156,7 +166,7 @@ public sealed partial class MainViewModel : ObservableObject
             IsRecording = true;
             SessionText = session.Name;
             ChunkText = ChunkedWavWriter.FileName(0);
-            RecordedText = FormatMinutes(TimeSpan.Zero);
+            ShowRecorded(TimeSpan.Zero);
             ShowMessage($"Идёт запись в {session.Folder}", isError: false);
         }
         catch (AudioCaptureException ex)
@@ -234,7 +244,8 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (IsRecording)
             {
-                Level = AudioLevel.ToMeter(peak) * 100;
+                // Rise at once, fall back smoothly: a raw 10 Hz peak makes the meter flicker.
+                Level = Math.Max(AudioLevel.ToMeter(peak) * 100, Level * 0.8);
             }
         });
 
@@ -244,7 +255,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (IsRecording)
             {
                 ChunkText = ChunkedWavWriter.FileName(progress.ChunkIndex);
-                RecordedText = FormatMinutes(progress.Recorded);
+                ShowRecorded(progress.Recorded);
             }
         });
 
@@ -253,7 +264,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             IsRecording = false;
             Level = 0;
-            RecordedText = FormatMinutes(stopped.Recorded);
+            ShowRecorded(stopped.Recorded);
             if (stopped.Reason == StopReason.Requested)
             {
                 ShowMessage($"Запись остановлена, сохранено в {stopped.Session.Folder}", isError: false);
@@ -277,6 +288,12 @@ public sealed partial class MainViewModel : ObservableObject
         IsError = isError;
     }
 
+    private void ShowRecorded(TimeSpan recorded)
+    {
+        RecordedText = FormatMinutes(recorded);
+        ElapsedText = FormatElapsed(recorded);
+    }
+
     private static string Describe(RecordingStopped stopped) => stopped.Reason switch
     {
         StopReason.DeviceFailed => stopped.Error is null
@@ -296,4 +313,7 @@ public sealed partial class MainViewModel : ObservableObject
     private static string FileNames(IEnumerable<string> paths) => string.Join(", ", paths.Select(Path.GetFileName));
 
     private static string FormatMinutes(TimeSpan recorded) => $"{recorded.TotalMinutes:0.0} мин";
+
+    private static string FormatElapsed(TimeSpan recorded) =>
+        $"{(int)recorded.TotalHours:00}:{recorded.Minutes:00}:{recorded.Seconds:00}";
 }

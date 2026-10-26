@@ -10,7 +10,7 @@
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=local:MainViewModel}"
         Style="{StaticResource MaterialDesignWindow}"
-        Title="mictap" Width="560" SizeToContent="Height" ResizeMode="CanMinimize"
+        Title="mictap" Icon="Assets/mictap.ico" Width="560" SizeToContent="Height" ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen" Background="{StaticResource SurfaceBrush}"
         Closing="OnWindowClosing">
     <WindowChrome.WindowChrome>
@@ -19,10 +19,8 @@
     </WindowChrome.WindowChrome>
 
     <Window.Resources>
-        <tb:GeneratedIconSource x:Key="IdleIcon" Text="M" FontSize="72" FontWeight="Bold"
-                                Foreground="White" Background="#FF6750A4" />
-        <tb:GeneratedIconSource x:Key="RecordingIcon" Text="M" FontSize="72" FontWeight="Bold"
-                                Foreground="White" Background="#FFD32F2F" />
+        <BitmapImage x:Key="IdleIcon" UriSource="pack://application:,,,/Assets/mictap.ico" />
+        <BitmapImage x:Key="RecordingIcon" UriSource="pack://application:,,,/Assets/mictap-recording.ico" />
 
         <sys:Boolean x:Key="Confirm">True</sys:Boolean>
 

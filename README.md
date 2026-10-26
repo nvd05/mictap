@@ -13,6 +13,8 @@ dotnet test MicTap.sln
 dotnet run --project src/MicTap.App
 ```
 
+Иконки (`src/MicTap.App/Assets/*.svg`, `*.ico`) генерирует `tools/make-icons.ps1`.
+
 ## Как пользоваться
 
 1. «Выбрать» — папка для записей (запоминается).

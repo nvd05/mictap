@@ -1,9 +1,10 @@
 using NAudio;
+using NAudio.CoreAudioApi;
 using NAudio.Wave;
 
 namespace MicTap.Core;
 
-/// <summary>A WinMM capture device. WinMM truncates names to 31 characters.</summary>
+/// <summary>A WinMM capture device by its number and full endpoint name.</summary>
 public sealed record AudioDevice(int Number, string Name);
 
 public enum CaptureFailure
@@ -63,10 +64,17 @@ public sealed class WaveInAudioSource : IAudioSource
 
     public static IReadOnlyList<AudioDevice> ListDevices()
     {
+        // WinMM cuts names to 31 characters; the Core Audio endpoint carries the full one it starts with.
+        List<string> endpoints = CaptureEndpointNames();
         var devices = new List<AudioDevice>();
         for (int number = 0; number < WaveInEvent.DeviceCount; number++)
         {
-            devices.Add(new AudioDevice(number, WaveInEvent.GetCapabilities(number).ProductName));
+            string shortName = WaveInEvent.GetCapabilities(number).ProductName;
+            string name = endpoints.FirstOrDefault(e => e == shortName)
+                ?? endpoints.FirstOrDefault(e => e.StartsWith(shortName, StringComparison.Ordinal))
+                ?? shortName;
+            endpoints.Remove(name);
+            devices.Add(new AudioDevice(number, name));
         }
 
         return devices;
@@ -105,4 +113,19 @@ public sealed class WaveInAudioSource : IAudioSource
     }
 
     public void Dispose() => _waveIn.Dispose();
+
+    private static List<string> CaptureEndpointNames()
+    {
+        var names = new List<string>();
+        using var enumerator = new MMDeviceEnumerator();
+        foreach (MMDevice endpoint in enumerator.EnumerateAudioEndPoints(DataFlow.Capture, DeviceState.Active))
+        {
+            using (endpoint)
+            {
+                names.Add(endpoint.FriendlyName);
+            }
+        }
+
+        return names;
+    }
 }

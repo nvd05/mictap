@@ -44,7 +44,7 @@ public sealed class WaveInAudioSource : IAudioSource
                 DeviceNumber = device.Number,
                 WaveFormat = new WaveFormat(format.SampleRate, format.BitsPerSample, format.Channels),
                 BufferMilliseconds = 100,
-                NumberOfBuffers = 3,
+                NumberOfBuffers = 10, // a second of slack in the driver if this process stalls
             };
         }
         finally

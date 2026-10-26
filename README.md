@@ -11,8 +11,8 @@ CUDA Toolkit 13 (достаточно компонентов CUDA Runtime). Бе
 окно показывает «CPU» красным, живой текст запаздывает на 20–30 с.
 
 ```
-dotnet build MicTap.sln
-dotnet test MicTap.sln
+dotnet build MicTap.slnx
+dotnet test MicTap.slnx
 dotnet run --project src/MicTap.App
 ```
 

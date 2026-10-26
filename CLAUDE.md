@@ -24,7 +24,7 @@ Windows-приложение: непрерывно пишет микрофон �
 
 ## Структура (внутри mictap/)
 ```
-MicTap.sln
+MicTap.slnx
 .gitignore, .editorconfig
 src/MicTap.Core/          захват, чанки, сессии, настройки. Без ссылок на WPF.
 src/MicTap.App/           WPF. Только UI и вызовы Core.

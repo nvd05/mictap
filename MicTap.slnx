@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/MicTap.App/MicTap.App.csproj" />
+    <Project Path="src/MicTap.Cli/MicTap.Cli.csproj" />
+    <Project Path="src/MicTap.Core/MicTap.Core.csproj" />
+    <Project Path="src/MicTap.Hub/MicTap.Hub.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/MicTap.Core.Tests/MicTap.Core.Tests.csproj" />
+    <Project Path="tests/MicTap.Hub.Tests/MicTap.Hub.Tests.csproj" />
+  </Folder>
+</Solution>

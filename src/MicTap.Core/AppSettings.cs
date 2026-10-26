@@ -23,4 +23,14 @@ public sealed record AppSettings
 
     /// <summary>Speech language for recognition: one of <see cref="Languages"/>.</summary>
     public string Language { get; init; } = DefaultLanguage;
+
+    public HotkeySettings Hotkeys { get; init; } = new();
+}
+
+/// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>
+public sealed record HotkeySettings
+{
+    public string ToggleLanguage { get; init; } = "Ctrl+Alt+L";
+
+    public string ToggleRecording { get; init; } = "Ctrl+Alt+R";
 }

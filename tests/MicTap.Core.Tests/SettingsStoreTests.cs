@@ -38,6 +38,8 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal("Mic", root.GetProperty("deviceName").GetString());
         Assert.Equal(60, root.GetProperty("chunkSeconds").GetInt32());
         Assert.Equal("ru", root.GetProperty("language").GetString());
+        Assert.Equal("Ctrl+Alt+L", root.GetProperty("hotkeys").GetProperty("toggleLanguage").GetString());
+        Assert.Equal("Ctrl+Alt+R", root.GetProperty("hotkeys").GetProperty("toggleRecording").GetString());
     }
 
     [Fact]
@@ -71,6 +73,17 @@ public sealed class SettingsStoreTests : IDisposable
         File.WriteAllText(path, $$"""{ "chunkSeconds": {{chunkSeconds}} }""");
 
         Assert.Throws<InvalidDataException>(() => new SettingsStore(path).Load());
+    }
+
+    [Fact]
+    public void Hotkey_left_out_of_the_file_keeps_its_default()
+    {
+        string path = Path.Combine(_temp.Path, "settings.json");
+        File.WriteAllText(path, """{ "hotkeys": { "toggleLanguage": "Ctrl+Alt+J" } }""");
+
+        AppSettings settings = new SettingsStore(path).Load();
+
+        Assert.Equal(new HotkeySettings { ToggleLanguage = "Ctrl+Alt+J", ToggleRecording = "Ctrl+Alt+R" }, settings.Hotkeys);
     }
 
     [Fact]

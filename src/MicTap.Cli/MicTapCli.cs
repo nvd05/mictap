@@ -93,22 +93,22 @@ public static class MicTapCli
                     parse.GetValue(minWords), parse.GetValue(maxWait), parse.GetValue(fromStart)),
                 token)));
 
-        var status = new Command("status", "The running recording (project, session, language now) and the agents. " + ExitCodes) { agent };
+        var status = new Command("status", "The running recording (project, session, language now) and the agents.") { agent };
         status.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
             await hub.InvokeAsync<StatusReply>(AgentHub.Status, token)));
 
-        var projects = new Command("projects", "Projects with their languages, audio retention and number of sessions. " + ExitCodes) { agent };
+        var projects = new Command("projects", "Projects with their languages, audio retention and number of sessions.") { agent };
         projects.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
             await hub.InvokeAsync<IReadOnlyList<ProjectDto>>(AgentHub.Projects, token)));
 
         var projectRequired = new Option<string>("--project") { Description = "Project name.", Required = true };
-        var sessions = new Command("sessions", "Sessions of a project, the most recently recorded first. " + ExitCodes) { projectRequired, agent };
+        var sessions = new Command("sessions", "Sessions of a project, the most recently recorded first.") { projectRequired, agent };
         sessions.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
             await hub.InvokeAsync<IReadOnlyList<SessionDto>>(AgentHub.Sessions, parse.GetValue(projectRequired), token)));
 
         var sessionRequired = new Option<string>("--session") { Description = "Session name.", Required = true };
         var seq = new Option<int>("--seq") { Description = "First seq to print.", DefaultValueFactory = _ => 1 };
-        var tail = new Command("tail", "Segments of a session from --seq on, without moving any cursor. " + ExitCodes)
+        var tail = new Command("tail", "Segments of a session from --seq on, without moving any cursor.")
         {
             sessionRequired, project, seq, agent,
         };

@@ -1,6 +1,11 @@
-﻿using System.Text.Json;
+﻿using System.Globalization;
+using System.Text.Json;
 using MicTap.Cli;
 using MicTap.Hub.Contracts;
+
+// Agents read the help: English whatever the Windows language.
+CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+CultureInfo.CurrentUICulture = CultureInfo.InvariantCulture;
 
 using var cancellation = new CancellationTokenSource();
 Console.CancelKeyPress += (_, e) =>

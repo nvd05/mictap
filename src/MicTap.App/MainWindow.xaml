@@ -65,10 +65,12 @@
                     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
                                 WindowChrome.IsHitTestVisibleInChrome="True">
                         <Button Style="{StaticResource MaterialDesignToolForegroundButton}" ToolTip="Свернуть в трей"
+                                AutomationProperties.Name="Свернуть в трей"
                                 Width="40" Height="40" Padding="0" Click="OnMinimizeClick">
                             <materialDesign:PackIcon Kind="WindowMinimize" Width="20" Height="20" />
                         </Button>
                         <Button Style="{StaticResource MaterialDesignToolForegroundButton}" ToolTip="Закрыть"
+                                AutomationProperties.Name="Закрыть"
                                 Width="40" Height="40" Padding="0" Click="OnCloseClick">
                             <materialDesign:PackIcon Kind="Close" Width="20" Height="20" />
                         </Button>
@@ -134,7 +136,7 @@
                             <materialDesign:PackIcon Kind="FolderMusicOutline" Width="24" Height="24" VerticalAlignment="Center"
                                                      Foreground="{DynamicResource MaterialDesign.Brush.Primary}" />
                             <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignOutlinedButton}"
-                                    Command="{Binding ChooseFolderCommand}">
+                                    AutomationProperties.Name="Выбрать папку" Command="{Binding ChooseFolderCommand}">
                                 <StackPanel Orientation="Horizontal">
                                     <materialDesign:PackIcon Kind="FolderOpenOutline" Width="18" Height="18" VerticalAlignment="Center" />
                                     <TextBlock Margin="8,0,0,0" Text="Выбрать" VerticalAlignment="Center" />
@@ -154,7 +156,8 @@
                             <materialDesign:PackIcon Kind="MicrophoneOutline" Width="24" Height="24" VerticalAlignment="Center"
                                                      Foreground="{DynamicResource MaterialDesign.Brush.Primary}" />
                             <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconButton}"
-                                    ToolTip="Обновить список микрофонов" Command="{Binding RefreshDevicesCommand}">
+                                    ToolTip="Обновить список микрофонов" AutomationProperties.Name="Обновить список микрофонов"
+                                    Command="{Binding RefreshDevicesCommand}">
                                 <materialDesign:PackIcon Kind="Refresh" />
                             </Button>
                             <ComboBox Margin="16,0,8,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
@@ -172,14 +175,17 @@
                         <TextBlock HorizontalAlignment="Center" Text="{Binding ElapsedText}"
                                    Style="{StaticResource MaterialDesignDisplaySmallTextBlock}" />
                         <Grid Margin="0,16,0,8" HorizontalAlignment="Center">
-                            <Button Width="72" Height="72" ToolTip="Начать запись"
+                            <Button Width="72" Height="72" ToolTip="Начать запись" AutomationProperties.Name="Начать запись"
                                     Style="{StaticResource MaterialDesignFloatingActionButton}"
                                     Background="{StaticResource RecordBrush}" BorderBrush="{StaticResource RecordBrush}" Foreground="White"
+                                    materialDesign:ButtonProgressAssist.IsIndicatorVisible="{Binding IsStarting}"
+                                    materialDesign:ButtonProgressAssist.IsIndeterminate="True"
+                                    materialDesign:ButtonProgressAssist.Value="-1"
                                     Command="{Binding StartCommand}"
                                     Visibility="{Binding IsIdle, Converter={StaticResource VisibleWhenTrue}}">
                                 <materialDesign:PackIcon Kind="Microphone" Width="32" Height="32" />
                             </Button>
-                            <Button Width="72" Height="72" ToolTip="Остановить запись"
+                            <Button Width="72" Height="72" ToolTip="Остановить запись" AutomationProperties.Name="Остановить запись"
                                     Style="{StaticResource MaterialDesignFloatingActionButton}"
                                     Background="{StaticResource RecordBrush}" BorderBrush="{StaticResource RecordBrush}" Foreground="White"
                                     Command="{Binding StopCommand}"

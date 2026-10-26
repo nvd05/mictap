@@ -27,6 +27,12 @@ public sealed record RecordingProgress(SessionInfo Session, int ChunkIndex, Time
 
 public sealed record RecordingStopped(SessionInfo Session, StopReason Reason, Exception? Error, TimeSpan Recorded);
 
+/// <summary>A copy of one captured block of 16 kHz mono 16-bit PCM; shared by consumers, never modified.</summary>
+public sealed record CapturedAudio(SessionInfo Session, ReadOnlyMemory<byte> Pcm);
+
+/// <summary>A closed chunk; <paramref name="Start"/> is its offset from the session start.</summary>
+public sealed record ChunkCompleted(SessionInfo Session, ChunkInfo Chunk, TimeSpan Start);
+
 /// <summary>
 /// Records one session at a time. The capture thread only copies each buffer into a channel; a
 /// <see cref="ChunkWriterStage"/> writes the chunks on its own thread. Up to the write buffer of audio may wait for
@@ -66,6 +72,14 @@ public sealed class Recorder
     public event EventHandler<double>? LevelChanged;
 
     public event EventHandler<RecordingProgress>? ProgressChanged;
+
+    /// <summary>
+    /// The block that went to the disk channel, for a second consumer (live text). Capture thread: handlers only enqueue.
+    /// </summary>
+    public event EventHandler<CapturedAudio>? AudioCaptured;
+
+    /// <summary>A chunk got its final header and will not change. Writer thread: handlers only enqueue.</summary>
+    public event EventHandler<ChunkCompleted>? ChunkCompleted;
 
     /// <summary>Raised once per started session, after the last queued audio reached its chunk and the chunk got its final header.</summary>
     public event EventHandler<RecordingStopped>? Stopped;
@@ -176,8 +190,13 @@ public sealed class Recorder
             new SessionMeta(started, options.DeviceName, MetaFormat.From(format), options.ChunkSeconds, options.AppVersion)
                 .WriteTo(info);
             var writer = new ChunkedWavWriter(info.AudioFolder, format, options.ChunkSeconds);
-            writer.ChunkClosed += (_, chunk) => _logger.Information(
-                "Chunk {Chunk} closed: {Seconds:0.0} s", chunk.Path, format.DurationOf(chunk.DataBytes).TotalSeconds);
+            writer.ChunkClosed += (_, chunk) =>
+            {
+                _logger.Information(
+                    "Chunk {Chunk} closed: {Seconds:0.0} s", chunk.Path, format.DurationOf(chunk.DataBytes).TotalSeconds);
+                ChunkCompleted?.Invoke(
+                    this, new ChunkCompleted(info, chunk, TimeSpan.FromSeconds((double)chunk.Index * options.ChunkSeconds)));
+            };
 
             Channel<byte[]> channel = Channel.CreateUnbounded<byte[]>(
                 new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -216,6 +235,7 @@ public sealed class Recorder
         session.Channel.Writer.TryWrite(block);
         Volatile.Write(ref session.LastDataAt, _time.GetTimestamp());
         LevelChanged?.Invoke(this, AudioLevel.Peak(block));
+        AudioCaptured?.Invoke(this, new CapturedAudio(session.Info, block));
     }
 
     private void OnSourceStopped(object? sender, CaptureStopped e)

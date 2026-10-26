@@ -10,6 +10,13 @@ public sealed record ModelSpec(string FileName, Uri Source, long Size, string Sh
         new Uri("https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin"),
         1_624_555_275,
         "1fc70f774d38eb169993ac391eea357ef47c88757ef72ee5943879b7e8e2bc69");
+
+    /// <summary>Silero voice activity detector in ggml form, for Whisper.net's VAD.</summary>
+    public static ModelSpec SileroVad { get; } = new(
+        "ggml-silero-v6.2.0.bin",
+        new Uri("https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v6.2.0.bin"),
+        885_098,
+        "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987");
 }
 
 /// <summary>Keeps a model in a folder; downloads it once, through a .part file renamed only after the hash matches.</summary>

@@ -4,6 +4,11 @@
     <!-- NAudio 2.x: CLAUDE.md fixes WaveInEvent; NAudio 3 renamed it to WaveIn and marked the old name obsolete. -->
     <PackageReference Include="NAudio.Core" Version="2.2.1" />
     <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
+    <PackageReference Include="Serilog" Version="4.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MicTap.Core.Tests" />
   </ItemGroup>
 
 </Project>

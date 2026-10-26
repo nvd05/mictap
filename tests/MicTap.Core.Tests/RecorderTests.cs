@@ -36,7 +36,7 @@ public sealed class RecorderTests : IDisposable
 
         await _recorder.StopAsync();
 
-        Assert.Equal("2026-10-26_1405", session.Name);
+        Assert.Equal("2026-10-26_14-05-30", session.Name);
         Assert.True(_source.Started);
         Assert.True(_source.Disposed);
         Assert.False(_recorder.IsRecording);
@@ -233,7 +233,7 @@ public sealed class RecorderTests : IDisposable
     }
 
     [Fact]
-    public async Task Next_session_in_the_same_minute_gets_its_own_folder()
+    public async Task Next_session_in_the_same_second_gets_its_own_folder()
     {
         SessionInfo first = Start(chunkSeconds: 60);
         await _recorder.StopAsync();
@@ -241,8 +241,8 @@ public sealed class RecorderTests : IDisposable
         SessionInfo second = _recorder.Start(Options(60), new FakeAudioSource());
         await _recorder.StopAsync();
 
-        Assert.Equal("2026-10-26_1405", first.Name);
-        Assert.Equal("2026-10-26_1405_2", second.Name);
+        Assert.Equal("2026-10-26_14-05-30", first.Name);
+        Assert.Equal("2026-10-26_14-05-30_2", second.Name);
     }
 
     private static async Task Eventually(Func<bool> condition)

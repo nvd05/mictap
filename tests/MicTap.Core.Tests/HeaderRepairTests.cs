@@ -94,15 +94,15 @@ public sealed class HeaderRepairTests : IDisposable
     public void Only_the_latest_session_is_repaired()
     {
         byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(0.25));
-        string older = WriteOpenChunk(@"2026-10-26_1405\audio\000.wav", pcm);
-        string latestClosed = WriteClosedChunk(@"2026-10-26_1405_2\audio", pcm);
-        string latestOpen = WriteOpenChunk(@"2026-10-26_1405_2\audio\001.wav", pcm);
+        string older = WriteOpenChunk(@"2026-10-26_14-05-30\audio\000.wav", pcm);
+        string latestClosed = WriteClosedChunk(@"2026-10-26_14-05-30_2\audio", pcm);
+        string latestOpen = WriteOpenChunk(@"2026-10-26_14-05-30_2\audio\001.wav", pcm);
         string foreign = WriteOpenChunk(@"notes\audio\000.wav", pcm);
 
         RepairReport? report = SessionRepair.RepairLatest(_temp.Path);
 
         Assert.NotNull(report);
-        Assert.Equal("2026-10-26_1405_2", report.Session.Name);
+        Assert.Equal("2026-10-26_14-05-30_2", report.Session.Name);
         Assert.Equal([latestOpen], report.Repaired);
         Assert.Empty(report.Unrecognized);
         Assert.Equal(pcm, WavFiles.ReadAudio(latestOpen));

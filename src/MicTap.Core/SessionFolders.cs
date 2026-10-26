@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 
 namespace MicTap.Core;
 
-/// <summary>A session folder: &lt;root&gt;\yyyy-MM-dd_HHmm\ with audio\ and meta.json inside.</summary>
+/// <summary>A session folder: &lt;root&gt;\yyyy-MM-dd_HH-mm-ss\ with audio\ and meta.json inside.</summary>
 public sealed record SessionInfo(string Name, string Folder)
 {
     public string AudioFolder => Path.Combine(Folder, "audio");
@@ -13,11 +13,14 @@ public sealed record SessionInfo(string Name, string Folder)
 
 public static partial class SessionFolders
 {
-    private const string NameFormat = "yyyy-MM-dd_HHmm";
+    private const string NameFormat = "yyyy-MM-dd_HH-mm-ss";
+
+    /// <summary>Names of sessions recorded before v0.2.1, still found for header repair.</summary>
+    private const string MinuteNameFormat = "yyyy-MM-dd_HHmm";
 
     /// <summary>
     /// Creates the folder of a session started at <paramref name="started"/> (local time). A second session in
-    /// the same minute gets a suffix, yyyy-MM-dd_HHmm_2, instead of mixing its chunks into the first one.
+    /// the same second gets a suffix, yyyy-MM-dd_HH-mm-ss_2, instead of mixing its chunks into the first one.
     /// </summary>
     public static SessionInfo Create(string rootFolder, DateTimeOffset started)
     {
@@ -61,7 +64,8 @@ public static partial class SessionFolders
     {
         Match match = NamePattern().Match(name);
         if (match.Success
-            && DateTime.TryParseExact(match.Groups[1].Value, NameFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime started))
+            && DateTime.TryParseExact(
+                match.Groups[1].Value, [NameFormat, MinuteNameFormat], CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime started))
         {
             int attempt = match.Groups[2].Success ? int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture) : 1;
             key = (started, attempt);
@@ -72,6 +76,6 @@ public static partial class SessionFolders
         return false;
     }
 
-    [GeneratedRegex(@"^(\d{4}-\d{2}-\d{2}_\d{4})(?:_(\d{1,4}))?$")]
+    [GeneratedRegex(@"^(\d{4}-\d{2}-\d{2}_(?:\d{2}-\d{2}-\d{2}|\d{4}))(?:_(\d{1,4}))?$")]
     private static partial Regex NamePattern();
 }

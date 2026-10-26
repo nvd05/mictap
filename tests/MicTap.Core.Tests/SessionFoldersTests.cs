@@ -9,21 +9,21 @@ public sealed class SessionFoldersTests : IDisposable
     public void Dispose() => _temp.Dispose();
 
     [Fact]
-    public void Session_is_named_after_its_start_minute()
+    public void Session_is_named_after_its_start_second()
     {
         SessionInfo session = SessionFolders.Create(_temp.Path, Started);
 
-        Assert.Equal("2026-10-26_1405", session.Name);
-        Assert.Equal(Path.Combine(_temp.Path, "2026-10-26_1405"), session.Folder);
+        Assert.Equal("2026-10-26_14-05-59", session.Name);
+        Assert.Equal(Path.Combine(_temp.Path, "2026-10-26_14-05-59"), session.Folder);
         Assert.True(Directory.Exists(Path.Combine(session.Folder, "audio")));
     }
 
     [Fact]
-    public void Sessions_in_the_same_minute_get_suffixes()
+    public void Sessions_in_the_same_second_get_suffixes()
     {
         string[] names = [.. Enumerable.Range(0, 3).Select(_ => SessionFolders.Create(_temp.Path, Started).Name)];
 
-        Assert.Equal(["2026-10-26_1405", "2026-10-26_1405_2", "2026-10-26_1405_3"], names);
+        Assert.Equal(["2026-10-26_14-05-59", "2026-10-26_14-05-59_2", "2026-10-26_14-05-59_3"], names);
     }
 
     [Fact]
@@ -31,15 +31,26 @@ public sealed class SessionFoldersTests : IDisposable
     {
         string[] folders =
         [
-            "2026-10-25_2359", "2026-10-26_0959", "2026-10-26_1405", "2026-10-26_1405_2", "2026-10-26_1405_10",
-            "notes", "2026-13-01_0000", "2026-10-26_1405_x",
+            "2026-10-25_23-59-00", "2026-10-26_09-59-59", "2026-10-26_14-05-00", "2026-10-26_14-05-00_2",
+            "2026-10-26_14-05-00_10", "notes", "2026-13-01_00-00-00", "2026-10-26_14-05-00_x", "2026-10-26_14-05",
         ];
         foreach (string folder in folders)
         {
             Directory.CreateDirectory(Path.Combine(_temp.Path, folder));
         }
 
-        Assert.Equal("2026-10-26_1405_10", SessionFolders.FindLatest(_temp.Path)?.Name);
+        Assert.Equal("2026-10-26_14-05-00_10", SessionFolders.FindLatest(_temp.Path)?.Name);
+    }
+
+    [Theory]
+    [InlineData("2026-10-26_1404", "2026-10-26_14-04-30", "2026-10-26_14-04-30")]
+    [InlineData("2026-10-26_1406", "2026-10-26_14-05-59", "2026-10-26_1406")]
+    public void Sessions_named_by_minute_before_v0_2_1_are_ordered_with_the_new_ones(string old, string current, string latest)
+    {
+        Directory.CreateDirectory(Path.Combine(_temp.Path, old));
+        Directory.CreateDirectory(Path.Combine(_temp.Path, current));
+
+        Assert.Equal(latest, SessionFolders.FindLatest(_temp.Path)?.Name);
     }
 
     [Fact]

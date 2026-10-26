@@ -1,4 +1,3 @@
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -34,11 +33,7 @@ public sealed class JsonlTranscriptSink : ITranscriptSink
 {
     public const string FileName = "transcript.jsonl";
 
-    private static readonly JsonSerializerOptions Options = new(JsonFiles.Options)
-    {
-        WriteIndented = false,
-        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // keep Cyrillic and kana readable for agents
-    };
+    private static readonly JsonSerializerOptions Options = new(JsonFiles.Options) { WriteIndented = false };
 
     private readonly Lock _gate = new();
     private readonly List<TranscriptLine> _lines = [];

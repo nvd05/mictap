@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace MicTap.Core;
@@ -9,6 +10,7 @@ internal static class JsonFiles
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // people edit these files: keep "Ctrl+Alt+L" and Cyrillic as they are
     };
 
     /// <summary>

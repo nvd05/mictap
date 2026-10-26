@@ -40,6 +40,7 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal("ru", root.GetProperty("language").GetString());
         Assert.Equal("Ctrl+Alt+L", root.GetProperty("hotkeys").GetProperty("toggleLanguage").GetString());
         Assert.Equal("Ctrl+Alt+R", root.GetProperty("hotkeys").GetProperty("toggleRecording").GetString());
+        Assert.Contains("\"Ctrl+Alt+L\"", File.ReadAllText(store.FilePath)); // editable by hand, not "Ctrl+Alt..."
     }
 
     [Fact]

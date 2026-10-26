@@ -106,7 +106,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             StatusText = transcriber.OnGpu
                 ? ""
                 : "CUDA не загрузилась — распознавание идёт на CPU, живой текст запаздывает.\n"
-                  + "Нужен CUDA Toolkit 12 (cudart, cuBLAS); после установки перезапустите mictap.";
+                  + "Нужны драйвер NVIDIA 580+ и CUDA Toolkit 13; после установки перезапустите mictap.";
             if (!transcriber.OnGpu)
             {
                 _logger.Warning("Recognition runs on the CPU: the CUDA runtime did not load");

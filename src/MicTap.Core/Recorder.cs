@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Serilog;
 
 namespace MicTap.Core;
@@ -17,6 +18,9 @@ public enum StopReason
 
     /// <summary>Audio could not be written to disk.</summary>
     WriteFailed,
+
+    /// <summary>The disk fell behind by more than the write buffer: recording stopped instead of dropping audio.</summary>
+    WriteStalled,
 }
 
 public sealed record RecordingProgress(SessionInfo Session, int ChunkIndex, TimeSpan Recorded);
@@ -24,27 +28,38 @@ public sealed record RecordingProgress(SessionInfo Session, int ChunkIndex, Time
 public sealed record RecordingStopped(SessionInfo Session, StopReason Reason, Exception? Error, TimeSpan Recorded);
 
 /// <summary>
-/// Records one session at a time: audio source → chunked WAV files plus meta.json. Written audio is flushed
-/// to disk every <see cref="FlushInterval"/>. Events are raised on capture or timer threads.
+/// Records one session at a time. The capture thread only copies each buffer into a channel; a
+/// <see cref="ChunkWriterStage"/> writes the chunks on its own thread. Up to the write buffer of audio may wait for
+/// the disk; beyond that recording stops with <see cref="StopReason.WriteStalled"/>.
+/// <see cref="LevelChanged"/> is raised on the capture thread, the other events on the writer thread.
 /// </summary>
 public sealed class Recorder
 {
-    public static readonly TimeSpan FlushInterval = TimeSpan.FromSeconds(1);
-
     /// <summary>A device that delivers no audio for this long is treated as lost.</summary>
     public static readonly TimeSpan SilenceTimeout = TimeSpan.FromSeconds(5);
 
+    /// <summary>Audio that may wait for the disk before recording stops.</summary>
+    public static readonly TimeSpan DefaultWriteBuffer = TimeSpan.FromSeconds(60);
+
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan WatchdogInterval = TimeSpan.FromSeconds(1);
 
     private readonly ILogger _logger;
     private readonly TimeProvider _time;
-    private readonly Lock _gate = new();
+    private readonly TimeSpan _writeBuffer;
+    private readonly Lock _gate = new(); // guards starting and finishing sessions, never taken on the capture path
     private Session? _active;
 
     public Recorder(ILogger logger, TimeProvider time)
+        : this(logger, time, DefaultWriteBuffer)
+    {
+    }
+
+    internal Recorder(ILogger logger, TimeProvider time, TimeSpan writeBuffer)
     {
         _logger = logger.ForContext<Recorder>();
         _time = time;
+        _writeBuffer = writeBuffer;
     }
 
     /// <summary>Peak level of the latest captured block, 0..1.</summary>
@@ -52,19 +67,14 @@ public sealed class Recorder
 
     public event EventHandler<RecordingProgress>? ProgressChanged;
 
-    /// <summary>Raised once per started session, after its last chunk got the final header.</summary>
+    /// <summary>Raised once per started session, after the last queued audio reached its chunk and the chunk got its final header.</summary>
     public event EventHandler<RecordingStopped>? Stopped;
 
-    public bool IsRecording
-    {
-        get
-        {
-            lock (_gate)
-            {
-                return _active is not null;
-            }
-        }
-    }
+    /// <summary>True from start until the session has finished writing.</summary>
+    public bool IsRecording => Volatile.Read(ref _active) is not null;
+
+    /// <summary>Test hook: runs on the writer thread before each block is written.</summary>
+    internal Action? BeforeDiskWrite { get; set; }
 
     /// <summary>
     /// Creates the session folder, meta.json and the first chunk, then starts <paramref name="source"/>.
@@ -85,6 +95,8 @@ public sealed class Recorder
 
         source.DataAvailable += OnData;
         source.Stopped += OnSourceStopped;
+        session.Timer = _time.CreateTimer(_ => Tick(), null, WatchdogInterval, WatchdogInterval);
+        session.Stage.Start();
         try
         {
             source.Start();
@@ -93,9 +105,10 @@ public sealed class Recorder
         {
             _logger.Error(ex, "Capture did not start for session {Session}", session.Info.Name);
             source.Stopped -= OnSourceStopped;
-            Detach(session);
-            session.Writer.Dispose();
+            session.Notify = false;
+            End(session, StopReason.DeviceFailed, ex);
             source.Dispose();
+            session.Finished.Task.Wait(); // the writer closes the empty first chunk
             throw;
         }
 
@@ -105,75 +118,46 @@ public sealed class Recorder
         return session.Info;
     }
 
-    /// <summary>Stops capture and completes once the last chunk got its final header.</summary>
+    /// <summary>Stops capture and completes once everything captured is on disk with final chunk headers.</summary>
     public async Task StopAsync()
     {
-        Session? session;
-        lock (_gate)
+        Session? session = Volatile.Read(ref _active);
+        if (session is null)
         {
-            session = _active;
-            if (session is null)
-            {
-                return;
-            }
-
-            session.StopRequested = true;
+            return;
         }
 
+        session.StopRequested = true;
         try
         {
             session.Source.Stop();
         }
         catch (AudioCaptureException ex)
         {
-            Finish(session, StopReason.DeviceFailed, ex);
-            return;
+            End(session, StopReason.DeviceFailed, ex);
         }
 
         try
         {
-            await session.Finished.Task.WaitAsync(StopTimeout, _time).ConfigureAwait(false);
+            await session.Ended.Task.WaitAsync(StopTimeout, _time).ConfigureAwait(false);
         }
         catch (TimeoutException)
         {
             _logger.Warning("Capture did not confirm stop within {Timeout}; closing the session anyway", StopTimeout);
-            Finish(session, StopReason.Requested, null);
+            End(session, StopReason.Requested, null);
         }
+
+        await session.Finished.Task.ConfigureAwait(false);
     }
 
-    /// <summary>Flushes written audio to disk and detects a silent device; runs every <see cref="FlushInterval"/>.</summary>
+    /// <summary>Detects a device that stopped delivering audio; runs every <see cref="WatchdogInterval"/>.</summary>
     internal void Tick()
     {
-        Session? session;
-        Exception? failure = null;
-        bool silent;
-        lock (_gate)
+        Session? session = Volatile.Read(ref _active);
+        if (session is not null && !session.IsEnding
+            && _time.GetElapsedTime(Volatile.Read(ref session.LastDataAt)) >= SilenceTimeout)
         {
-            session = _active;
-            if (session is null)
-            {
-                return;
-            }
-
-            try
-            {
-                session.Writer.Flush();
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                failure = ex;
-            }
-
-            silent = _time.GetElapsedTime(session.LastDataAt) >= SilenceTimeout;
-        }
-
-        if (failure is not null)
-        {
-            Finish(session, StopReason.WriteFailed, failure);
-        }
-        else if (silent)
-        {
-            Finish(session, StopReason.DeviceSilent, null);
+            End(session, StopReason.DeviceSilent, null);
         }
     }
 
@@ -195,8 +179,19 @@ public sealed class Recorder
             writer.ChunkClosed += (_, chunk) => _logger.Information(
                 "Chunk {Chunk} closed: {Seconds:0.0} s", chunk.Path, format.DurationOf(chunk.DataBytes).TotalSeconds);
 
-            var session = new Session(info, source, writer, _time.GetTimestamp());
-            session.Timer = _time.CreateTimer(_ => Tick(), null, FlushInterval, FlushInterval);
+            Channel<byte[]> channel = Channel.CreateUnbounded<byte[]>(
+                new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+            var stage = new ChunkWriterStage(writer, channel.Reader, _time, BeforeDiskWrite);
+            long writeBufferBytes = (long)(format.ByteRate * _writeBuffer.TotalSeconds);
+            var session = new Session(info, source, writer, channel, stage, writeBufferBytes, _time.GetTimestamp());
+
+            stage.Written += bytes =>
+            {
+                Interlocked.Add(ref session.QueuedBytes, -bytes);
+                ProgressChanged?.Invoke(this, new RecordingProgress(info, writer.CurrentIndex, format.DurationOf(writer.TotalBytes)));
+            };
+            stage.Completion.ContinueWith(task => OnWriterDone(session, task.Result), TaskScheduler.Default);
+
             _active = session;
             return session;
         }
@@ -204,39 +199,23 @@ public sealed class Recorder
 
     private void OnData(object? sender, AudioBuffer buffer)
     {
-        Session? session;
-        RecordingProgress progress;
-        Exception? failure = null;
-        lock (_gate)
+        Session? session = Volatile.Read(ref _active);
+        if (session is null || session.IsEnding || !ReferenceEquals(session.Source, sender))
         {
-            session = _active;
-            if (session is null || !ReferenceEquals(session.Source, sender))
-            {
-                return;
-            }
-
-            try
-            {
-                session.Writer.Write(buffer.Span);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                failure = ex;
-            }
-
-            session.LastDataAt = _time.GetTimestamp();
-            progress = new RecordingProgress(
-                session.Info, session.Writer.CurrentIndex, PcmFormat.Mono16k.DurationOf(session.Writer.TotalBytes));
-        }
-
-        if (failure is not null)
-        {
-            Finish(session, StopReason.WriteFailed, failure);
             return;
         }
 
-        LevelChanged?.Invoke(this, AudioLevel.Peak(buffer.Span));
-        ProgressChanged?.Invoke(this, progress);
+        // NAudio reuses the buffer once this handler returns, so the channel gets a copy.
+        byte[] block = buffer.Span.ToArray();
+        if (Interlocked.Add(ref session.QueuedBytes, block.Length) > session.WriteBufferBytes)
+        {
+            End(session, StopReason.WriteStalled, null);
+            return;
+        }
+
+        session.Channel.Writer.TryWrite(block);
+        Volatile.Write(ref session.LastDataAt, _time.GetTimestamp());
+        LevelChanged?.Invoke(this, AudioLevel.Peak(block));
     }
 
     private void OnSourceStopped(object? sender, CaptureStopped e)
@@ -245,46 +224,31 @@ public sealed class Recorder
         source.DataAvailable -= OnData;
         source.Stopped -= OnSourceStopped;
 
-        Session? session;
-        lock (_gate)
-        {
-            session = _active is not null && ReferenceEquals(_active.Source, source) ? _active : null;
-        }
-
-        if (session is not null)
+        Session? session = Volatile.Read(ref _active);
+        if (session is not null && ReferenceEquals(session.Source, source))
         {
             session.SourceStopped = true;
             StopReason reason = e.Error is null && session.StopRequested ? StopReason.Requested : StopReason.DeviceFailed;
-            Finish(session, reason, e.Error);
+            End(session, reason, e.Error);
         }
 
         // Capture has ended, so releasing the device from its own callback is safe.
         source.Dispose();
     }
 
-    private void Finish(Session session, StopReason reason, Exception? error)
+    /// <summary>Stops taking audio: the writer drains what is queued, then the session finishes.</summary>
+    private void End(Session session, StopReason reason, Exception? error)
     {
-        if (!Detach(session))
+        if (Interlocked.CompareExchange(ref session.Ending, 1, 0) != 0)
         {
             return;
         }
 
-        try
-        {
-            session.Writer.Dispose();
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // The chunk keeps zero sizes in its header and gets repaired on the next start.
-            _logger.Error(ex, "Closing the last chunk of session {Session} failed", session.Info.Name);
-            if (reason == StopReason.Requested)
-            {
-                reason = StopReason.WriteFailed;
-                error = ex;
-            }
-        }
-
-        if (reason is (StopReason.WriteFailed or StopReason.DeviceSilent) && !session.SourceStopped)
+        session.Reason = reason;
+        session.Error = error;
+        session.Timer?.Dispose();
+        session.Source.DataAvailable -= OnData;
+        if (reason is not (StopReason.Requested or StopReason.DeviceFailed) && !session.SourceStopped)
         {
             // Capture still runs: ask it to end; the source is disposed when it reports Stopped.
             try
@@ -297,54 +261,72 @@ public sealed class Recorder
             }
         }
 
+        session.Channel.Writer.TryComplete();
+        session.Ended.TrySetResult();
+    }
+
+    private void OnWriterDone(Session session, Exception? failure)
+    {
+        if (failure is not null)
+        {
+            _logger.Error(failure, "Writing session {Session} failed", session.Info.Name);
+            End(session, StopReason.WriteFailed, failure);
+            if (session.Reason == StopReason.Requested)
+            {
+                session.Reason = StopReason.WriteFailed;
+                session.Error = failure;
+            }
+        }
+
+        lock (_gate)
+        {
+            if (_active == session)
+            {
+                _active = null;
+            }
+        }
+
         TimeSpan recorded = PcmFormat.Mono16k.DurationOf(session.Writer.TotalBytes);
-        if (reason == StopReason.Requested)
+        if (session.Reason == StopReason.Requested)
         {
             _logger.Information("Session {Session} stopped, {Recorded} recorded", session.Info.Name, recorded);
         }
         else
         {
-            _logger.Error(error, "Session {Session} stopped: {Reason}, {Recorded} recorded", session.Info.Name, reason, recorded);
+            _logger.Error(session.Error, "Session {Session} stopped: {Reason}, {Recorded} recorded", session.Info.Name, session.Reason, recorded);
+        }
+
+        if (session.Notify)
+        {
+            Stopped?.Invoke(this, new RecordingStopped(session.Info, session.Reason, session.Error, recorded));
         }
 
         session.Finished.TrySetResult();
-        Stopped?.Invoke(this, new RecordingStopped(session.Info, reason, error, recorded));
     }
 
-    /// <summary>Makes <paramref name="session"/> inactive; false if it already was.</summary>
-    private bool Detach(Session session)
+    private sealed class Session(
+        SessionInfo info, IAudioSource source, ChunkedWavWriter writer, Channel<byte[]> channel,
+        ChunkWriterStage stage, long writeBufferBytes, long startedAt)
     {
-        lock (_gate)
-        {
-            if (_active != session)
-            {
-                return false;
-            }
+        public readonly SessionInfo Info = info;
+        public readonly IAudioSource Source = source;
+        public readonly ChunkedWavWriter Writer = writer;
+        public readonly Channel<byte[]> Channel = channel;
+        public readonly ChunkWriterStage Stage = stage;
+        public readonly long WriteBufferBytes = writeBufferBytes;
+        public readonly TaskCompletionSource Ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public readonly TaskCompletionSource Finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-            _active = null;
-        }
+        public long QueuedBytes;
+        public long LastDataAt = startedAt;
+        public int Ending;
+        public volatile bool StopRequested;
+        public volatile bool SourceStopped;
+        public bool Notify = true;
+        public StopReason Reason;
+        public Exception? Error;
+        public ITimer? Timer;
 
-        session.Timer?.Dispose();
-        session.Source.DataAvailable -= OnData;
-        return true;
-    }
-
-    private sealed class Session(SessionInfo info, IAudioSource source, ChunkedWavWriter writer, long startedAt)
-    {
-        public SessionInfo Info { get; } = info;
-
-        public IAudioSource Source { get; } = source;
-
-        public ChunkedWavWriter Writer { get; } = writer;
-
-        public TaskCompletionSource Finished { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        public ITimer? Timer { get; set; }
-
-        public long LastDataAt { get; set; } = startedAt;
-
-        public bool StopRequested { get; set; }
-
-        public bool SourceStopped { get; set; }
+        public bool IsEnding => Volatile.Read(ref Ending) != 0;
     }
 }

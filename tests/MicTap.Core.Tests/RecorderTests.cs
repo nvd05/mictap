@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.Json;
 using Serilog.Core;
 
@@ -6,17 +7,18 @@ namespace MicTap.Core.Tests;
 public sealed class RecorderTests : IDisposable
 {
     private static readonly DateTimeOffset StartedAt = new(2026, 10, 26, 14, 5, 30, TimeSpan.FromHours(3));
+    private static readonly TimeSpan Patience = TimeSpan.FromSeconds(10);
 
     private readonly TempFolder _temp = new();
     private readonly ManualTimeProvider _time = new(StartedAt);
     private readonly FakeAudioSource _source = new();
     private readonly Recorder _recorder;
     private readonly List<RecordingStopped> _stops = [];
+    private readonly TaskCompletionSource<RecordingStopped> _firstStop = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public RecorderTests()
     {
-        _recorder = new Recorder(Logger.None, _time);
-        _recorder.Stopped += (_, stopped) => _stops.Add(stopped);
+        _recorder = Watch(new Recorder(Logger.None, _time));
     }
 
     public void Dispose() => _temp.Dispose();
@@ -38,7 +40,7 @@ public sealed class RecorderTests : IDisposable
         Assert.True(_source.Started);
         Assert.True(_source.Disposed);
         Assert.False(_recorder.IsRecording);
-        RecordingStopped stopped = Assert.Single(_stops);
+        RecordingStopped stopped = Assert.Single(Stops());
         Assert.Equal(StopReason.Requested, stopped.Reason);
         Assert.Null(stopped.Error);
         Assert.Equal(TimeSpan.FromSeconds(2.5), stopped.Recorded);
@@ -72,8 +74,10 @@ public sealed class RecorderTests : IDisposable
     }
 
     [Fact]
-    public async Task Tick_puts_written_audio_on_disk()
+    public async Task Writer_puts_audio_on_disk_every_second()
     {
+        var written = 0;
+        _recorder.ProgressChanged += (_, _) => Interlocked.Increment(ref written);
         SessionInfo session = Start(chunkSeconds: 60);
         string chunk = Path.Combine(session.AudioFolder, "000.wav");
 
@@ -83,18 +87,68 @@ public sealed class RecorderTests : IDisposable
             _source.Push(block);
         }
 
+        await Eventually(() => Volatile.Read(ref written) == 10);
         Assert.Equal(WavHeader.Size, WavFiles.LengthOnDisk(chunk));
 
-        _recorder.Tick();
+        _time.Advance(TimeSpan.FromSeconds(1));
 
-        Assert.Equal(WavHeader.Size + 3200, WavFiles.LengthOnDisk(chunk));
+        await Eventually(() => WavFiles.LengthOnDisk(chunk) == WavHeader.Size + 3200);
         Assert.Equal((0u, 0u), WavFiles.HeaderSizes(chunk));
         Assert.True(_recorder.IsRecording);
         await _recorder.StopAsync();
     }
 
     [Fact]
-    public void Device_failure_stops_recording_and_keeps_audio()
+    public async Task Slow_disk_neither_blocks_capture_nor_loses_audio()
+    {
+        using var disk = new ManualResetEventSlim(false);
+        _recorder.BeforeDiskWrite = disk.Wait;
+        SessionInfo session = Start(chunkSeconds: 1);
+        byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(3));
+
+        // The writer is held while 3 s of audio arrive: capture must not wait for it.
+        var capture = Stopwatch.StartNew();
+        foreach (byte[] block in SyntheticPcm.Split(pcm, 3200))
+        {
+            _source.Push(block);
+        }
+
+        capture.Stop();
+        Assert.True(capture.Elapsed < TimeSpan.FromSeconds(1), $"capture blocked for {capture.Elapsed}");
+        Assert.True(_recorder.IsRecording);
+
+        disk.Set();
+        await _recorder.StopAsync();
+
+        Assert.Equal(StopReason.Requested, Assert.Single(Stops()).Reason);
+        Assert.Equal(pcm, WavFiles.ReadAudio(WavFiles.Chunks(session.AudioFolder)));
+    }
+
+    [Fact]
+    public async Task Disk_stalled_beyond_the_write_buffer_stops_recording_and_keeps_queued_audio()
+    {
+        Recorder recorder = Watch(new Recorder(Logger.None, _time, writeBuffer: TimeSpan.FromSeconds(1)));
+        using var disk = new ManualResetEventSlim(false);
+        recorder.BeforeDiskWrite = disk.Wait;
+        SessionInfo session = recorder.Start(Options(chunkSeconds: 60), _source);
+        byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(1.5));
+
+        foreach (byte[] block in SyntheticPcm.Split(pcm, 3200))
+        {
+            _source.Push(block);
+        }
+
+        Assert.True(_source.StopRequested);
+        disk.Set();
+        RecordingStopped stopped = await _firstStop.Task.WaitAsync(Patience);
+
+        Assert.Equal(StopReason.WriteStalled, stopped.Reason);
+        Assert.Equal(TimeSpan.FromSeconds(1), stopped.Recorded);
+        Assert.Equal(pcm[..32000], WavFiles.ReadAudio(Path.Combine(session.AudioFolder, "000.wav")));
+    }
+
+    [Fact]
+    public async Task Device_failure_stops_recording_and_keeps_audio()
     {
         SessionInfo session = Start(chunkSeconds: 1);
         byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(1.5));
@@ -105,9 +159,9 @@ public sealed class RecorderTests : IDisposable
 
         var error = new InvalidOperationException("NoDriver calling waveInAddBuffer");
         _source.Fail(error);
+        RecordingStopped stopped = await _firstStop.Task.WaitAsync(Patience);
 
         Assert.False(_recorder.IsRecording);
-        RecordingStopped stopped = Assert.Single(_stops);
         Assert.Equal(StopReason.DeviceFailed, stopped.Reason);
         Assert.Same(error, stopped.Error);
         Assert.Equal(TimeSpan.FromSeconds(1.5), stopped.Recorded);
@@ -116,7 +170,7 @@ public sealed class RecorderTests : IDisposable
     }
 
     [Fact]
-    public void Silent_device_stops_recording_after_timeout()
+    public async Task Silent_device_stops_recording_after_timeout()
     {
         SessionInfo session = Start(chunkSeconds: 60);
         byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(0.2));
@@ -124,13 +178,15 @@ public sealed class RecorderTests : IDisposable
 
         _time.Advance(TimeSpan.FromSeconds(4.9));
         _recorder.Tick();
-        Assert.True(_recorder.IsRecording);
+        Assert.False(_firstStop.Task.IsCompleted);
+        Assert.False(_source.StopRequested);
 
         _time.Advance(TimeSpan.FromSeconds(0.1));
         _recorder.Tick();
+        RecordingStopped stopped = await _firstStop.Task.WaitAsync(Patience);
 
         Assert.False(_recorder.IsRecording);
-        Assert.Equal(StopReason.DeviceSilent, Assert.Single(_stops).Reason);
+        Assert.Equal(StopReason.DeviceSilent, stopped.Reason);
         Assert.True(_source.StopRequested);
         Assert.True(_source.Disposed);
         Assert.Equal(pcm, WavFiles.ReadAudio(Path.Combine(session.AudioFolder, "000.wav")));
@@ -142,7 +198,13 @@ public sealed class RecorderTests : IDisposable
         var levels = new List<double>();
         var progress = new List<RecordingProgress>();
         _recorder.LevelChanged += (_, level) => levels.Add(level);
-        _recorder.ProgressChanged += (_, p) => progress.Add(p);
+        _recorder.ProgressChanged += (_, p) =>
+        {
+            lock (progress)
+            {
+                progress.Add(p);
+            }
+        };
         Start(chunkSeconds: 1);
 
         _source.Push(new byte[3200]);
@@ -180,6 +242,38 @@ public sealed class RecorderTests : IDisposable
 
         Assert.Equal("2026-10-26_1405", first.Name);
         Assert.Equal("2026-10-26_1405_2", second.Name);
+    }
+
+    private static async Task Eventually(Func<bool> condition)
+    {
+        var waited = Stopwatch.StartNew();
+        while (!condition())
+        {
+            Assert.True(waited.Elapsed < Patience, "condition not met in time");
+            await Task.Delay(20);
+        }
+    }
+
+    private Recorder Watch(Recorder recorder)
+    {
+        recorder.Stopped += (_, stopped) =>
+        {
+            lock (_stops)
+            {
+                _stops.Add(stopped);
+            }
+
+            _firstStop.TrySetResult(stopped);
+        };
+        return recorder;
+    }
+
+    private RecordingStopped[] Stops()
+    {
+        lock (_stops)
+        {
+            return [.. _stops];
+        }
     }
 
     private SessionInfo Start(int chunkSeconds) => _recorder.Start(Options(chunkSeconds), _source);

@@ -23,7 +23,18 @@ public partial class MainWindow : Window
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         viewModel.RecordingFailed += OnRecordingFailed;
         viewModel.NewProjectRequested += (_, _) => _ = ShowProjectDialogAsync(ProjectEditor.ForNew(), viewModel.CreateProject);
-        viewModel.EditProjectRequested += (_, project) => _ = ShowProjectDialogAsync(ProjectEditor.For(project), viewModel.SaveProject);
+        viewModel.EditProjectRequested += (_, project) =>
+            _ = ShowProjectDialogAsync(ProjectEditor.For(project), settings => viewModel.SaveProject(project, settings));
+        viewModel.RenameSessionRequested += (_, session) => _ = ShowRenameDialogAsync(session);
+        viewModel.SettingsRequested += (_, _) => _ = ShowSettingsAsync();
+        viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
+        viewModel.Transcript.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(TranscriptViewModel.NowText) or nameof(TranscriptViewModel.IsLive))
+            {
+                FollowTranscript();
+            }
+        };
         UpdateTrayIcon();
         AddFailureSimulation();
     }
@@ -37,6 +48,10 @@ public partial class MainWindow : Window
             // that one turns on Efficiency Mode, which throttles the process and can starve capture.
             Hide();
         }
+
+        // A maximized chromeless window reaches past the screen by its resize border: keep the content inside.
+        Root.Margin = WindowState == WindowState.Maximized ? new Thickness(7) : new Thickness(0);
+        MaximizeIcon.Kind = WindowState == WindowState.Maximized ? PackIconKind.WindowRestore : PackIconKind.WindowMaximize;
     }
 
     protected override void OnClosed(EventArgs e)
@@ -95,6 +110,34 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task ShowRenameDialogAsync(SessionNode session)
+    {
+        var content = (FrameworkElement)FindResource("RenameDialog");
+        var editor = new RenameEditor(session.Name);
+        content.DataContext = editor;
+        if (await DialogHost.Show(content, "MainDialog") is true)
+        {
+            await _viewModel.RenameSessionAsync(session, editor.Name);
+        }
+    }
+
+    private async Task ShowSettingsAsync()
+    {
+        var content = (FrameworkElement)FindResource("SettingsDialog");
+        content.DataContext = _viewModel;
+        await DialogHost.Show(content, "MainDialog");
+    }
+
+    /// <summary>New lines scroll the transcript to its end unless the user scrolled up to read.</summary>
+    private void FollowTranscript()
+    {
+        bool atEnd = TranscriptScroll.VerticalOffset >= TranscriptScroll.ScrollableHeight - 48;
+        if (atEnd)
+        {
+            Dispatcher.InvokeAsync(TranscriptScroll.ScrollToEnd, System.Windows.Threading.DispatcherPriority.Background);
+        }
+    }
+
     private void ShowFromTray()
     {
         Show();
@@ -140,6 +183,13 @@ public partial class MainWindow : Window
     }
 
     private void OnMinimizeClick(object sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeClick(object sender, RoutedEventArgs e) =>
+        WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
+
+    private void OnTreeSelectionChanged(object sender, RoutedPropertyChangedEventArgs<object> e) => _viewModel.Select(e.NewValue);
+
+    private void OnDismissMessage(object sender, RoutedEventArgs e) => _viewModel.DismissMessage();
 
     private void OnCloseClick(object sender, RoutedEventArgs e) => Close();
 

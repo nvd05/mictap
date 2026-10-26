@@ -83,6 +83,12 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isRetranscribing;
 
+    /// <summary>A recording runs into the shown session: the pending phrase is shown under the finished ones.</summary>
+    [ObservableProperty]
+    private bool _isLive;
+
+    private int _pending;
+
     public TranscriptViewModel(ModelStore whisperModel, ModelStore vadModel, Recorder recorder, ILogger logger)
     {
         _whisperModel = whisperModel;
@@ -95,7 +101,11 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
         _pipeline.SegmentTranscribed += OnSegmentTranscribed;
-        _pipeline.QueueChanged += (_, count) => _dispatcher.InvokeAsync(() => QueueText = count > 0 ? $"ждут распознавания: {count}" : "");
+        _pipeline.QueueChanged += (_, count) =>
+        {
+            Volatile.Write(ref _pending, count);
+            _dispatcher.InvokeAsync(() => QueueText = count > 0 ? $"ждут распознавания: {count}" : "");
+        };
         _pipeline.Failed += OnFailed;
         _pipeline.Attach(recorder);
     }
@@ -141,6 +151,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     {
         ShowSession(session);
         _live = true;
+        IsLive = true;
         NowText = "";
         IsSilence = false;
     }
@@ -148,6 +159,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     public void EndSession()
     {
         _live = false;
+        IsLive = false;
         IsLiveBusy = false;
         NowText = "";
         IsSilence = false;
@@ -187,6 +199,39 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         {
             QueueText = "";
             IsRetranscribing = false;
+        }
+    }
+
+    /// <summary>
+    /// Completes once no speech segment waits for recognition (or after <paramref name="limit"/>): a session folder may be
+    /// renamed only after its last lines are written.
+    /// </summary>
+    public async Task<bool> WhenIdleAsync(TimeSpan limit)
+    {
+        // The last speech of a stopped recording reaches the queue a moment after the stop.
+        await Task.Delay(1500);
+        DateTime until = DateTime.UtcNow + limit;
+        while (Volatile.Read(ref _pending) > 0)
+        {
+            if (DateTime.UtcNow > until)
+            {
+                return false;
+            }
+
+            await Task.Delay(200);
+        }
+
+        await Task.Delay(300); // the count drops just before the line is appended
+        return true;
+    }
+
+    /// <summary>The session folder was renamed: its transcript is read from the new place.</summary>
+    public void SessionRenamed(SessionInfo before, SessionInfo after)
+    {
+        _pipeline.ForgetSink(before);
+        if (_session == before)
+        {
+            ShowSession(after);
         }
     }
 

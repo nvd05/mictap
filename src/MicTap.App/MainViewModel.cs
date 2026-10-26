@@ -34,6 +34,11 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _isRecording;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(RecordButtonText))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand))]
+    private bool _isStarting;
+
+    [ObservableProperty]
     private double _level;
 
     [ObservableProperty]
@@ -73,11 +78,12 @@ public sealed partial class MainViewModel : ObservableObject
 
     public ObservableCollection<AudioDevice> Devices { get; } = [];
 
-    public bool CanEditSettings => !IsRecording;
+    public bool CanEditSettings => !IsRecording && !IsStarting;
 
     public bool IsIdle => !IsRecording;
 
     public string RecordButtonText => IsRecording ? "Остановить запись"
+        : IsStarting ? "Запуск…"
         : RootFolder is null ? "Сначала выберите папку"
         : "Начать запись";
 
@@ -152,22 +158,20 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanStart() => !IsRecording && RootFolder is not null && SelectedDevice is not null;
+    private bool CanStart() => !IsRecording && !IsStarting && RootFolder is not null && SelectedDevice is not null;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
-    private void Start()
+    private async Task StartAsync()
     {
         string root = RootFolder!;
         string device = SelectedDevice!.Name;
+        var options = new RecordingOptions(root, device, _settings.ChunkSeconds, _appVersion);
+        SessionInfo session;
+        IsStarting = true;
         try
         {
-            SessionInfo session = _recorder.Start(
-                new RecordingOptions(root, device, _settings.ChunkSeconds, _appVersion), WaveInAudioSource.Open(device));
-            IsRecording = true;
-            SessionText = session.Name;
-            ChunkText = ChunkedWavWriter.FileName(0);
-            ShowRecorded(TimeSpan.Zero);
-            ShowMessage($"Идёт запись в {session.Folder}", isError: false);
+            // Opening a capture device can take seconds; the window stays responsive meanwhile.
+            session = await Task.Run(() => _recorder.Start(options, WaveInAudioSource.Open(device)));
         }
         catch (AudioCaptureException ex)
         {
@@ -181,6 +185,21 @@ public sealed partial class MainViewModel : ObservableObject
             ShowMessage($"Запись не началась: нет доступа к папке {root} ({ex.Message}).", isError: true);
             return;
         }
+        finally
+        {
+            IsStarting = false;
+        }
+
+        if (!_recorder.IsRecording)
+        {
+            return; // the device failed right after starting; the Stopped event reports why
+        }
+
+        IsRecording = true;
+        SessionText = session.Name;
+        ChunkText = ChunkedWavWriter.FileName(0);
+        ShowRecorded(TimeSpan.Zero);
+        ShowMessage($"Идёт запись в {session.Folder}", isError: false);
 
         if (_settings.DeviceName != device)
         {

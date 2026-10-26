@@ -43,7 +43,7 @@ tests/MicTap.Core.Tests/
   language (ru / ja).
 - Логи: `%APPDATA%\mictap\logs\`.
 - Модель: `%APPDATA%\mictap\models\ggml-large-v3-turbo.bin`, скачивается при первом запуске.
-- Сессия: `<rootFolder>\<yyyy-MM-dd_HHmm>\`
+- Сессия: `<rootFolder>\<yyyy-MM-dd_HH-mm-ss>\` (до v0.2.1 — `<yyyy-MM-dd_HHmm>`)
   - `audio\000.wav`, `001.wav`, … — чанки по chunkSeconds
   - `meta.json` — schemaVersion (1), started, device, format, chunkSeconds, appVersion
   - `transcript.jsonl` — строка на готовый чанк: schemaVersion (1), chunk, start, end (секунды от начала

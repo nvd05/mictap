@@ -39,7 +39,7 @@ dotnet run --project src/MicTap.App
   `language` (`ru` / `ja`).
 - Журнал: `%APPDATA%\mictap\logs\`.
 - Модель: `%APPDATA%\mictap\models\ggml-large-v3-turbo.bin` (проверяется SHA-256 после скачивания).
-- Сессия: `<папка>\yyyy-MM-dd_HHmm\` (вторая сессия в ту же минуту — `_2`):
+- Сессия: `<папка>\yyyy-MM-dd_HH-mm-ss\`, например `2026-10-26_16-08-00` (вторая сессия в ту же секунду — `_2`):
   - `audio\000.wav`, `001.wav`, … — чанки по `chunkSeconds`;
   - `meta.json` — `schemaVersion` (1), `started`, `device`, `format`, `chunkSeconds`, `appVersion`;
   - `transcript.jsonl` — строка на готовый чанк:

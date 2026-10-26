@@ -330,6 +330,17 @@
 
                         <Separator DockPanel.Dock="Top" Margin="0,12" />
 
+                        <Button DockPanel.Dock="Top" HorizontalAlignment="Right" Margin="0,-4,0,-28" Padding="8,0" Height="28"
+                                Style="{StaticResource MaterialDesignFlatButton}"
+                                Command="{Binding DataContext.RetranscribeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                AutomationProperties.Name="Распознать заново"
+                                ToolTip="{Binding DataContext.LastSession.Name, RelativeSource={RelativeSource AncestorType=Window}, StringFormat='Прогнать звук сессии {0} через VAD и Whisper ещё раз; прежний текст сохранится в transcript.&lt;время&gt;.bak'}">
+                            <StackPanel Orientation="Horizontal">
+                                <materialDesign:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Margin="6,0,0,0" Text="Распознать заново" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
                         <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
                             <TextBlock Text="Записано" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
                             <TextBlock Margin="0,2,0,0" Opacity="0.6" Text="черновик по фразам; щёлкните, чтобы исправить"

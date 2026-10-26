@@ -31,7 +31,7 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(IsIdle), nameof(RecordButtonText), nameof(TrayToolTip))]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand), nameof(RetranscribeCommand))]
     private bool _isRecording;
 
     [ObservableProperty]
@@ -61,6 +61,11 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _isError;
 
+    /// <summary>The session «Распознать заново» works on: the one recorded last, or the latest in the folder.</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(RetranscribeCommand))]
+    private SessionInfo? _lastSession;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LanguageText), nameof(TrayToolTip))]
     private string _language = AppSettings.DefaultLanguage;
@@ -79,6 +84,13 @@ public sealed partial class MainViewModel : ObservableObject
         recorder.LevelChanged += OnLevelChanged;
         recorder.ProgressChanged += OnProgressChanged;
         recorder.Stopped += OnRecordingStopped;
+        transcript.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(TranscriptViewModel.IsRetranscribing))
+            {
+                RetranscribeCommand.NotifyCanExecuteChanged();
+            }
+        };
         _ready = true;
     }
 
@@ -277,6 +289,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         IsRecording = true;
         SessionText = session.Name;
+        LastSession = session;
         Transcript.BeginSession(session);
         ChunkText = ChunkedWavWriter.FileName(0);
         ShowRecorded(TimeSpan.Zero);
@@ -291,6 +304,11 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(IsRecording))]
     private Task StopAsync() => _recorder.StopAsync();
 
+    private bool CanRetranscribe() => !IsRecording && !IsStarting && LastSession is not null && !Transcript.IsRetranscribing;
+
+    [RelayCommand(CanExecute = nameof(CanRetranscribe))]
+    private Task RetranscribeAsync() => Transcript.RetranscribeAsync(LastSession!, Language);
+
     private void RepairLatestSession()
     {
         if (RootFolder is null)
@@ -302,6 +320,7 @@ public sealed partial class MainViewModel : ObservableObject
         try
         {
             report = SessionRepair.RepairLatest(RootFolder);
+            LastSession = report?.Session;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {

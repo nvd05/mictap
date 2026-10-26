@@ -115,6 +115,15 @@ public sealed class TranscriptionPipeline : IDisposable
         }
     }
 
+    /// <summary>The session's transcript.jsonl was replaced on disk: read it afresh on next use.</summary>
+    public void ForgetSink(SessionInfo session)
+    {
+        lock (_gate)
+        {
+            _sinks.Remove(session.Folder);
+        }
+    }
+
     public void Dispose()
     {
         _stop.Cancel();

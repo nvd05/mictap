@@ -48,6 +48,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private readonly CancellationTokenSource _stop = new();
     private readonly TranscriberHost _host;
     private readonly TranscriptionPipeline _pipeline;
+    private readonly Task<Func<SpeechDetector>> _detectors;
     private VoiceActivityModel? _vad;
     private SessionInfo? _session;
     private bool _live;
@@ -79,6 +80,9 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _queueText = "";
 
+    [ObservableProperty]
+    private bool _isRetranscribing;
+
     public TranscriptViewModel(ModelStore whisperModel, ModelStore vadModel, Recorder recorder, ILogger logger)
     {
         _whisperModel = whisperModel;
@@ -86,7 +90,8 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _logger = logger.ForContext<TranscriptViewModel>();
         _host = new TranscriberHost(LoadTranscriberAsync, logger, TimeProvider.System);
         _host.StateChanged += (_, state) => _dispatcher.InvokeAsync(() => ShowState(state));
-        _pipeline = new TranscriptionPipeline(_host, Task.Run(LoadDetectorsAsync), logger);
+        _detectors = Task.Run(LoadDetectorsAsync);
+        _pipeline = new TranscriptionPipeline(_host, _detectors, logger);
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
         _pipeline.SegmentTranscribed += OnSegmentTranscribed;
@@ -119,6 +124,43 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         IsLiveBusy = false;
         NowText = "";
         IsSilence = false;
+    }
+
+    /// <summary>
+    /// Recognizes <paramref name="session"/> again from its audio; the old transcript is kept as a .bak file.
+    /// Sessions recorded before v0.3 are taken as spoken in <paramref name="language"/>.
+    /// </summary>
+    public async Task RetranscribeAsync(SessionInfo session, string language)
+    {
+        IsRetranscribing = true;
+        _session = session;
+        Items.Clear();
+        QueueText = "распознаю заново…";
+        try
+        {
+            var retranscriber = new SessionRetranscriber(_host, await _detectors, TimeProvider.System, _logger);
+            var progress = new Progress<double>(done => QueueText = $"распознаю заново: {done:P0}");
+            RetranscribeResult result = await Task.Run(() => retranscriber.RunAsync(session, language, progress, _stop.Token));
+            _pipeline.ForgetSink(session);
+            foreach (TranscriptLine line in result.Lines)
+            {
+                Items.Add(new TranscriptItem(line, item => SaveEdit(session, item)));
+            }
+
+            StatusText = result.Backup is null
+                ? $"Сессия {session.Name} распознана заново: фраз {result.Lines.Count}."
+                : $"Сессия {session.Name} распознана заново: фраз {result.Lines.Count}.\nПрежний текст — {Path.GetFileName(result.Backup)}.";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+        {
+            _logger.Error(ex, "Recognizing {Session} again failed", session.Name);
+            StatusText = $"Распознать заново не удалось: {ex.Message}";
+        }
+        finally
+        {
+            QueueText = "";
+            IsRetranscribing = false;
+        }
     }
 
     /// <summary>Makes the next recognition pass fail, to see the transcriber come back on its own.</summary>

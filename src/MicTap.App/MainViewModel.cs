@@ -118,7 +118,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         RootFolder = dialog.FolderName;
         Save(_settings with { RootFolder = dialog.FolderName });
-        ShowMessage($"Записи будут сохраняться в {dialog.FolderName}.", isError: false);
+        ShowMessage("Папка для записей выбрана.", isError: false);
         RepairLatestSession();
     }
 
@@ -142,7 +142,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         else if (_settings.DeviceName is not null && SelectedDevice.Name != _settings.DeviceName)
         {
-            ShowMessage($"Микрофон «{_settings.DeviceName}» не найден, выбран «{SelectedDevice.Name}».", isError: true);
+            ShowMessage($"Микрофон «{_settings.DeviceName}» не найден.\nВыбран «{SelectedDevice.Name}».", isError: true);
         }
         else
         {
@@ -199,7 +199,7 @@ public sealed partial class MainViewModel : ObservableObject
         SessionText = session.Name;
         ChunkText = ChunkedWavWriter.FileName(0);
         ShowRecorded(TimeSpan.Zero);
-        ShowMessage($"Идёт запись в {session.Folder}", isError: false);
+        ShowMessage($"Идёт запись: сессия {session.Name}.", isError: false);
 
         if (_settings.DeviceName != device)
         {
@@ -247,13 +247,13 @@ public sealed partial class MainViewModel : ObservableObject
         if (report.Unrecognized.Count > 0)
         {
             ShowMessage(
-                $"В сессии {report.Session.Name} есть файлы с нераспознанным заголовком, они не изменены: {FileNames(report.Unrecognized)}.",
+                $"В сессии {report.Session.Name} есть файлы с нераспознанным заголовком, они не изменены:\n{FileNames(report.Unrecognized)}.",
                 isError: true);
         }
         else if (report.Repaired.Count > 0)
         {
             ShowMessage(
-                $"Сессия {report.Session.Name} была прервана сбоем; заголовки восстановлены: {FileNames(report.Repaired)}.",
+                $"Сессия {report.Session.Name} была прервана сбоем.\nЗаголовки восстановлены: {FileNames(report.Repaired)}.",
                 isError: false);
         }
     }
@@ -286,11 +286,11 @@ public sealed partial class MainViewModel : ObservableObject
             ShowRecorded(stopped.Recorded);
             if (stopped.Reason == StopReason.Requested)
             {
-                ShowMessage($"Запись остановлена, сохранено в {stopped.Session.Folder}", isError: false);
+                ShowMessage($"Запись остановлена.\nСессия {stopped.Session.Name} сохранена.", isError: false);
                 return;
             }
 
-            string text = $"Запись остановлена: {Describe(stopped)} Записанное сохранено в {stopped.Session.Folder}";
+            string text = $"Запись остановлена: {Describe(stopped)}\nЗаписанное сохранено в сессии {stopped.Session.Name}.";
             ShowMessage(text, isError: true);
             RecordingFailed?.Invoke(this, text);
         });

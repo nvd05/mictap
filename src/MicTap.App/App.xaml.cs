@@ -9,6 +9,7 @@ namespace MicTap.App;
 public partial class App : Application
 {
     private Mutex? _singleInstance;
+    private TranscriptViewModel? _transcript;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -36,17 +37,20 @@ public partial class App : Application
         Log.Information("mictap {Version} started", version);
 
         var settingsStore = new SettingsStore(AppPaths.SettingsFile);
-        var viewModel = new MainViewModel(
-            settingsStore, settingsStore.Load(), new Recorder(Log.Logger, TimeProvider.System), version, Log.Logger);
+        var recorder = new Recorder(Log.Logger, TimeProvider.System);
+        _transcript = new TranscriptViewModel(new ModelStore(AppPaths.ModelsFolder, ModelSpec.LargeV3Turbo), recorder, Log.Logger);
+        var viewModel = new MainViewModel(settingsStore, settingsStore.Load(), recorder, _transcript, version, Log.Logger);
         MainWindow = new MainWindow(viewModel);
         MainWindow.Show();
         viewModel.Initialize();
+        _ = _transcript.InitializeAsync(); // reports its own failures in the window
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         if (_singleInstance is not null)
         {
+            _transcript?.Dispose();
             Log.Information("mictap exited");
             Log.CloseAndFlush();
             _singleInstance.ReleaseMutex();

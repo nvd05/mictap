@@ -10,7 +10,7 @@
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=local:MainViewModel}"
         Style="{StaticResource MaterialDesignWindow}"
-        Title="mictap" Icon="Assets/mictap.ico" Width="560" SizeToContent="Height" ResizeMode="CanMinimize"
+        Title="mictap" Icon="Assets/mictap.ico" Width="1000" SizeToContent="Height" ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen" Background="{StaticResource SurfaceBrush}"
         Closing="OnWindowClosing">
     <WindowChrome.WindowChrome>
@@ -107,7 +107,7 @@
             <Border DockPanel.Dock="Bottom" Padding="24,12" BorderThickness="0,1,0,0"
                     Background="{DynamicResource MaterialDesign.Brush.Card.Background}"
                     BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">
-                <UniformGrid Columns="3">
+                <UniformGrid Columns="4">
                     <StackPanel>
                         <TextBlock Text="СЕССИЯ" Opacity="0.6" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
                         <TextBlock Margin="0,2,0,0" Text="{Binding SessionText}"
@@ -123,10 +123,31 @@
                         <TextBlock Margin="0,2,0,0" Text="{Binding RecordedText}"
                                    Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
                     </StackPanel>
+                    <StackPanel ToolTip="Где работает распознавание: CUDA (видеокарта) или CPU">
+                        <TextBlock Text="РАСПОЗНАВАНИЕ" Opacity="0.6" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                        <TextBlock Margin="0,2,0,0" Text="{Binding Transcript.RuntimeText}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource MaterialDesignTitleSmallTextBlock}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Transcript.RuntimeWarning}" Value="True">
+                                            <Setter Property="Foreground" Value="{StaticResource RecordBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </StackPanel>
                 </UniformGrid>
             </Border>
 
-            <StackPanel Margin="16">
+            <Grid Margin="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="528" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel x:Name="LeftColumn" VerticalAlignment="Top">
                 <!-- Where and from what to record. -->
                 <materialDesign:Card Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16" Padding="20,16">
                     <StackPanel>
@@ -162,6 +183,17 @@
                                       materialDesign:HintAssist.Hint="Микрофон" DisplayMemberPath="Name"
                                       ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}"
                                       IsEnabled="{Binding CanEditSettings}" />
+                        </DockPanel>
+
+                        <Separator Margin="0,16" />
+
+                        <DockPanel>
+                            <materialDesign:PackIcon Kind="Translate" Width="24" Height="24" VerticalAlignment="Center"
+                                                     Foreground="{DynamicResource MaterialDesign.Brush.Primary}" />
+                            <ComboBox Margin="16,0,56,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                                      materialDesign:HintAssist.Hint="Язык речи" DisplayMemberPath="Name" SelectedValuePath="Code"
+                                      AutomationProperties.Name="Язык речи"
+                                      ItemsSource="{Binding Languages}" SelectedValue="{Binding Language}" />
                         </DockPanel>
                     </StackPanel>
                 </materialDesign:Card>
@@ -239,7 +271,74 @@
                                    Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
                     </DockPanel>
                 </materialDesign:Card>
-            </StackPanel>
+                </StackPanel>
+
+                <!-- Text: live draft of the latest seconds, then the editable text of finished chunks. -->
+                <materialDesign:Card Grid.Column="2" Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16"
+                                     Padding="20,16" VerticalAlignment="Top"
+                                     Height="{Binding ActualHeight, ElementName=LeftColumn}">
+                    <DockPanel DataContext="{Binding Transcript}">
+                        <DockPanel DockPanel.Dock="Top">
+                            <materialDesign:PackIcon Kind="TextRecognition" Width="24" Height="24" VerticalAlignment="Center"
+                                                     Foreground="{DynamicResource MaterialDesign.Brush.Primary}" />
+                            <ProgressBar DockPanel.Dock="Right" Width="18" Height="18" IsIndeterminate="True"
+                                         Style="{StaticResource MaterialDesignCircularProgressBar}"
+                                         ToolTip="Распознаётся" AutomationProperties.Name="Распознаётся"
+                                         Visibility="{Binding IsLiveBusy, Converter={StaticResource VisibleWhenTrue}}" />
+                            <StackPanel Margin="16,0,12,0" VerticalAlignment="Center">
+                                <TextBlock Text="Сейчас" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                                <TextBlock Margin="0,2,0,0" Opacity="0.6" Text="последние 10 с, обновляется каждые 3 с"
+                                           Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                            </StackPanel>
+                        </DockPanel>
+
+                        <TextBlock DockPanel.Dock="Top" Margin="0,12,0,0" MinHeight="44" TextWrapping="Wrap"
+                                   AutomationProperties.Name="Сейчас" Text="{Binding NowText}"
+                                   Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
+
+                        <ProgressBar DockPanel.Dock="Top" Margin="0,8,0,0" Height="6" Minimum="0" Maximum="100"
+                                     Style="{StaticResource MaterialDesignLinearProgressBar}" Value="{Binding DownloadPercent}"
+                                     Visibility="{Binding IsDownloading, Converter={StaticResource VisibleWhenTrue}}" />
+
+                        <TextBlock DockPanel.Dock="Top" Margin="0,8,0,0" TextWrapping="Wrap" Text="{Binding StatusText}"
+                                   Foreground="{StaticResource RecordBrush}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource MaterialDesignBodySmallTextBlock}">
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusText}" Value="">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+
+                        <Separator DockPanel.Dock="Top" Margin="0,12" />
+
+                        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+                            <TextBlock Text="Записано" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                            <TextBlock Margin="0,2,0,0" Opacity="0.6" Text="черновик по чанкам; щёлкните, чтобы исправить"
+                                       Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                        </StackPanel>
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Items}" AutomationProperties.Name="Записано">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type local:TranscriptItem}">
+                                        <DockPanel Margin="0,0,8,8">
+                                            <TextBlock DockPanel.Dock="Left" Width="64" Margin="0,4,0,0" Opacity="0.6"
+                                                       Text="{Binding TimeText}" Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                                            <TextBox Text="{Binding Text}" TextWrapping="Wrap" Foreground="Gray"
+                                                     AutomationProperties.Name="{Binding TimeText}"
+                                                     materialDesign:TextFieldAssist.DecorationVisibility="Hidden" />
+                                        </DockPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </DockPanel>
+                </materialDesign:Card>
+            </Grid>
         </DockPanel>
     </materialDesign:DialogHost>
 </Window>

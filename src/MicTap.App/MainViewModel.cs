@@ -60,14 +60,21 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _isError;
 
-    public MainViewModel(SettingsStore settingsStore, AppSettings settings, Recorder recorder, string appVersion, ILogger logger)
+    [ObservableProperty]
+    private string _language = AppSettings.DefaultLanguage;
+
+    public MainViewModel(
+        SettingsStore settingsStore, AppSettings settings, Recorder recorder, TranscriptViewModel transcript, string appVersion, ILogger logger)
     {
+        Transcript = transcript;
         _settingsStore = settingsStore;
         _settings = settings;
         _recorder = recorder;
         _appVersion = appVersion;
         _logger = logger.ForContext<MainViewModel>();
         RootFolder = settings.RootFolder;
+        Language = settings.Language;
+        transcript.Language = settings.Language;
         recorder.LevelChanged += OnLevelChanged;
         recorder.ProgressChanged += OnProgressChanged;
         recorder.Stopped += OnRecordingStopped;
@@ -77,6 +84,11 @@ public sealed partial class MainViewModel : ObservableObject
     public event EventHandler<string>? RecordingFailed;
 
     public ObservableCollection<AudioDevice> Devices { get; } = [];
+
+    public TranscriptViewModel Transcript { get; }
+
+    public IReadOnlyList<LanguageOption> Languages { get; } =
+        AppSettings.Languages.Select(code => new LanguageOption(code, code == "ja" ? "日本語" : "Русский")).ToArray();
 
     public bool CanEditSettings => !IsRecording && !IsStarting;
 
@@ -163,6 +175,15 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    partial void OnLanguageChanged(string value)
+    {
+        Transcript.Language = value;
+        if (value != _settings.Language)
+        {
+            Save(_settings with { Language = value });
+        }
+    }
+
     partial void OnSelectedDeviceChanged(AudioDevice? value)
     {
         if (!_refreshingDevices && value is not null && value.Name != _settings.DeviceName)
@@ -210,6 +231,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         IsRecording = true;
         SessionText = session.Name;
+        Transcript.BeginSession(session);
         ChunkText = ChunkedWavWriter.FileName(0);
         ShowRecorded(TimeSpan.Zero);
         ShowMessage($"Идёт запись: сессия {session.Name}.", isError: false);
@@ -296,6 +318,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             IsRecording = false;
             Level = 0;
+            Transcript.EndSession();
             ShowRecorded(stopped.Recorded);
             if (stopped.Reason == StopReason.Requested)
             {
@@ -351,3 +374,5 @@ public sealed partial class MainViewModel : ObservableObject
     private static string FormatElapsed(TimeSpan recorded) =>
         $"{(int)recorded.TotalHours:00}:{recorded.Minutes:00}:{recorded.Seconds:00}";
 }
+
+public sealed record LanguageOption(string Code, string Name);

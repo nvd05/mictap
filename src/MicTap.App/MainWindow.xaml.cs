@@ -9,7 +9,7 @@ namespace MicTap.App;
 public partial class MainWindow : Window
 {
     private readonly MainViewModel _viewModel;
-    private bool _stopping;
+    private bool _confirmingClose;
     private bool _closeConfirmed;
 
     public MainWindow(MainViewModel viewModel)
@@ -47,18 +47,22 @@ public partial class MainWindow : Window
         }
 
         e.Cancel = true;
-        if (_stopping || Dialogs.IsOpen)
+        if (_confirmingClose)
         {
             return;
         }
 
+        _confirmingClose = true;
+
+        // Window.Show is not allowed while Closing runs: go on once the cancelled close has unwound.
+        await System.Windows.Threading.Dispatcher.Yield();
         ShowFromTray();
         if (await DialogHost.Show(FindResource("CloseDialog"), "MainDialog") is not true)
         {
+            _confirmingClose = false;
             return;
         }
 
-        _stopping = true;
         await _viewModel.StopRecordingAsync();
         _closeConfirmed = true;
         Close();

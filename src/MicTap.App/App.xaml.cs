@@ -60,10 +60,10 @@ public partial class App : Application
     {
         // Not handled: the process ends, and a chunk left open is repaired on the next start.
         Log.Fatal(e.Exception, "Unhandled exception on the UI thread");
-        Log.CloseAndFlush();
         MessageBox.Show(
             $"Непредвиденная ошибка, mictap будет закрыт:\n{e.Exception.Message}\n\nПодробности в журнале: {AppPaths.LogsFolder}",
             "mictap", MessageBoxButton.OK, MessageBoxImage.Error);
+        Log.CloseAndFlush();
     }
 
     private static void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)

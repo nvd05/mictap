@@ -47,5 +47,11 @@ public sealed class SettingsStore(string filePath)
             throw new InvalidDataException(
                 $"Settings file {FilePath}: chunkSeconds must be 1..{AppSettings.MaxChunkSeconds}, got {settings.ChunkSeconds}.");
         }
+
+        if (!AppSettings.Languages.Contains(settings.Language))
+        {
+            throw new InvalidDataException(
+                $"Settings file {FilePath}: language must be one of {string.Join(", ", AppSettings.Languages)}, got {settings.Language}.");
+        }
     }
 }

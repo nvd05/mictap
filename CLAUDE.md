@@ -48,16 +48,16 @@ tests/MicTap.Hub.Tests/
   policy.json, пакетная обработка файлов.
 
 ## Данные на диске
-- Настройки: `%APPDATA%\mictap\settings.json` — rootFolder, deviceName, chunkSeconds (по умолчанию 60),
-  language (ru / ja), hotkeys {toggleLanguage, toggleRecording}.
-- Логи: `%APPDATA%\mictap\logs\`.
-- Модели: `%APPDATA%\mictap\models\` — ggml-large-v3-turbo.bin и ggml-silero-v6.2.0.bin (VAD), скачиваются
-  при первом запуске.
-- Сессия: `<rootFolder>\<yyyy-MM-dd_HH-mm-ss>\` (до v0.2.1 — `<yyyy-MM-dd_HHmm>`)
-  - `audio\000.wav`, `001.wav`, … — чанки по chunkSeconds
-  - `meta.json` — schemaVersion 2, starts[] {time, offset}, device, format, chunkSeconds, appVersion,
-    languageMarks[] {at, lang} (первая метка — 0 с, язык начала)
+- Настройки: `%APPDATA%\mictap\settings.json` — rootFolder, deviceName, chunkSeconds (60), hotkeys
+  {toggleLanguage, toggleRecording}, hubPort (47310).
+- Логи `%APPDATA%\mictap\logs\`, модели `%APPDATA%\mictap\models\`.
+- Проекты: `<rootFolder>\<проект>\project.json` — schemaVersion, name, languages, audioRetention.
+- Сессия `<rootFolder>\<проект>\<сессия>\`:
+  - `audio\000.wav`, … — чанки по chunkSeconds (кроме audioRetention: none)
+  - `meta.json` — schemaVersion 2, starts[], device, format, chunkSeconds, appVersion, languageMarks[]
   - `transcript.jsonl` — сегмент на строку: schemaVersion 2, seq, start, end, lang, text, edited
+  - `agents\<agent>.json` — cursor, lastSeen, policy
+  - `notes\` — для агентов, mictap не пишет
 
 ## Надёжность (обязательно)
 - Flush на диск не реже раза в 2 с. Падение приложения теряет секунды, не сессию.

@@ -8,21 +8,13 @@ public sealed record AppSettings
     /// <summary>Upper bound that keeps a chunk far below the 4 GB WAV limit.</summary>
     public const int MaxChunkSeconds = 3600;
 
-    public const string DefaultLanguage = "ru";
-
-    /// <summary>Languages offered for recognition, as Whisper language codes.</summary>
-    public static IReadOnlyList<string> Languages { get; } = ["ru", "ja"];
-
-    /// <summary>Folder that receives session folders; null until the user picks one.</summary>
+    /// <summary>Folder of projects; null means <see cref="Projects.DefaultRoot"/>.</summary>
     public string? RootFolder { get; init; }
 
     /// <summary>Microphone name as reported by WinMM; null until the user picks one.</summary>
     public string? DeviceName { get; init; }
 
     public int ChunkSeconds { get; init; } = DefaultChunkSeconds;
-
-    /// <summary>Speech language for recognition: one of <see cref="Languages"/>.</summary>
-    public string Language { get; init; } = DefaultLanguage;
 
     public HotkeySettings Hotkeys { get; init; } = new();
 }

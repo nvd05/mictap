@@ -10,8 +10,12 @@ public sealed record MetaFormat(string Encoding, int SampleRate, int Channels, i
         new($"pcm_s{format.BitsPerSample}le", format.SampleRate, format.Channels, format.BitsPerSample);
 }
 
-/// <summary>A start of recording into the session: wall-clock time and offset in seconds of session audio.</summary>
-public sealed record SessionStart(DateTimeOffset Time, double Offset);
+/// <summary>
+/// A recording into the session: wall-clock start, offset in seconds of session audio, and its length in seconds once
+/// it stopped (missing after a crash).
+/// </summary>
+public sealed record SessionStart(
+    DateTimeOffset Time, double Offset, [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] double? Duration = null);
 
 /// <summary>From <paramref name="At"/> seconds of session audio on, speech is in <paramref name="Lang"/>.</summary>
 public sealed record LanguageMark(double At, string Lang);

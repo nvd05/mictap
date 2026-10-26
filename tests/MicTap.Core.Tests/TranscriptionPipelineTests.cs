@@ -145,6 +145,57 @@ public sealed class TranscriptionPipelineTests : IDisposable
         Assert.True(line.GetProperty("edited").GetBoolean());
     }
 
+    [Fact]
+    public async Task Appended_recording_continues_seq_and_session_time_in_its_language()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, language) => language));
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        var again = new FakeAudioSource();
+        _recorder.Start(Options("ja"), again);
+        PushTo(again, FakeSpeech.SilencePcm(0.5), FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 2);
+
+        Assert.Equal(
+            [(1, 0.0, 1.0, "ru"), (2, 2.5, 3.5, "ja")],
+            new JsonlTranscriptSink(session.Folder).Lines.Select(l => (l.Seq, l.Start, l.End, l.Lang)));
+    }
+
+    [Fact]
+    public async Task Delete_after_transcript_removes_a_chunk_once_its_speech_is_written()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "фраза"));
+        SessionInfo session = _recorder.Start(Options("ru", AudioRetention.DeleteAfterTranscript, chunkSeconds: 1), _source);
+        string first = Path.Combine(session.AudioFolder, "000.wav");
+
+        Push(FakeSpeech.SpeechPcm(1.5), FakeSpeech.SilencePcm(1.5));
+        await Eventually(() => Lines().Length == 1 && !File.Exists(first));
+        Assert.True(_recorder.IsRecording);
+
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 2 && !Directory.EnumerateFiles(session.AudioFolder).Any());
+
+        Assert.Equal(2, File.ReadAllLines(Path.Combine(session.Folder, "transcript.jsonl")).Length);
+    }
+
+    [Fact]
+    public async Task Keep_leaves_every_chunk_after_recognition()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "фраза"));
+        SessionInfo session = _recorder.Start(Options("ru", AudioRetention.Keep, chunkSeconds: 1), _source);
+
+        Push(FakeSpeech.SpeechPcm(1.5), FakeSpeech.SilencePcm(1.5));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        Assert.Equal(3, Directory.EnumerateFiles(session.AudioFolder).Count());
+    }
+
     private TranscriptionPipeline Run(FakeTranscriber transcriber) => Run(_ => Task.FromResult<ITranscriber>(transcriber));
 
     private TranscriptionPipeline Run(Func<CancellationToken, Task<ITranscriber>> load)
@@ -167,15 +218,18 @@ public sealed class TranscriptionPipelineTests : IDisposable
         }
     }
 
-    private void Push(params byte[][] parts)
+    private void Push(params byte[][] parts) => PushTo(_source, parts);
+
+    private static void PushTo(FakeAudioSource source, params byte[][] parts)
     {
         foreach (byte[] block in SyntheticPcm.Split([.. parts.SelectMany(p => p)], 3200))
         {
-            _source.Push(block);
+            source.Push(block);
         }
     }
 
-    private RecordingOptions Options(string language) => new(_temp.Path, "Fake microphone", 60, "0.3.0-test", language);
+    private RecordingOptions Options(string language, AudioRetention retention = AudioRetention.Keep, int chunkSeconds = 60) =>
+        new(SessionFolders.Open(_temp.Path, "Пара"), "Fake microphone", chunkSeconds, "0.4.0-test", language, retention);
 
     private static async Task Eventually(Func<bool> condition)
     {

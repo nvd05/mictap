@@ -27,16 +27,22 @@ public sealed class SpeechSegmenter
     private long _pendingStart;
     private long _detectedAt;
 
-    public SpeechSegmenter(SpeechDetector detect, string language)
+    /// <param name="origin">Stream time of the first sample: an appended recording continues its session.</param>
+    public SpeechSegmenter(SpeechDetector detect, string language, TimeSpan origin = default)
     {
         _detect = detect;
         Language = language;
+        _pendingStart = ToSamples(origin);
+        _detectedAt = _pendingStart;
     }
 
     /// <summary>The language of the next segment.</summary>
     public string Language { get; private set; }
 
     public TimeSpan Received => FromSamples(ReceivedSamples);
+
+    /// <summary>Audio before this point will never be part of a later segment.</summary>
+    public TimeSpan Committed => FromSamples(_pendingStart);
 
     private long ReceivedSamples => _pendingStart + _count;
 

@@ -3,7 +3,10 @@ using Serilog;
 
 namespace MicTap.Core;
 
-public sealed record RecordingOptions(string RootFolder, string DeviceName, int ChunkSeconds, string AppVersion, string Language);
+/// <summary>What to record into: <paramref name="Session"/> is opened by the caller; an existing session gets appended.</summary>
+public sealed record RecordingOptions(
+    SessionInfo Session, string DeviceName, int ChunkSeconds, string AppVersion, string Language,
+    AudioRetention Retention = AudioRetention.Keep);
 
 public enum StopReason
 {
@@ -32,8 +35,11 @@ public sealed record CapturedAudio(SessionInfo Session, ReadOnlyMemory<byte> Pcm
 
 public sealed record LanguageMarked(SessionInfo Session, LanguageMark Mark);
 
-/// <summary>A closed chunk; <paramref name="Start"/> is its offset from the session start.</summary>
-public sealed record ChunkCompleted(SessionInfo Session, ChunkInfo Chunk, TimeSpan Start);
+/// <summary>A recording into <paramref name="Session"/> began; its audio starts at <paramref name="Offset"/> of session time.</summary>
+public sealed record RecordingStarted(SessionInfo Session, TimeSpan Offset, string Language, AudioRetention Retention);
+
+/// <summary>A closed chunk holding session time <paramref name="Start"/> to <paramref name="End"/>.</summary>
+public sealed record ChunkCompleted(SessionInfo Session, ChunkInfo Chunk, TimeSpan Start, TimeSpan End);
 
 /// <summary>
 /// Records one session at a time. The capture thread only copies each buffer into a channel; a
@@ -87,10 +93,13 @@ public sealed class Recorder
     public event EventHandler<RecordingStopped>? Stopped;
 
     /// <summary>
-    /// The language of speech from a point of the session on: raised at start with the session's language (at 0)
-    /// and by <see cref="MarkLanguage"/>. Raised on the thread that started or marked.
+    /// A language switch during a recording, see <see cref="MarkLanguage"/>. The language a recording starts with comes
+    /// with <see cref="Started"/>. Raised on the thread that marked.
     /// </summary>
     public event EventHandler<LanguageMarked>? LanguageMarked;
+
+    /// <summary>A recording began, before its first audio. Raised on the thread that called <see cref="Start"/>.</summary>
+    public event EventHandler<RecordingStarted>? Started;
 
     /// <summary>True from start until the session has finished writing.</summary>
     public bool IsRecording => Volatile.Read(ref _active) is not null;
@@ -110,7 +119,7 @@ public sealed class Recorder
                 return null;
             }
 
-            TimeSpan at = PcmFormat.Mono16k.DurationOf(Interlocked.Read(ref session.CapturedBytes));
+            TimeSpan at = session.Offset + PcmFormat.Mono16k.DurationOf(Interlocked.Read(ref session.CapturedBytes));
             var mark = new LanguageMark(Math.Round(at.TotalSeconds, 3), language);
             session.Meta = session.Meta with { LanguageMarks = [.. session.Meta.LanguageMarks, mark] };
             session.Meta.WriteTo(session.Info);
@@ -142,7 +151,7 @@ public sealed class Recorder
             throw;
         }
 
-        LanguageMarked?.Invoke(this, new LanguageMarked(session.Info, session.Meta.LanguageMarks[0]));
+        Started?.Invoke(this, new RecordingStarted(session.Info, session.Offset, options.Language, options.Retention));
         source.DataAvailable += OnData;
         source.Stopped += OnSourceStopped;
         session.Timer = _time.CreateTimer(_ => Tick(), null, WatchdogInterval, WatchdogInterval);
@@ -222,30 +231,60 @@ public sealed class Recorder
 
             PcmFormat format = PcmFormat.Mono16k;
             DateTimeOffset started = _time.GetLocalNow();
-            SessionInfo info = SessionFolders.Create(options.RootFolder, started);
-            var meta = new SessionMeta(
-                [new SessionStart(started, 0)], options.DeviceName, MetaFormat.From(format), options.ChunkSeconds,
-                options.AppVersion, [new LanguageMark(0, options.Language)]);
-            meta.WriteTo(info);
-            var writer = new ChunkedWavWriter(info.AudioFolder, format, options.ChunkSeconds);
-            writer.ChunkClosed += (_, chunk) =>
+            SessionInfo info = options.Session;
+            TimeSpan offset = TimeSpan.Zero;
+            SessionMeta meta;
+            if (File.Exists(info.MetaFile))
             {
-                _logger.Information(
-                    "Chunk {Chunk} closed: {Seconds:0.0} s", chunk.Path, format.DurationOf(chunk.DataBytes).TotalSeconds);
-                ChunkCompleted?.Invoke(
-                    this, new ChunkCompleted(info, chunk, TimeSpan.FromSeconds((double)chunk.Index * options.ChunkSeconds)));
-            };
+                // Appending: the new audio continues the session's time line, its language starts there.
+                SessionMeta previous = SessionMeta.Read(info, options.Language);
+                offset = AudioEnd(info, previous);
+                double at = Math.Round(offset.TotalSeconds, 3);
+                meta = previous with
+                {
+                    Starts = [.. previous.Starts, new SessionStart(started, at)],
+                    Device = options.DeviceName,
+                    ChunkSeconds = options.ChunkSeconds,
+                    AppVersion = options.AppVersion,
+                    LanguageMarks = [.. previous.LanguageMarks, new LanguageMark(at, options.Language)],
+                };
+            }
+            else
+            {
+                meta = new SessionMeta(
+                    [new SessionStart(started, 0)], options.DeviceName, MetaFormat.From(format), options.ChunkSeconds,
+                    options.AppVersion, [new LanguageMark(0, options.Language)]);
+            }
+
+            meta.WriteTo(info);
+            ChunkedWavWriter? writer = options.Retention == AudioRetention.None
+                ? null
+                : new ChunkedWavWriter(info.AudioFolder, format, options.ChunkSeconds, NextChunkIndex(info));
+            long closedBytes = 0;
+            if (writer is not null)
+            {
+                writer.ChunkClosed += (_, chunk) =>
+                {
+                    _logger.Information(
+                        "Chunk {Chunk} closed: {Seconds:0.0} s", chunk.Path, format.DurationOf(chunk.DataBytes).TotalSeconds);
+                    TimeSpan start = offset + format.DurationOf(closedBytes);
+                    closedBytes += chunk.DataBytes;
+                    ChunkCompleted?.Invoke(this, new ChunkCompleted(info, chunk, start, offset + format.DurationOf(closedBytes)));
+                };
+            }
 
             Channel<byte[]> channel = Channel.CreateUnbounded<byte[]>(
                 new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
             var stage = new ChunkWriterStage(writer, channel.Reader, _time, BeforeDiskWrite);
             long writeBufferBytes = (long)(format.ByteRate * _writeBuffer.TotalSeconds);
-            var session = new Session(info, meta, source, writer, channel, stage, writeBufferBytes, _time.GetTimestamp());
+            var session = new Session(info, meta, offset, source, writer, channel, stage, writeBufferBytes, _time.GetTimestamp());
 
             stage.Written += bytes =>
             {
                 Interlocked.Add(ref session.QueuedBytes, -bytes);
-                ProgressChanged?.Invoke(this, new RecordingProgress(info, writer.CurrentIndex, format.DurationOf(writer.TotalBytes)));
+                session.WrittenBytes += bytes;
+                ProgressChanged?.Invoke(
+                    this, new RecordingProgress(info, writer?.CurrentIndex ?? -1, format.DurationOf(session.WrittenBytes)));
             };
             stage.Completion.ContinueWith(task => OnWriterDone(session, task.Result), TaskScheduler.Default);
 
@@ -345,7 +384,8 @@ public sealed class Recorder
             }
         }
 
-        TimeSpan recorded = PcmFormat.Mono16k.DurationOf(session.Writer.TotalBytes);
+        TimeSpan recorded = PcmFormat.Mono16k.DurationOf(session.WrittenBytes);
+        SaveDuration(session, recorded);
         if (session.Reason == StopReason.Requested)
         {
             _logger.Information("Session {Session} stopped, {Recorded} recorded", session.Info.Name, recorded);
@@ -363,13 +403,68 @@ public sealed class Recorder
         session.Finished.TrySetResult();
     }
 
+    /// <summary>
+    /// Where the audio of an earlier recording ended: the longest of the stored durations, the chunks on disk, the
+    /// last mark and the last line of text. A crash leaves no duration, and chunks may be deleted by retention.
+    /// </summary>
+    private static TimeSpan AudioEnd(SessionInfo session, SessionMeta meta)
+    {
+        double end = meta.Starts.Max(s => s.Offset + (s.Duration ?? 0));
+        end = Math.Max(end, meta.LanguageMarks.Max(m => m.At));
+        if (Directory.Exists(session.AudioFolder))
+        {
+            long audioBytes = Directory.EnumerateFiles(session.AudioFolder, "*.wav")
+                .Sum(chunk => Math.Max(0, new FileInfo(chunk).Length - WavHeader.Size));
+            end = Math.Max(end, PcmFormat.Mono16k.DurationOf(audioBytes).TotalSeconds);
+        }
+
+        if (File.Exists(Path.Combine(session.Folder, JsonlTranscriptSink.FileName)))
+        {
+            IReadOnlyList<TranscriptLine> lines = new JsonlTranscriptSink(session.Folder).Lines;
+            end = Math.Max(end, lines.Count == 0 ? 0 : lines.Max(l => l.End));
+        }
+
+        return TimeSpan.FromSeconds(end);
+    }
+
+    /// <summary>Chunks of an appended session continue the numbering.</summary>
+    private static int NextChunkIndex(SessionInfo session) =>
+        !Directory.Exists(session.AudioFolder)
+            ? 0
+            : Directory.EnumerateFiles(session.AudioFolder, "*.wav")
+                .Select(path => int.TryParse(Path.GetFileNameWithoutExtension(path), out int index) ? index + 1 : 0)
+                .DefaultIfEmpty(0)
+                .Max();
+
+    /// <summary>Stores how long this recording ran, so an append knows where the session's audio ends.</summary>
+    private void SaveDuration(Session session, TimeSpan recorded)
+    {
+        lock (_gate)
+        {
+            IReadOnlyList<SessionStart> starts = session.Meta.Starts;
+            session.Meta = session.Meta with
+            {
+                Starts = [.. starts.Take(starts.Count - 1), starts[^1] with { Duration = Math.Round(recorded.TotalSeconds, 3) }],
+            };
+            try
+            {
+                session.Meta.WriteTo(session.Info);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                _logger.Error(ex, "Saving the duration of {Session} to meta.json failed; an append will take it from the chunks", session.Info.Name);
+            }
+        }
+    }
+
     private sealed class Session(
-        SessionInfo info, SessionMeta meta, IAudioSource source, ChunkedWavWriter writer, Channel<byte[]> channel,
-        ChunkWriterStage stage, long writeBufferBytes, long startedAt)
+        SessionInfo info, SessionMeta meta, TimeSpan offset, IAudioSource source, ChunkedWavWriter? writer,
+        Channel<byte[]> channel, ChunkWriterStage stage, long writeBufferBytes, long startedAt)
     {
         public readonly SessionInfo Info = info;
         public readonly IAudioSource Source = source;
-        public readonly ChunkedWavWriter Writer = writer;
+        public readonly TimeSpan Offset = offset;
+        public readonly ChunkedWavWriter? Writer = writer;
         public readonly Channel<byte[]> Channel = channel;
         public readonly ChunkWriterStage Stage = stage;
         public readonly long WriteBufferBytes = writeBufferBytes;
@@ -377,6 +472,7 @@ public sealed class Recorder
         public readonly TaskCompletionSource Finished = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public long CapturedBytes;
+        public long WrittenBytes;
         public long QueuedBytes;
         public long LastDataAt = startedAt;
         public int Ending;

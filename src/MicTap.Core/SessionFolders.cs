@@ -1,81 +1,57 @@
 using System.Globalization;
-using System.Text.RegularExpressions;
 
 namespace MicTap.Core;
 
-/// <summary>A session folder: &lt;root&gt;\yyyy-MM-dd_HH-mm-ss\ with audio\ and meta.json inside.</summary>
+/// <summary>A session folder: &lt;project&gt;\&lt;session&gt;\ with audio\, meta.json, transcript.jsonl, agents\ and notes\.</summary>
 public sealed record SessionInfo(string Name, string Folder)
 {
     public string AudioFolder => Path.Combine(Folder, "audio");
 
     public string MetaFile => Path.Combine(Folder, "meta.json");
+
+    /// <summary>Cursors of agents that read the session.</summary>
+    public string AgentsFolder => Path.Combine(Folder, "agents");
+
+    /// <summary>For agents' own notes; mictap never writes there.</summary>
+    public string NotesFolder => Path.Combine(Folder, "notes");
 }
 
-public static partial class SessionFolders
+public static class SessionFolders
 {
-    private const string NameFormat = "yyyy-MM-dd_HH-mm-ss";
+    private static readonly string[] ReservedNames =
+        ["CON", "PRN", "AUX", "NUL", .. Enumerable.Range(1, 9).SelectMany(i => new[] { $"COM{i}", $"LPT{i}" })];
 
-    /// <summary>Names of sessions recorded before v0.2.1, still found for header repair.</summary>
-    private const string MinuteNameFormat = "yyyy-MM-dd_HHmm";
+    /// <summary>The name a new session is offered: its start time, yyyy-MM-dd_HH-mm-ss.</summary>
+    public static string DefaultName(DateTimeOffset now) => now.ToString("yyyy-MM-dd_HH-mm-ss", CultureInfo.InvariantCulture);
 
     /// <summary>
-    /// Creates the folder of a session started at <paramref name="started"/> (local time). A second session in
-    /// the same second gets a suffix, yyyy-MM-dd_HH-mm-ss_2, instead of mixing its chunks into the first one.
+    /// A name the user typed, made safe as a folder name: characters Windows forbids are dropped, spaces and dots
+    /// at the ends trimmed, device names such as CON get a trailing underscore. Empty when nothing usable is left.
     /// </summary>
-    public static SessionInfo Create(string rootFolder, DateTimeOffset started)
+    public static string Sanitize(string name)
     {
-        string baseName = started.ToString(NameFormat, CultureInfo.InvariantCulture);
-        for (int attempt = 1; ; attempt++)
-        {
-            string name = attempt == 1 ? baseName : $"{baseName}_{attempt}";
-            var session = new SessionInfo(name, Path.Combine(rootFolder, name));
-            if (!Directory.Exists(session.Folder))
-            {
-                Directory.CreateDirectory(session.AudioFolder);
-                return session;
-            }
-        }
+        char[] invalid = Path.GetInvalidFileNameChars();
+        string kept = new([.. name.Where(c => !invalid.Contains(c))]);
+        kept = string.Join(' ', kept.Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim('.', ' ');
+        return ReservedNames.Contains(kept.Split('.')[0], StringComparer.OrdinalIgnoreCase) ? kept + "_" : kept;
     }
 
-    /// <summary>The most recent session folder under <paramref name="rootFolder"/>; other folders are ignored.</summary>
-    public static SessionInfo? FindLatest(string rootFolder)
+    /// <summary>Creates the session's folders if they are missing; an existing session is kept as it is.</summary>
+    public static SessionInfo Open(string projectFolder, string name)
     {
-        if (!Directory.Exists(rootFolder))
-        {
-            return null;
-        }
-
-        SessionInfo? latest = null;
-        (DateTime Started, int Attempt) latestKey = default;
-        foreach (string folder in Directory.EnumerateDirectories(rootFolder))
-        {
-            string name = Path.GetFileName(folder);
-            if (TryParseName(name, out var key) && (latest is null || key.CompareTo(latestKey) > 0))
-            {
-                latest = new SessionInfo(name, folder);
-                latestKey = key;
-            }
-        }
-
-        return latest;
+        var session = new SessionInfo(name, Path.Combine(projectFolder, name));
+        Directory.CreateDirectory(session.AudioFolder);
+        Directory.CreateDirectory(session.AgentsFolder);
+        Directory.CreateDirectory(session.NotesFolder);
+        return session;
     }
 
-    private static bool TryParseName(string name, out (DateTime Started, int Attempt) key)
-    {
-        Match match = NamePattern().Match(name);
-        if (match.Success
-            && DateTime.TryParseExact(
-                match.Groups[1].Value, [NameFormat, MinuteNameFormat], CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime started))
-        {
-            int attempt = match.Groups[2].Success ? int.Parse(match.Groups[2].Value, CultureInfo.InvariantCulture) : 1;
-            key = (started, attempt);
-            return true;
-        }
-
-        key = default;
-        return false;
-    }
-
-    [GeneratedRegex(@"^(\d{4}-\d{2}-\d{2}_(?:\d{2}-\d{2}-\d{2}|\d{4}))(?:_(\d{1,4}))?$")]
-    private static partial Regex NamePattern();
+    /// <summary>Sessions of a project, the most recently recorded first (by the time meta.json was last written).</summary>
+    public static IReadOnlyList<SessionInfo> List(string projectFolder) =>
+        !Directory.Exists(projectFolder)
+            ? []
+            : [.. Directory.EnumerateDirectories(projectFolder)
+                .Select(folder => new SessionInfo(Path.GetFileName(folder), folder))
+                .Where(session => File.Exists(session.MetaFile))
+                .OrderByDescending(session => File.GetLastWriteTimeUtc(session.MetaFile))];
 }

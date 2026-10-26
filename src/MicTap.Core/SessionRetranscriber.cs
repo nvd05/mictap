@@ -22,7 +22,7 @@ public sealed class SessionRetranscriber(TranscriberHost host, Func<SpeechDetect
     {
         SessionMeta meta = SessionMeta.Read(session, languageOfSchema1);
         string[] chunks = Directory.Exists(session.AudioFolder)
-            ? [.. Directory.EnumerateFiles(session.AudioFolder, "*.wav").Order(StringComparer.Ordinal)]
+            ? [.. Directory.EnumerateFiles(session.AudioFolder, "*.wav").OrderBy(ChunkNumber)]
             : [];
         if (chunks.Length == 0)
         {
@@ -70,6 +70,10 @@ public sealed class SessionRetranscriber(TranscriberHost host, Func<SpeechDetect
         _logger.Information("{Session} recognized again: {Lines} lines", session.Name, sink.Lines.Count);
         return new RetranscribeResult(sink.Lines, backup);
     }
+
+    /// <summary>Chunks go in numeric order: 999.wav before 1000.wav.</summary>
+    private static int ChunkNumber(string path) =>
+        int.TryParse(Path.GetFileNameWithoutExtension(path), out int number) ? number : int.MaxValue;
 
     private async Task RecognizeAsync(JsonlTranscriptSink sink, SpeechSegment segment, CancellationToken cancellation)
     {

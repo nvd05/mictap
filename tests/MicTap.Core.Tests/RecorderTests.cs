@@ -48,7 +48,7 @@ public sealed class RecorderTests : IDisposable
         string[] chunks = WavFiles.Chunks(session.AudioFolder);
         Assert.Equal(["000.wav", "001.wav", "002.wav"], chunks.Select(Path.GetFileName));
         Assert.Equal(pcm, WavFiles.ReadAudio(chunks));
-        Assert.Equal(["audio", "meta.json"], Directory.EnumerateFileSystemEntries(session.Folder).Select(Path.GetFileName).Order());
+        Assert.Equal(["agents", "audio", "meta.json", "notes"], Directory.EnumerateFileSystemEntries(session.Folder).Select(Path.GetFileName).Order());
     }
 
     [Fact]
@@ -96,7 +96,7 @@ public sealed class RecorderTests : IDisposable
         await _recorder.StopAsync();
 
         Assert.Equal(new LanguageMark(1.5, "ja"), mark);
-        Assert.Equal([new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja")], marks.Select(m => m.Mark));
+        Assert.Equal([new LanguageMark(1.5, "ja")], marks.Select(m => m.Mark)); // the starting language comes with Started
         Assert.All(marks, m => Assert.Equal(session, m.Session));
         Assert.Equal(
             [new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja")],
@@ -285,16 +285,71 @@ public sealed class RecorderTests : IDisposable
     }
 
     [Fact]
-    public async Task Next_session_in_the_same_second_gets_its_own_folder()
+    public async Task Recording_again_into_a_session_continues_its_chunks_time_and_language_marks()
     {
-        SessionInfo first = Start(chunkSeconds: 60);
+        var starts = new List<RecordingStarted>();
+        _recorder.Started += (_, started) => starts.Add(started);
+        SessionInfo session = Start(chunkSeconds: 1);
+        byte[] first = SyntheticPcm.Create(TimeSpan.FromSeconds(1.5));
+        Push(_source, first);
+        await _recorder.StopAsync();
+        _time.Advance(TimeSpan.FromMinutes(5));
+
+        var again = new FakeAudioSource();
+        _recorder.Start(Options(1) with { Language = "ja" }, again);
+        byte[] second = SyntheticPcm.Create(TimeSpan.FromSeconds(1));
+        Push(again, second);
+        LanguageMark? mark = _recorder.MarkLanguage("ru");
         await _recorder.StopAsync();
 
-        SessionInfo second = _recorder.Start(Options(60), new FakeAudioSource());
+        Assert.Equal(["000.wav", "001.wav", "002.wav"], Directory.EnumerateFiles(session.AudioFolder).Select(Path.GetFileName).Order());
+        Assert.Equal([.. first, .. second], WavFiles.ReadAudio(WavFiles.Chunks(session.AudioFolder)));
+        Assert.Equal([TimeSpan.Zero, TimeSpan.FromSeconds(1.5)], starts.Select(s => s.Offset));
+        Assert.Equal(new LanguageMark(2.5, "ru"), mark);
+        SessionMeta meta = SessionMeta.Read(session, languageOfSchema1: "ru");
+        Assert.Equal(
+            [new SessionStart(StartedAt, 0, 1.5), new SessionStart(StartedAt.AddMinutes(5), 1.5, 1)],
+            meta.Starts);
+        Assert.Equal([new LanguageMark(0, "ru"), new LanguageMark(1.5, "ja"), new LanguageMark(2.5, "ru")], meta.LanguageMarks);
+    }
+
+    [Fact]
+    public async Task Closed_chunks_report_their_span_of_session_time()
+    {
+        var chunks = new List<ChunkCompleted>();
+        _recorder.ChunkCompleted += (_, chunk) => chunks.Add(chunk);
+        Start(chunkSeconds: 1);
+
+        Push(_source, SyntheticPcm.Create(TimeSpan.FromSeconds(2.5)));
         await _recorder.StopAsync();
 
-        Assert.Equal("2026-10-26_14-05-30", first.Name);
-        Assert.Equal("2026-10-26_14-05-30_2", second.Name);
+        Assert.Equal([(0.0, 1.0), (1.0, 2.0), (2.0, 2.5)], chunks.Select(c => (c.Start.TotalSeconds, c.End.TotalSeconds)));
+    }
+
+    [Fact]
+    public async Task Audio_retention_none_writes_no_audio_but_counts_the_recording()
+    {
+        var progress = new List<RecordingProgress>();
+        _recorder.ProgressChanged += (_, p) => { lock (progress) progress.Add(p); };
+        SessionInfo session = _recorder.Start(Options(1, AudioRetention.None), _source);
+
+        Push(_source, SyntheticPcm.Create(TimeSpan.FromSeconds(1.5)));
+        await _recorder.StopAsync();
+
+        Assert.Empty(Directory.EnumerateFiles(session.AudioFolder));
+        Assert.Equal(TimeSpan.FromSeconds(1.5), Assert.Single(Stops()).Recorded);
+        lock (progress)
+        {
+            Assert.All(progress, p => Assert.Equal(-1, p.ChunkIndex));
+        }
+    }
+
+    private static void Push(FakeAudioSource source, byte[] pcm)
+    {
+        foreach (byte[] block in SyntheticPcm.Split(pcm, 3200))
+        {
+            source.Push(block);
+        }
     }
 
     private static async Task Eventually(Func<bool> condition)
@@ -331,6 +386,6 @@ public sealed class RecorderTests : IDisposable
 
     private SessionInfo Start(int chunkSeconds) => _recorder.Start(Options(chunkSeconds), _source);
 
-    private RecordingOptions Options(int chunkSeconds) =>
-        new(_temp.Path, "Fake microphone", chunkSeconds, "1.0.0-test", "ru");
+    private RecordingOptions Options(int chunkSeconds, AudioRetention retention = AudioRetention.Keep) =>
+        new(SessionFolders.Open(_temp.Path, "2026-10-26_14-05-30"), "Fake microphone", chunkSeconds, "1.0.0-test", "ru", retention);
 }

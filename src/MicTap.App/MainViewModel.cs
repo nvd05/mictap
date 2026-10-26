@@ -11,6 +11,20 @@ namespace MicTap.App;
 
 public sealed partial class MainViewModel : ObservableObject
 {
+    private static readonly Dictionary<string, string> LanguageNames = new()
+    {
+        ["ru"] = "Русский",
+        ["ja"] = "日本語",
+        ["en"] = "English",
+        ["de"] = "Deutsch",
+        ["fr"] = "Français",
+        ["es"] = "Español",
+        ["it"] = "Italiano",
+        ["uk"] = "Українська",
+        ["zh"] = "中文",
+        ["ko"] = "한국어",
+    };
+
     private readonly SettingsStore _settingsStore;
     private readonly Recorder _recorder;
     private readonly string _appVersion;
@@ -18,12 +32,11 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private AppSettings _settings;
     private bool _refreshingDevices;
-    private bool _ready;
+    private bool _quietLanguage = true; // no tone and no mark while the language follows the selected project
+    private bool _followRecording;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RecordButtonText))]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
-    private string? _rootFolder;
+    private string _rootFolder = Core.Projects.DefaultRoot;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(StartCommand))]
@@ -31,12 +44,16 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(IsIdle), nameof(RecordButtonText), nameof(TrayToolTip))]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand), nameof(RetranscribeCommand))]
+    [NotifyCanExecuteChangedFor(
+        nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand),
+        nameof(RetranscribeCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand))]
     private bool _isRecording;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(RecordButtonText))]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand))]
+    [NotifyCanExecuteChangedFor(
+        nameof(StartCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand), nameof(RetranscribeCommand),
+        nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand))]
     private bool _isStarting;
 
     [ObservableProperty]
@@ -61,14 +78,25 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _isError;
 
-    /// <summary>The session «Распознать заново» works on: the one recorded last, or the latest in the folder.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Title), nameof(RetentionText), nameof(TrayToolTip), nameof(RecordButtonText))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RetranscribeCommand))]
+    private ProjectInfo? _selectedProject;
+
+    /// <summary>The session shown in «Записано» and recognized again by «Распознать заново».</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RetranscribeCommand))]
-    private SessionInfo? _lastSession;
+    private SessionInfo? _selectedSession;
+
+    /// <summary>The session the next recording goes to; the name of an existing one means appending to it.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Title), nameof(SessionHint))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand))]
+    private string _sessionName = "";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LanguageText), nameof(TrayToolTip))]
-    private string _language = AppSettings.DefaultLanguage;
+    private string _language = "ru";
 
     public MainViewModel(
         SettingsStore settingsStore, AppSettings settings, Recorder recorder, TranscriptViewModel transcript, string appVersion, ILogger logger)
@@ -79,8 +107,7 @@ public sealed partial class MainViewModel : ObservableObject
         _recorder = recorder;
         _appVersion = appVersion;
         _logger = logger.ForContext<MainViewModel>();
-        RootFolder = settings.RootFolder;
-        Language = settings.Language;
+        RootFolder = settings.RootFolder ?? Core.Projects.DefaultRoot;
         recorder.LevelChanged += OnLevelChanged;
         recorder.ProgressChanged += OnProgressChanged;
         recorder.Stopped += OnRecordingStopped;
@@ -91,18 +118,27 @@ public sealed partial class MainViewModel : ObservableObject
                 RetranscribeCommand.NotifyCanExecuteChanged();
             }
         };
-        _ready = true;
     }
 
     /// <summary>Recording stopped on its own; the argument explains why.</summary>
     public event EventHandler<string>? RecordingFailed;
 
+    /// <summary>The window shows the project dialog for a new project.</summary>
+    public event EventHandler? NewProjectRequested;
+
+    /// <summary>The window shows the project dialog for the settings of this project.</summary>
+    public event EventHandler<ProjectInfo>? EditProjectRequested;
+
     public ObservableCollection<AudioDevice> Devices { get; } = [];
 
-    public TranscriptViewModel Transcript { get; }
+    public ObservableCollection<ProjectInfo> Projects { get; } = [];
 
-    public IReadOnlyList<LanguageOption> Languages { get; } =
-        AppSettings.Languages.Select(code => new LanguageOption(code, code == "ja" ? "日本語" : "Русский")).ToArray();
+    public ObservableCollection<SessionInfo> Sessions { get; } = [];
+
+    /// <summary>Languages of the selected project; the first one is its default.</summary>
+    public ObservableCollection<LanguageOption> Languages { get; } = [];
+
+    public TranscriptViewModel Transcript { get; }
 
     public bool CanEditSettings => !IsRecording && !IsStarting;
 
@@ -110,8 +146,24 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string RecordButtonText => IsRecording ? "Остановить запись"
         : IsStarting ? "Запуск…"
-        : RootFolder is null ? "Сначала выберите папку"
+        : SelectedProject is null ? "Сначала создайте проект"
         : "Начать запись";
+
+    public string Title => SelectedProject is null ? "" : $"{SelectedProject.Name} · {SessionName}";
+
+    public string SessionHint =>
+        SelectedProject is not null && SessionFolders.Sanitize(SessionName) is { Length: > 0 } name
+            && File.Exists(new SessionInfo(name, Path.Combine(SelectedProject.Folder, name)).MetaFile)
+            ? "Такая сессия есть: запись допишется в неё."
+            : "Новая сессия.";
+
+    public string RetentionText => SelectedProject?.Settings.AudioRetention switch
+    {
+        AudioRetention.Keep => "Звук хранится в audio\\.",
+        AudioRetention.DeleteAfterTranscript => "Звук удаляется, как только фраза записана в текст.",
+        AudioRetention.None => "Звук не сохраняется: «Распознать заново» недоступно.",
+        _ => "",
+    };
 
     public string LanguageText => Language.ToUpperInvariant();
 
@@ -121,24 +173,24 @@ public sealed partial class MainViewModel : ObservableObject
         ? $"mictap: идёт запись, {RecordedText}, язык {LanguageText}"
         : $"mictap: запись не идёт, язык {LanguageText}";
 
-    /// <summary>Lists microphones and repairs chunks that a crash left open in the latest session.</summary>
+    /// <summary>Lists microphones and projects and repairs chunks that a crash left open.</summary>
     public void Initialize()
     {
         RefreshDevices();
-        RepairLatestSession();
-        if (RootFolder is null && !IsError)
-        {
-            ShowMessage("Выберите папку для записей.", isError: false);
-        }
+        LoadProjects();
+        RepairProjects();
     }
 
     public Task StopRecordingAsync() => _recorder.StopAsync();
 
-    /// <summary>Hotkey: the next language of the list, round and round.</summary>
+    /// <summary>Hotkey: the next language of the project, round and round.</summary>
     public void ToggleLanguage()
     {
-        IReadOnlyList<string> languages = AppSettings.Languages;
-        Language = languages[(languages.ToList().IndexOf(Language) + 1) % languages.Count];
+        if (Languages.Count > 1)
+        {
+            int index = Languages.ToList().FindIndex(l => l.Code == Language);
+            Language = Languages[(index + 1) % Languages.Count].Code;
+        }
     }
 
     /// <summary>Hotkey: starts or stops recording.</summary>
@@ -154,7 +206,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
         else if (!IsStarting)
         {
-            ShowMessage("Запись по хоткею не началась: сначала выберите папку и микрофон.", isError: true);
+            ShowMessage("Запись по хоткею не началась: сначала выберите проект и микрофон.", isError: true);
         }
     }
 
@@ -166,11 +218,60 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>Creates a project from the dialog and selects it.</summary>
+    public void CreateProject(ProjectSettings settings)
+    {
+        try
+        {
+            ProjectInfo project = Core.Projects.Create(RootFolder, settings);
+            _logger.Information("Project {Project} created in {Folder}", project.Name, project.Folder);
+            LoadProjects(select: project.Folder);
+            ShowMessage($"Проект «{project.Name}» создан.", isError: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _logger.Error(ex, "Creating project {Project} failed", settings.Name);
+            ShowMessage($"Проект не создан: {ex.Message}", isError: true);
+        }
+    }
+
+    /// <summary>Saves the selected project's settings from the dialog.</summary>
+    public void SaveProject(ProjectSettings settings)
+    {
+        try
+        {
+            ProjectInfo saved = Core.Projects.Save(SelectedProject!, settings);
+            _logger.Information("Project {Project} settings saved", saved.Name);
+            LoadProjects(select: saved.Folder);
+            ShowMessage($"Настройки проекта «{saved.Name}» сохранены.", isError: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _logger.Error(ex, "Saving project {Project} failed", settings.Name);
+            ShowMessage($"Настройки не сохранены: {ex.Message}", isError: true);
+        }
+    }
+
+    private bool CanEditProject() => CanEditSettings && SelectedProject is not null;
+
+    [RelayCommand(CanExecute = nameof(CanEditSettings))]
+    private void NewProject() => NewProjectRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand(CanExecute = nameof(CanEditProject))]
+    private void EditProject() => EditProjectRequested?.Invoke(this, SelectedProject!);
+
+    [RelayCommand(CanExecute = nameof(CanEditProject))]
+    private void NewSession()
+    {
+        SelectedSession = null;
+        SessionName = SessionFolders.DefaultName(DateTimeOffset.Now);
+    }
+
     [RelayCommand(CanExecute = nameof(CanEditSettings))]
     private void ChooseFolder()
     {
-        var dialog = new OpenFolderDialog { Title = "Папка для записей" };
-        if (RootFolder is not null && Directory.Exists(RootFolder))
+        var dialog = new OpenFolderDialog { Title = "Папка проектов" };
+        if (Directory.Exists(RootFolder))
         {
             dialog.InitialDirectory = RootFolder;
         }
@@ -182,8 +283,9 @@ public sealed partial class MainViewModel : ObservableObject
 
         RootFolder = dialog.FolderName;
         Save(_settings with { RootFolder = dialog.FolderName });
-        ShowMessage("Папка для записей выбрана.", isError: false);
-        RepairLatestSession();
+        ShowMessage("Папка проектов выбрана.", isError: false);
+        LoadProjects();
+        RepairProjects();
     }
 
     [RelayCommand(CanExecute = nameof(CanEditSettings))]
@@ -229,17 +331,43 @@ public sealed partial class MainViewModel : ObservableObject
 
     partial void OnLanguageChanged(string value)
     {
-        // During a recording the switch is a mark: speech from here on is recognized in the new language.
-        _recorder.MarkLanguage(value);
-        if (_ready)
+        if (_quietLanguage)
         {
-            LanguageCue.Play(value, _logger);
+            return;
         }
 
-        if (value != _settings.Language)
+        // During a recording the switch is a mark: speech from here on is recognized in the new language.
+        _recorder.MarkLanguage(value);
+        LanguageCue.Play(value, _logger);
+    }
+
+    partial void OnSelectedProjectChanged(ProjectInfo? value)
+    {
+        _quietLanguage = true;
+        Languages.Clear();
+        foreach (string code in value?.Settings.Languages ?? [])
         {
-            Save(_settings with { Language = value });
+            Languages.Add(new LanguageOption(code, LanguageNames.GetValueOrDefault(code, code.ToUpperInvariant())));
         }
+
+        Language = value?.Settings.DefaultLanguage ?? "ru";
+        _quietLanguage = false;
+        LoadSessions();
+    }
+
+    partial void OnSelectedSessionChanged(SessionInfo? value)
+    {
+        if (_followRecording)
+        {
+            return; // the recording selected its own session; the transcript already shows it
+        }
+
+        if (value is not null)
+        {
+            SessionName = value.Name;
+        }
+
+        Transcript.ShowSession(value);
     }
 
     partial void OnSelectedDeviceChanged(AudioDevice? value)
@@ -250,18 +378,29 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    private bool CanStart() => !IsRecording && !IsStarting && RootFolder is not null && SelectedDevice is not null;
+    private bool CanStart() =>
+        !IsRecording && !IsStarting && SelectedProject is not null && SelectedDevice is not null && SessionName.Trim().Length > 0;
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
     {
-        string root = RootFolder!;
+        ProjectInfo project = SelectedProject!;
+        string name = SessionFolders.Sanitize(SessionName);
+        if (name.Length == 0)
+        {
+            ShowMessage($"«{SessionName}» не годится как имя сессии: в нём нет допустимых символов.", isError: true);
+            return;
+        }
+
         string device = SelectedDevice!.Name;
-        var options = new RecordingOptions(root, device, _settings.ChunkSeconds, _appVersion, Language);
         SessionInfo session;
         IsStarting = true;
         try
         {
+            session = SessionFolders.Open(project.Folder, name);
+            var options = new RecordingOptions(
+                session, device, _settings.ChunkSeconds, _appVersion, Language, project.Settings.AudioRetention);
+
             // Opening a capture device can take seconds; the window stays responsive meanwhile.
             session = await Task.Run(() => _recorder.Start(options, WaveInAudioSource.Open(device)));
         }
@@ -271,10 +410,10 @@ public sealed partial class MainViewModel : ObservableObject
             ShowMessage($"Запись не началась: {Describe(ex)}", isError: true);
             return;
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
             _logger.Error(ex, "Recording did not start");
-            ShowMessage($"Запись не началась: нет доступа к папке {root} ({ex.Message}).", isError: true);
+            ShowMessage($"Запись не началась: {ex.Message}", isError: true);
             return;
         }
         finally
@@ -289,11 +428,19 @@ public sealed partial class MainViewModel : ObservableObject
 
         IsRecording = true;
         SessionText = session.Name;
-        LastSession = session;
+        SessionName = session.Name;
         Transcript.BeginSession(session);
-        ChunkText = ChunkedWavWriter.FileName(0);
+        _followRecording = true;
+        if (!Sessions.Contains(session))
+        {
+            Sessions.Insert(0, session);
+        }
+
+        SelectedSession = session;
+        _followRecording = false;
+        ChunkText = project.Settings.AudioRetention == AudioRetention.None ? "не пишется" : "—";
         ShowRecorded(TimeSpan.Zero);
-        ShowMessage($"Идёт запись: сессия {session.Name}.", isError: false);
+        ShowMessage($"Идёт запись: {project.Name} · {session.Name}.", isError: false);
 
         if (_settings.DeviceName != device)
         {
@@ -304,56 +451,93 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(IsRecording))]
     private Task StopAsync() => _recorder.StopAsync();
 
-    private bool CanRetranscribe() => !IsRecording && !IsStarting && LastSession is not null && !Transcript.IsRetranscribing;
+    private bool CanRetranscribe() =>
+        !IsRecording && !IsStarting && SelectedSession is not null && SelectedProject is not null && !Transcript.IsRetranscribing
+        && Directory.Exists(SelectedSession.AudioFolder) && Directory.EnumerateFiles(SelectedSession.AudioFolder, "*.wav").Any();
 
     [RelayCommand(CanExecute = nameof(CanRetranscribe))]
-    private Task RetranscribeAsync() => Transcript.RetranscribeAsync(LastSession!, Language);
+    private Task RetranscribeAsync() => Transcript.RetranscribeAsync(SelectedSession!, SelectedProject!.Settings.DefaultLanguage);
 
-    private void RepairLatestSession()
+    /// <summary>Reads the projects of the root; an empty root gets a first project so recording works at once.</summary>
+    private void LoadProjects(string? select = null)
     {
-        if (RootFolder is null)
-        {
-            return;
-        }
-
-        RepairReport? report;
+        IReadOnlyList<ProjectInfo> projects;
         try
         {
-            report = SessionRepair.RepairLatest(RootFolder);
-            LastSession = report?.Session;
+            projects = Core.Projects.List(RootFolder);
+            if (projects.Count == 0)
+            {
+                ProjectInfo first = Core.Projects.Create(RootFolder, Core.Projects.FirstProject);
+                _logger.Information("First project {Project} created in {Folder}", first.Name, first.Folder);
+                projects = [first];
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {
-            _logger.Error(ex, "Checking the latest session in {Root} failed", RootFolder);
-            ShowMessage($"Не удалось проверить последнюю сессию в {RootFolder}: {ex.Message}", isError: true);
+            _logger.Error(ex, "Reading projects in {Root} failed", RootFolder);
+            ShowMessage($"Не удалось прочитать проекты в {RootFolder}:\n{ex.Message}", isError: true);
+            projects = [];
+        }
+
+        string? keep = select ?? SelectedProject?.Folder;
+        Projects.Clear();
+        foreach (ProjectInfo project in projects)
+        {
+            Projects.Add(project);
+        }
+
+        SelectedProject = projects.FirstOrDefault(p => p.Folder == keep) ?? projects.FirstOrDefault();
+    }
+
+    private void LoadSessions()
+    {
+        Sessions.Clear();
+        foreach (SessionInfo session in SelectedProject is null ? [] : SessionFolders.List(SelectedProject.Folder))
+        {
+            Sessions.Add(session);
+        }
+
+        SelectedSession = null;
+        SessionName = SessionFolders.DefaultName(DateTimeOffset.Now);
+    }
+
+    private void RepairProjects()
+    {
+        IReadOnlyList<RepairReport> reports;
+        try
+        {
+            reports = SessionRepair.RepairProjects(RootFolder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            _logger.Error(ex, "Checking the latest sessions in {Root} failed", RootFolder);
+            ShowMessage($"Не удалось проверить последние сессии в {RootFolder}: {ex.Message}", isError: true);
             return;
         }
 
-        if (report is null)
+        foreach (RepairReport report in reports)
         {
-            return;
+            foreach (string chunk in report.Repaired)
+            {
+                _logger.Warning("Chunk left open by a crash repaired: {Chunk}", chunk);
+            }
+
+            foreach (string chunk in report.Unrecognized)
+            {
+                _logger.Warning("Chunk with an unrecognized header left as is: {Chunk}", chunk);
+            }
         }
 
-        foreach (string chunk in report.Repaired)
-        {
-            _logger.Warning("Chunk left open by a crash repaired: {Chunk}", chunk);
-        }
-
-        foreach (string chunk in report.Unrecognized)
-        {
-            _logger.Warning("Chunk with an unrecognized header left as is: {Chunk}", chunk);
-        }
-
-        if (report.Unrecognized.Count > 0)
+        if (reports.FirstOrDefault(r => r.Unrecognized.Count > 0) is { } broken)
         {
             ShowMessage(
-                $"В сессии {report.Session.Name} есть файлы с нераспознанным заголовком, они не изменены:\n{FileNames(report.Unrecognized)}.",
+                $"В сессии {broken.Session.Name} есть файлы с нераспознанным заголовком, они не изменены:\n{FileNames(broken.Unrecognized)}.",
                 isError: true);
         }
-        else if (report.Repaired.Count > 0)
+        else if (reports.FirstOrDefault(r => r.Repaired.Count > 0) is { } repaired)
         {
             ShowMessage(
-                $"Сессия {report.Session.Name} была прервана сбоем.\nЗаголовки восстановлены: {FileNames(report.Repaired)}.",
+                $"Сессия {repaired.Session.Name} была прервана сбоем.\nЗаголовки восстановлены: {FileNames(repaired.Repaired)}.",
                 isError: false);
         }
     }
@@ -373,7 +557,11 @@ public sealed partial class MainViewModel : ObservableObject
         {
             if (IsRecording)
             {
-                ChunkText = ChunkedWavWriter.FileName(progress.ChunkIndex);
+                if (progress.ChunkIndex >= 0)
+                {
+                    ChunkText = ChunkedWavWriter.FileName(progress.ChunkIndex);
+                }
+
                 ShowRecorded(progress.Recorded);
             }
         });
@@ -385,6 +573,8 @@ public sealed partial class MainViewModel : ObservableObject
             Level = 0;
             Transcript.EndSession();
             ShowRecorded(stopped.Recorded);
+            OnPropertyChanged(nameof(SessionHint));
+            RetranscribeCommand.NotifyCanExecuteChanged();
             if (stopped.Reason == StopReason.Requested)
             {
                 ShowMessage($"Запись остановлена.\nСессия {stopped.Session.Name} сохранена.", isError: false);

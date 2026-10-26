@@ -17,7 +17,6 @@ public sealed class SettingsStoreTests : IDisposable
             RootFolder = @"D:\Записи",
             DeviceName = "Микрофон (Realtek(R) Audio)",
             ChunkSeconds = 90,
-            Language = "ja",
         };
 
         store.Save(settings);
@@ -37,7 +36,6 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal(@"D:\rec", root.GetProperty("rootFolder").GetString());
         Assert.Equal("Mic", root.GetProperty("deviceName").GetString());
         Assert.Equal(60, root.GetProperty("chunkSeconds").GetInt32());
-        Assert.Equal("ru", root.GetProperty("language").GetString());
         Assert.Equal("Ctrl+Alt+L", root.GetProperty("hotkeys").GetProperty("toggleLanguage").GetString());
         Assert.Equal("Ctrl+Alt+R", root.GetProperty("hotkeys").GetProperty("toggleRecording").GetString());
         Assert.Contains("\"Ctrl+Alt+L\"", File.ReadAllText(store.FilePath)); // editable by hand, not "Ctrl+Alt..."
@@ -85,17 +83,6 @@ public sealed class SettingsStoreTests : IDisposable
         AppSettings settings = new SettingsStore(path).Load();
 
         Assert.Equal(new HotkeySettings { ToggleLanguage = "Ctrl+Alt+J", ToggleRecording = "Ctrl+Alt+R" }, settings.Hotkeys);
-    }
-
-    [Fact]
-    public void Unknown_language_is_rejected()
-    {
-        string path = Path.Combine(_temp.Path, "settings.json");
-        File.WriteAllText(path, """{ "language": "en" }""");
-
-        var error = Assert.Throws<InvalidDataException>(() => new SettingsStore(path).Load());
-
-        Assert.Contains("language", error.Message);
     }
 
     [Fact]

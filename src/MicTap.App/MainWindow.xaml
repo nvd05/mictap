@@ -10,7 +10,7 @@
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=local:MainViewModel}"
         Style="{StaticResource MaterialDesignWindow}"
-        Title="mictap" Icon="Assets/mictap.ico" Width="1000" SizeToContent="Height" ResizeMode="CanMinimize"
+        Title="mictap" Icon="Assets/mictap.ico" Width="1300" SizeToContent="Height" ResizeMode="CanMinimize"
         WindowStartupLocation="CenterScreen" Background="{StaticResource SurfaceBrush}"
         Closing="OnWindowClosing">
     <WindowChrome.WindowChrome>
@@ -33,6 +33,29 @@
                 <Button Content="Отмена" IsCancel="True" Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" />
                 <Button Content="Остановить и выйти" Margin="8,0,0,0" Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}"
+                        CommandParameter="{StaticResource Confirm}" />
+            </StackPanel>
+        </StackPanel>
+
+        <StackPanel x:Key="ProjectDialog" x:Shared="False" Margin="24" Width="380" d:DataContext="{d:DesignInstance Type=local:ProjectEditor}">
+            <TextBlock Text="{Binding Title}" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+            <TextBox Margin="0,20,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:HintAssist.Hint="Название"
+                     AutomationProperties.Name="Название проекта" IsEnabled="{Binding IsNew}"
+                     Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                     materialDesign:HintAssist.Hint="Языки: ja, ru — первый по умолчанию" AutomationProperties.Name="Языки проекта"
+                     Text="{Binding LanguagesText, UpdateSourceTrigger=PropertyChanged}" />
+            <ComboBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                      materialDesign:HintAssist.Hint="Звук после распознавания" AutomationProperties.Name="Звук после распознавания"
+                      ItemsSource="{x:Static local:ProjectEditor.RetentionOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
+                      SelectedValue="{Binding Retention}" />
+            <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Text="{Binding Error}" Foreground="{StaticResource RecordBrush}"
+                       Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+            <StackPanel Margin="0,16,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Отмена" IsCancel="True" Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" />
+                <Button Content="Сохранить" Margin="8,0,0,0" IsDefault="True" Style="{StaticResource MaterialDesignFlatButton}"
                         Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}"
                         CommandParameter="{StaticResource Confirm}" />
             </StackPanel>
@@ -96,6 +119,9 @@
                         <materialDesign:PackIcon Kind="Microphone" Width="26" Height="26" VerticalAlignment="Center" />
                         <TextBlock Margin="12,0,0,0" Text="mictap" VerticalAlignment="Center"
                                    Style="{StaticResource MaterialDesignTitleLargeTextBlock}" />
+                        <TextBlock Margin="20,0,0,0" Text="{Binding Title}" VerticalAlignment="Center" Opacity="0.85"
+                                   AutomationProperties.Name="Проект и сессия"
+                                   Style="{StaticResource MaterialDesignTitleMediumTextBlock}" />
                     </StackPanel>
                 </DockPanel>
             </materialDesign:ColorZone>
@@ -144,12 +170,53 @@
 
             <Grid Margin="16">
                 <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="256" />
+                    <ColumnDefinition Width="16" />
                     <ColumnDefinition Width="528" />
                     <ColumnDefinition Width="16" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel x:Name="LeftColumn" VerticalAlignment="Top">
+                <!-- Projects, then the sessions of the selected one. -->
+                <materialDesign:Card Grid.Column="0" Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16"
+                                     Padding="12,12" VerticalAlignment="Top"
+                                     Height="{Binding ActualHeight, ElementName=ControlsColumn}">
+                    <DockPanel>
+                        <DockPanel DockPanel.Dock="Top" Margin="8,0,0,4">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconButton}" Width="32" Height="32"
+                                    ToolTip="Настройки проекта" AutomationProperties.Name="Настройки проекта"
+                                    Command="{Binding EditProjectCommand}">
+                                <materialDesign:PackIcon Kind="CogOutline" Width="18" Height="18" />
+                            </Button>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconButton}" Width="32" Height="32"
+                                    ToolTip="Новый проект" AutomationProperties.Name="Новый проект"
+                                    Command="{Binding NewProjectCommand}">
+                                <materialDesign:PackIcon Kind="FolderPlusOutline" Width="18" Height="18" />
+                            </Button>
+                            <TextBlock Text="Проекты" VerticalAlignment="Center" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                        </DockPanel>
+                        <ListBox DockPanel.Dock="Top" MaxHeight="170" ItemsSource="{Binding Projects}" DisplayMemberPath="Name"
+                                 SelectedItem="{Binding SelectedProject}" IsEnabled="{Binding CanEditSettings}"
+                                 AutomationProperties.Name="Проекты" />
+                        <TextBlock DockPanel.Dock="Top" Margin="8,6,8,0" TextWrapping="Wrap" Opacity="0.7" Text="{Binding RetentionText}"
+                                   Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+
+                        <Separator DockPanel.Dock="Top" Margin="0,12" />
+
+                        <DockPanel DockPanel.Dock="Top" Margin="8,0,0,4">
+                            <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconButton}" Width="32" Height="32"
+                                    ToolTip="Новая сессия" AutomationProperties.Name="Новая сессия"
+                                    Command="{Binding NewSessionCommand}">
+                                <materialDesign:PackIcon Kind="PlaylistPlus" Width="18" Height="18" />
+                            </Button>
+                            <TextBlock Text="Сессии" VerticalAlignment="Center" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                        </DockPanel>
+                        <ListBox ItemsSource="{Binding Sessions}" DisplayMemberPath="Name" SelectedItem="{Binding SelectedSession}"
+                                 IsEnabled="{Binding CanEditSettings}" AutomationProperties.Name="Сессии" />
+                    </DockPanel>
+                </materialDesign:Card>
+
+                <StackPanel x:Name="ControlsColumn" Grid.Column="2" VerticalAlignment="Top">
                 <!-- Where and from what to record. -->
                 <materialDesign:Card Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16" Padding="20,16">
                     <StackPanel>
@@ -164,9 +231,9 @@
                                 </StackPanel>
                             </Button>
                             <StackPanel Margin="16,0,12,0" VerticalAlignment="Center">
-                                <TextBlock Text="Папка для записей" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                                <TextBlock Text="Папка проектов" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
                                 <TextBlock Margin="0,2,0,0" Opacity="0.7" TextTrimming="CharacterEllipsis"
-                                           Text="{Binding RootFolder, TargetNullValue='Не выбрана'}" ToolTip="{Binding RootFolder}"
+                                           Text="{Binding RootFolder}" ToolTip="{Binding RootFolder}"
                                            Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
                             </StackPanel>
                         </DockPanel>
@@ -204,7 +271,10 @@
                 <materialDesign:Card Margin="0,16,0,0" Style="{StaticResource MaterialDesignElevatedCard}"
                                      UniformCornerRadius="16" Padding="24,20">
                     <StackPanel>
-                        <TextBlock HorizontalAlignment="Center" Text="{Binding ElapsedText}"
+                        <TextBox Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:HintAssist.Hint="Сессия"
+                                 materialDesign:HintAssist.HelperText="{Binding SessionHint}" AutomationProperties.Name="Сессия"
+                                 Text="{Binding SessionName, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding CanEditSettings}" />
+                        <TextBlock Margin="0,28,0,0" HorizontalAlignment="Center" Text="{Binding ElapsedText}"
                                    Style="{StaticResource MaterialDesignDisplaySmallTextBlock}" />
                         <Grid Margin="0,16,0,8" HorizontalAlignment="Center">
                             <Button Width="72" Height="72" ToolTip="Начать запись" AutomationProperties.Name="Начать запись"
@@ -276,9 +346,9 @@
                 </StackPanel>
 
                 <!-- Text: live draft of the latest seconds, then the editable text of finished chunks. -->
-                <materialDesign:Card Grid.Column="2" Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16"
+                <materialDesign:Card Grid.Column="4" Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16"
                                      Padding="20,16" VerticalAlignment="Top"
-                                     Height="{Binding ActualHeight, ElementName=LeftColumn}">
+                                     Height="{Binding ActualHeight, ElementName=ControlsColumn}">
                     <DockPanel DataContext="{Binding Transcript}">
                         <DockPanel DockPanel.Dock="Top">
                             <materialDesign:PackIcon Kind="TextRecognition" Width="24" Height="24" VerticalAlignment="Center"
@@ -334,7 +404,7 @@
                                 Style="{StaticResource MaterialDesignFlatButton}"
                                 Command="{Binding DataContext.RetranscribeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                 AutomationProperties.Name="Распознать заново"
-                                ToolTip="{Binding DataContext.LastSession.Name, RelativeSource={RelativeSource AncestorType=Window}, StringFormat='Прогнать звук сессии {0} через VAD и Whisper ещё раз; прежний текст сохранится в transcript.&lt;время&gt;.bak'}">
+                                ToolTip="{Binding DataContext.SelectedSession.Name, RelativeSource={RelativeSource AncestorType=Window}, StringFormat='Прогнать звук сессии {0} через VAD и Whisper ещё раз; прежний текст сохранится в transcript.&lt;время&gt;.bak'}">
                             <StackPanel Orientation="Horizontal">
                                 <materialDesign:PackIcon Kind="Refresh" Width="16" Height="16" VerticalAlignment="Center" />
                                 <TextBlock Margin="6,0,0,0" Text="Распознать заново" VerticalAlignment="Center" />

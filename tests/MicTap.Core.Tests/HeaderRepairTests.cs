@@ -91,20 +91,26 @@ public sealed class HeaderRepairTests : IDisposable
     }
 
     [Fact]
-    public void Only_the_latest_session_is_repaired()
+    public void Only_the_latest_session_of_each_project_is_repaired()
     {
         byte[] pcm = SyntheticPcm.Create(TimeSpan.FromSeconds(0.25));
-        string older = WriteOpenChunk(@"2026-10-26_14-05-30\audio\000.wav", pcm);
-        string latestClosed = WriteClosedChunk(@"2026-10-26_14-05-30_2\audio", pcm);
-        string latestOpen = WriteOpenChunk(@"2026-10-26_14-05-30_2\audio\001.wav", pcm);
-        string foreign = WriteOpenChunk(@"notes\audio\000.wav", pcm);
+        Projects.Create(_temp.Path, new ProjectSettings("Матан", ["ru"], AudioRetention.Keep));
+        Projects.Create(_temp.Path, new ProjectSettings("Японский", ["ja"], AudioRetention.Keep));
+        string older = WriteOpenChunk(@"Матан\старая\audio\000.wav", pcm);
+        string latestClosed = WriteClosedChunk(@"Матан\новая\audio", pcm);
+        string latestOpen = WriteOpenChunk(@"Матан\новая\audio\001.wav", pcm);
+        string otherProject = WriteOpenChunk(@"Японский\урок\audio\000.wav", pcm);
+        string foreign = WriteOpenChunk(@"не проект\сессия\audio\000.wav", pcm);
+        MarkRecorded(@"Матан\старая", new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc));
+        MarkRecorded(@"Матан\новая", new DateTime(2026, 10, 2, 0, 0, 0, DateTimeKind.Utc));
+        MarkRecorded(@"Японский\урок", new DateTime(2026, 10, 2, 0, 0, 0, DateTimeKind.Utc));
+        MarkRecorded(@"не проект\сессия", new DateTime(2026, 10, 2, 0, 0, 0, DateTimeKind.Utc));
 
-        RepairReport? report = SessionRepair.RepairLatest(_temp.Path);
+        IReadOnlyList<RepairReport> reports = SessionRepair.RepairProjects(_temp.Path);
 
-        Assert.NotNull(report);
-        Assert.Equal("2026-10-26_14-05-30_2", report.Session.Name);
-        Assert.Equal([latestOpen], report.Repaired);
-        Assert.Empty(report.Unrecognized);
+        Assert.Equal(["новая", "урок"], reports.Select(r => r.Session.Name));
+        Assert.Equal([latestOpen], reports[0].Repaired);
+        Assert.Equal([otherProject], reports[1].Repaired);
         Assert.Equal(pcm, WavFiles.ReadAudio(latestOpen));
         Assert.Equal(pcm, WavFiles.ReadAudio(latestClosed));
         Assert.Equal((0u, 0u), WavFiles.HeaderSizes(older));
@@ -112,12 +118,13 @@ public sealed class HeaderRepairTests : IDisposable
     }
 
     [Fact]
-    public void Root_without_sessions_reports_nothing()
+    public void Project_without_sessions_reports_nothing()
     {
         Directory.CreateDirectory(Path.Combine(_temp.Path, "notes"));
 
         Assert.Null(SessionRepair.RepairLatest(_temp.Path));
         Assert.Null(SessionRepair.RepairLatest(Path.Combine(_temp.Path, "absent")));
+        Assert.Empty(SessionRepair.RepairProjects(Path.Combine(_temp.Path, "absent")));
     }
 
     private string WriteOpenChunk(string relativePath, byte[] pcm)
@@ -137,5 +144,13 @@ public sealed class HeaderRepairTests : IDisposable
         }
 
         return Path.Combine(folder, "000.wav");
+    }
+
+    /// <summary>Sessions are ordered by the time their meta.json was last written.</summary>
+    private void MarkRecorded(string relativeSession, DateTime lastWrite)
+    {
+        string meta = Path.Combine(_temp.Path, relativeSession, "meta.json");
+        File.WriteAllText(meta, "{}");
+        File.SetLastWriteTimeUtc(meta, lastWrite);
     }
 }

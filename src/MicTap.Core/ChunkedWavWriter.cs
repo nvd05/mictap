@@ -18,14 +18,15 @@ public sealed class ChunkedWavWriter : IDisposable
     private long _currentBytes;
     private bool _disposed;
 
-    public ChunkedWavWriter(string folder, PcmFormat format, int chunkSeconds)
+    public ChunkedWavWriter(string folder, PcmFormat format, int chunkSeconds, int firstIndex = 0)
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(chunkSeconds);
         _folder = folder;
         _format = format;
         _chunkBytes = (long)format.ByteRate * chunkSeconds;
         Directory.CreateDirectory(folder);
-        _current = Open(0);
+        CurrentIndex = firstIndex;
+        _current = Open(firstIndex);
     }
 
     /// <summary>Raised after a chunk got its final header; on rotation the next chunk already exists.</summary>

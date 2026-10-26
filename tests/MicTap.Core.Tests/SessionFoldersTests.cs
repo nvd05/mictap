@@ -2,60 +2,59 @@ namespace MicTap.Core.Tests;
 
 public sealed class SessionFoldersTests : IDisposable
 {
-    private static readonly DateTimeOffset Started = new(2026, 10, 26, 14, 5, 59, TimeSpan.FromHours(3));
-
     private readonly TempFolder _temp = new();
 
     public void Dispose() => _temp.Dispose();
 
     [Fact]
-    public void Session_is_named_after_its_start_second()
+    public void Default_name_is_the_start_time_to_the_second()
     {
-        SessionInfo session = SessionFolders.Create(_temp.Path, Started);
-
-        Assert.Equal("2026-10-26_14-05-59", session.Name);
-        Assert.Equal(Path.Combine(_temp.Path, "2026-10-26_14-05-59"), session.Folder);
-        Assert.True(Directory.Exists(Path.Combine(session.Folder, "audio")));
-    }
-
-    [Fact]
-    public void Sessions_in_the_same_second_get_suffixes()
-    {
-        string[] names = [.. Enumerable.Range(0, 3).Select(_ => SessionFolders.Create(_temp.Path, Started).Name)];
-
-        Assert.Equal(["2026-10-26_14-05-59", "2026-10-26_14-05-59_2", "2026-10-26_14-05-59_3"], names);
-    }
-
-    [Fact]
-    public void Latest_session_is_found_by_time_then_suffix()
-    {
-        string[] folders =
-        [
-            "2026-10-25_23-59-00", "2026-10-26_09-59-59", "2026-10-26_14-05-00", "2026-10-26_14-05-00_2",
-            "2026-10-26_14-05-00_10", "notes", "2026-13-01_00-00-00", "2026-10-26_14-05-00_x", "2026-10-26_14-05",
-        ];
-        foreach (string folder in folders)
-        {
-            Directory.CreateDirectory(Path.Combine(_temp.Path, folder));
-        }
-
-        Assert.Equal("2026-10-26_14-05-00_10", SessionFolders.FindLatest(_temp.Path)?.Name);
+        Assert.Equal("2026-10-26_14-05-59", SessionFolders.DefaultName(new DateTimeOffset(2026, 10, 26, 14, 5, 59, TimeSpan.FromHours(3))));
     }
 
     [Theory]
-    [InlineData("2026-10-26_1404", "2026-10-26_14-04-30", "2026-10-26_14-04-30")]
-    [InlineData("2026-10-26_1406", "2026-10-26_14-05-59", "2026-10-26_1406")]
-    public void Sessions_named_by_minute_before_v0_2_1_are_ordered_with_the_new_ones(string old, string current, string latest)
+    [InlineData("Лекция 1: введение", "Лекция 1 введение")]
+    [InlineData("  a/b\\c*d?  ", "abcd")]
+    [InlineData("итоги...", "итоги")]
+    [InlineData("много   пробелов", "много пробелов")]
+    [InlineData("con", "con_")]
+    [InlineData("LPT1.txt", "LPT1.txt_")]
+    [InlineData("<>:|", "")]
+    public void Typed_names_become_safe_folder_names(string typed, string folder)
     {
-        Directory.CreateDirectory(Path.Combine(_temp.Path, old));
-        Directory.CreateDirectory(Path.Combine(_temp.Path, current));
-
-        Assert.Equal(latest, SessionFolders.FindLatest(_temp.Path)?.Name);
+        Assert.Equal(folder, SessionFolders.Sanitize(typed));
     }
 
     [Fact]
-    public void Missing_root_has_no_latest_session()
+    public void Open_creates_the_session_folders_and_keeps_an_existing_session()
     {
-        Assert.Null(SessionFolders.FindLatest(Path.Combine(_temp.Path, "absent")));
+        SessionInfo session = SessionFolders.Open(_temp.Path, "Пара 1");
+        File.WriteAllText(Path.Combine(session.AudioFolder, "000.wav"), "x");
+
+        SessionInfo again = SessionFolders.Open(_temp.Path, "Пара 1");
+
+        Assert.Equal(session, again);
+        Assert.True(Directory.Exists(session.AgentsFolder));
+        Assert.True(Directory.Exists(session.NotesFolder));
+        Assert.True(File.Exists(Path.Combine(session.AudioFolder, "000.wav")));
+    }
+
+    [Fact]
+    public void Sessions_are_listed_most_recently_recorded_first_and_other_folders_ignored()
+    {
+        SessionInfo older = SessionFolders.Open(_temp.Path, "старая");
+        SessionInfo newer = SessionFolders.Open(_temp.Path, "новая");
+        File.WriteAllText(older.MetaFile, "{}");
+        File.WriteAllText(newer.MetaFile, "{}");
+        File.SetLastWriteTimeUtc(older.MetaFile, new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc));
+        Directory.CreateDirectory(Path.Combine(_temp.Path, "не сессия"));
+
+        Assert.Equal(["новая", "старая"], SessionFolders.List(_temp.Path).Select(s => s.Name));
+    }
+
+    [Fact]
+    public void Missing_project_has_no_sessions()
+    {
+        Assert.Empty(SessionFolders.List(Path.Combine(_temp.Path, "absent")));
     }
 }

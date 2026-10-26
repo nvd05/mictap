@@ -1,5 +1,6 @@
 using System.Text.Encodings.Web;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MicTap.Core;
 
@@ -11,6 +12,7 @@ internal static class JsonFiles
         PropertyNameCaseInsensitive = true,
         WriteIndented = true,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping, // people edit these files: keep "Ctrl+Alt+L" and Cyrillic as they are
+        Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase, allowIntegerValues: false) },
     };
 
     /// <summary>

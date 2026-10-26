@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 using H.NotifyIcon.Core;
+using MicTap.Core;
 using MaterialDesignThemes.Wpf;
 
 namespace MicTap.App;
@@ -21,6 +22,8 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         viewModel.RecordingFailed += OnRecordingFailed;
+        viewModel.NewProjectRequested += (_, _) => _ = ShowProjectDialogAsync(ProjectEditor.ForNew(), viewModel.CreateProject);
+        viewModel.EditProjectRequested += (_, project) => _ = ShowProjectDialogAsync(ProjectEditor.For(project), viewModel.SaveProject);
         UpdateTrayIcon();
         AddFailureSimulation();
     }
@@ -70,6 +73,26 @@ public partial class MainWindow : Window
         await _viewModel.StopRecordingAsync();
         _closeConfirmed = true;
         Close();
+    }
+
+    /// <summary>The project dialog; it stays open while what was typed is not valid, with the reason shown in it.</summary>
+    private async Task ShowProjectDialogAsync(ProjectEditor editor, Action<ProjectSettings> apply)
+    {
+        var content = (FrameworkElement)FindResource("ProjectDialog");
+        content.DataContext = editor;
+        ProjectSettings? settings = null;
+        await DialogHost.Show(content, "MainDialog", (object _, DialogClosingEventArgs e) =>
+        {
+            if (e.Parameter is true && (settings = editor.Build()) is null)
+            {
+                e.Cancel();
+            }
+        });
+
+        if (settings is not null)
+        {
+            apply(settings);
+        }
     }
 
     private void ShowFromTray()

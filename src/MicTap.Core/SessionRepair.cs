@@ -6,10 +6,14 @@ public sealed record RepairReport(SessionInfo Session, IReadOnlyList<string> Rep
 /// <summary>Startup repair of chunks that a crash left open.</summary>
 public static class SessionRepair
 {
-    /// <summary>Repairs open chunks of the latest session under <paramref name="rootFolder"/>; null if there is no session.</summary>
-    public static RepairReport? RepairLatest(string rootFolder)
+    /// <summary>Repairs open chunks of the latest session of every project under <paramref name="root"/>.</summary>
+    public static IReadOnlyList<RepairReport> RepairProjects(string root) =>
+        [.. Projects.List(root).Select(project => RepairLatest(project.Folder)).OfType<RepairReport>()];
+
+    /// <summary>Repairs open chunks of the most recently recorded session of a project; null if it has none.</summary>
+    public static RepairReport? RepairLatest(string projectFolder)
     {
-        SessionInfo? session = SessionFolders.FindLatest(rootFolder);
+        SessionInfo? session = SessionFolders.List(projectFolder).FirstOrDefault();
         if (session is null)
         {
             return null;

@@ -109,11 +109,35 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _pipeline.Start();
     }
 
-    public void BeginSession(SessionInfo session)
+    /// <summary>Shows the text of <paramref name="session"/> in «Записано»; null clears it.</summary>
+    public void ShowSession(SessionInfo? session)
     {
         _session = session;
-        _live = true;
         Items.Clear();
+        if (session is null || !File.Exists(Path.Combine(session.Folder, JsonlTranscriptSink.FileName)))
+        {
+            return;
+        }
+
+        try
+        {
+            foreach (TranscriptLine line in _pipeline.SinkFor(session).Lines)
+            {
+                Items.Add(new TranscriptItem(line, item => SaveEdit(session, item)));
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            _logger.Error(ex, "Reading the transcript of {Session} failed", session.Name);
+            StatusText = $"Текст сессии {session.Name} не прочитан: {ex.Message}";
+        }
+    }
+
+    /// <summary>A recording into <paramref name="session"/> began: its earlier text stays, new lines follow, live text runs.</summary>
+    public void BeginSession(SessionInfo session)
+    {
+        ShowSession(session);
+        _live = true;
         NowText = "";
         IsSilence = false;
     }

@@ -13,13 +13,13 @@ internal sealed class ChunkWriterStage
 
     private static readonly TimeSpan IdlePoll = TimeSpan.FromMilliseconds(200);
 
-    private readonly ChunkedWavWriter _writer;
+    private readonly ChunkedWavWriter? _writer; // null: audio is not kept, blocks are only counted
     private readonly ChannelReader<byte[]> _input;
     private readonly TimeProvider _time;
     private readonly Action? _beforeWrite;
     private readonly TaskCompletionSource<Exception?> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public ChunkWriterStage(ChunkedWavWriter writer, ChannelReader<byte[]> input, TimeProvider time, Action? beforeWrite)
+    public ChunkWriterStage(ChunkedWavWriter? writer, ChannelReader<byte[]> input, TimeProvider time, Action? beforeWrite)
     {
         _writer = writer;
         _input = input;
@@ -49,7 +49,7 @@ internal sealed class ChunkWriterStage
 
         try
         {
-            _writer.Dispose();
+            _writer?.Dispose();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
@@ -69,13 +69,13 @@ internal sealed class ChunkWriterStage
             while (_input.TryRead(out byte[]? block))
             {
                 _beforeWrite?.Invoke();
-                _writer.Write(block);
+                _writer?.Write(block);
                 Written?.Invoke(block.Length);
             }
 
             if (_time.GetElapsedTime(lastFlush) >= FlushInterval)
             {
-                _writer.Flush();
+                _writer?.Flush();
                 lastFlush = _time.GetTimestamp();
             }
 

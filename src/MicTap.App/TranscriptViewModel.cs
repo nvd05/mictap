@@ -177,7 +177,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         QueueText = "распознаю заново…";
         try
         {
-            var retranscriber = new SessionRetranscriber(_host, await _detectors, TimeProvider.System, _logger);
+            var retranscriber = new SessionRetranscriber(_host, await _detectors, TimeProvider.System, _logger, _pipeline.PhrasePause);
             var progress = new Progress<double>(done => QueueText = $"распознаю заново: {done:P0}");
             RetranscribeResult result = await Task.Run(() => retranscriber.RunAsync(session, language, progress, _stop.Token));
             _pipeline.ForgetSink(session);

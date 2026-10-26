@@ -314,6 +314,23 @@ public sealed class RecorderTests : IDisposable
     }
 
     [Fact]
+    public async Task Captured_blocks_carry_their_session_time_and_an_appended_recording_goes_on_from_its_offset()
+    {
+        var blocks = new List<CapturedAudio>();
+        _recorder.AudioCaptured += (_, audio) => blocks.Add(audio);
+        Start(chunkSeconds: 1);
+        Push(_source, SyntheticPcm.Create(TimeSpan.FromSeconds(0.3)));
+        await _recorder.StopAsync();
+
+        var again = new FakeAudioSource();
+        _recorder.Start(Options(1), again);
+        Push(again, SyntheticPcm.Create(TimeSpan.FromSeconds(0.2)));
+        await _recorder.StopAsync();
+
+        Assert.Equal([ 0.0, 0.1, 0.2, 0.3, 0.4 ], blocks.Select(b => Math.Round(b.At.TotalSeconds, 3)));
+    }
+
+    [Fact]
     public async Task Closed_chunks_report_their_span_of_session_time()
     {
         var chunks = new List<ChunkCompleted>();

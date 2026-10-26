@@ -39,6 +39,7 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Equal("Ctrl+Alt+L", root.GetProperty("hotkeys").GetProperty("toggleLanguage").GetString());
         Assert.Equal("Ctrl+Alt+R", root.GetProperty("hotkeys").GetProperty("toggleRecording").GetString());
         Assert.Equal(47310, root.GetProperty("hubPort").GetInt32());
+        Assert.Equal(3, root.GetProperty("phrasePauseSeconds").GetDouble());
         Assert.Contains("\"Ctrl+Alt+L\"", File.ReadAllText(store.FilePath)); // editable by hand, not "Ctrl+Alt..."
     }
 
@@ -71,6 +72,17 @@ public sealed class SettingsStoreTests : IDisposable
     {
         string path = Path.Combine(_temp.Path, "settings.json");
         File.WriteAllText(path, $$"""{ "chunkSeconds": {{chunkSeconds}} }""");
+
+        Assert.Throws<InvalidDataException>(() => new SettingsStore(path).Load());
+    }
+
+    [Theory]
+    [InlineData("0.2")]
+    [InlineData("11")]
+    public void Out_of_range_phrase_pause_is_rejected(string seconds)
+    {
+        string path = Path.Combine(_temp.Path, "settings.json");
+        File.WriteAllText(path, $$"""{ "phrasePauseSeconds": {{seconds}} }""");
 
         Assert.Throws<InvalidDataException>(() => new SettingsStore(path).Load());
     }

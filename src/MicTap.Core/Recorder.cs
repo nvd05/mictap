@@ -30,8 +30,11 @@ public sealed record RecordingProgress(SessionInfo Session, int ChunkIndex, Time
 
 public sealed record RecordingStopped(SessionInfo Session, StopReason Reason, Exception? Error, TimeSpan Recorded);
 
-/// <summary>A copy of one captured block of 16 kHz mono 16-bit PCM; shared by consumers, never modified.</summary>
-public sealed record CapturedAudio(SessionInfo Session, ReadOnlyMemory<byte> Pcm);
+/// <summary>
+/// A copy of one captured block of 16 kHz mono 16-bit PCM, starting at <paramref name="At"/> of session time; shared by
+/// consumers, never modified.
+/// </summary>
+public sealed record CapturedAudio(SessionInfo Session, TimeSpan At, ReadOnlyMemory<byte> Pcm);
 
 public sealed record LanguageMarked(SessionInfo Session, LanguageMark Mark);
 
@@ -309,11 +312,11 @@ public sealed class Recorder
             return;
         }
 
-        Interlocked.Add(ref session.CapturedBytes, block.Length);
+        long before = Interlocked.Add(ref session.CapturedBytes, block.Length) - block.Length;
         session.Channel.Writer.TryWrite(block);
         Volatile.Write(ref session.LastDataAt, _time.GetTimestamp());
         LevelChanged?.Invoke(this, AudioLevel.Peak(block));
-        AudioCaptured?.Invoke(this, new CapturedAudio(session.Info, block));
+        AudioCaptured?.Invoke(this, new CapturedAudio(session.Info, session.Offset + PcmFormat.Mono16k.DurationOf(before), block));
     }
 
     private void OnSourceStopped(object? sender, CaptureStopped e)

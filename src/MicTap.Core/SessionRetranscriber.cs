@@ -9,7 +9,8 @@ public sealed record RetranscribeResult(IReadOnlyList<TranscriptLine> Lines, str
 /// transcript.&lt;yyyy-MM-dd_HH-mm-ss&gt;.bak, the chunks go through the VAD and Whisper with the languages of the
 /// marks in meta.json. A failed transcriber is reloaded by the host and the segment retried.
 /// </summary>
-public sealed class SessionRetranscriber(TranscriberHost host, Func<SpeechDetector> createDetector, TimeProvider time, ILogger logger)
+public sealed class SessionRetranscriber(
+    TranscriberHost host, Func<SpeechDetector> createDetector, TimeProvider time, ILogger logger, TimeSpan? pause = null)
 {
     private const int BlockSamples = 16000;
 
@@ -39,7 +40,7 @@ public sealed class SessionRetranscriber(TranscriberHost host, Func<SpeechDetect
 
         _logger.Information("Recognizing {Session} again from {Chunks} chunks; old transcript kept as {Backup}", session.Name, chunks.Length, backup);
         var sink = new JsonlTranscriptSink(session.Folder);
-        var segmenter = new SpeechSegmenter(createDetector(), meta.LanguageMarks[0].Lang);
+        var segmenter = new SpeechSegmenter(createDetector(), meta.LanguageMarks[0].Lang, pause: pause);
         foreach (LanguageMark mark in meta.LanguageMarks.Skip(1))
         {
             segmenter.Mark(TimeSpan.FromSeconds(mark.At), mark.Lang); // ahead of the audio: applied when it gets there

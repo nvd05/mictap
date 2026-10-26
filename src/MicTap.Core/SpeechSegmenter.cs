@@ -4,23 +4,26 @@ namespace MicTap.Core;
 public sealed record SpeechSegment(TimeSpan Start, TimeSpan End, string Language, float[] Samples);
 
 /// <summary>
-/// Cuts a stream of 16 kHz mono samples into segments of speech. A segment ends after <see cref="MinSilence"/> of
-/// silence, after <see cref="MaxSegment"/> of speech, or at a language mark; silence never becomes a segment.
+/// Cuts a stream of 16 kHz mono samples into phrases of speech. A phrase ends after a pause of silence, at a language
+/// mark, or before it grows past <see cref="MaxSegment"/>: then it ends at the last pause between words, and only
+/// speech without any such pause is cut at <see cref="MaxSegment"/>. Silence never becomes a segment.
 /// Each segment carries the language in effect at its start. Not thread-safe.
 /// </summary>
 public sealed class SpeechSegmenter
 {
+    /// <summary>Silence that ends a span of speech for the VAD; a phrase pause is never shorter.</summary>
     public static readonly TimeSpan MinSilence = TimeSpan.FromMilliseconds(500);
+    public static readonly TimeSpan DefaultPause = MinSilence;
     public static readonly TimeSpan MaxSegment = TimeSpan.FromSeconds(30);
 
     private const int Rate = 16000;
-    private static readonly int MinSilenceSamples = ToSamples(MinSilence);
     private static readonly int MaxSegmentSamples = ToSamples(MaxSegment);
     private static readonly int DetectEverySamples = ToSamples(TimeSpan.FromMilliseconds(500));
     private static readonly int KeepWithoutSpeechSamples = ToSamples(TimeSpan.FromSeconds(1));
     private static readonly int LeadSamples = ToSamples(TimeSpan.FromMilliseconds(200));
 
     private readonly SpeechDetector _detect;
+    private readonly int _pauseSamples;
     private readonly List<(long Position, string Language)> _marks = [ ];
     private float[] _pending = new float[Rate * 40];
     private int _count;
@@ -28,10 +31,12 @@ public sealed class SpeechSegmenter
     private long _detectedAt;
 
     /// <param name="origin">Stream time of the first sample: an appended recording continues its session.</param>
-    public SpeechSegmenter(SpeechDetector detect, string language, TimeSpan origin = default)
+    /// <param name="pause">Silence that ends a phrase; <see cref="DefaultPause"/> when null, at least <see cref="MinSilence"/>.</param>
+    public SpeechSegmenter(SpeechDetector detect, string language, TimeSpan origin = default, TimeSpan? pause = null)
     {
         _detect = detect;
         Language = language;
+        _pauseSamples = ToSamples(TimeSpan.FromTicks(Math.Max((pause ?? DefaultPause).Ticks, MinSilence.Ticks)));
         _pendingStart = ToSamples(origin);
         _detectedAt = _pendingStart;
     }
@@ -105,29 +110,56 @@ public sealed class SpeechSegmenter
     {
         float[] window = _pending.AsSpan(0, length).ToArray();
         int consumed = 0;
-        bool speechGoesOn = false;
+        (int Start, int End)? phrase = null;
         foreach (SpeechSpan span in _detect(window))
         {
             int start = Math.Clamp(ToSamples(span.Start), consumed, length);
             int end = Math.Clamp(ToSamples(span.End), start, length);
-            if (closeAll || end <= length - MinSilenceSamples)
+            if (phrase is { } open && (start - open.End >= _pauseSamples || end - open.Start >= MaxSegmentSamples))
             {
-                Emit(output, window, start, end);
-                consumed = end;
-                continue;
+                // A pause ends the phrase; so does speech that would make it too long: it ends at the pause before.
+                Emit(output, window, open.Start, open.End);
+                consumed = open.End;
+                phrase = null;
             }
 
-            // Speech reaches the end of the audio: wait for its end, but never longer than MaxSegment.
-            while (length - start >= MaxSegmentSamples)
-            {
-                Emit(output, window, start, start + MaxSegmentSamples);
-                start += MaxSegmentSamples;
-                consumed = start;
-            }
+            phrase = (phrase?.Start ?? start, end);
+        }
 
-            consumed = Math.Max(consumed, start - LeadSamples);
-            speechGoesOn = true;
-            break;
+        bool speechGoesOn = false;
+        if (phrase is { } last)
+        {
+            if (closeAll || last.End <= length - _pauseSamples)
+            {
+                Emit(output, window, last.Start, last.End);
+                consumed = last.End;
+            }
+            else if (length - last.Start < MaxSegmentSamples)
+            {
+                // The phrase reaches the end of the audio: wait for the pause.
+                consumed = Math.Max(consumed, last.Start - LeadSamples);
+                speechGoesOn = true;
+            }
+            else if (last.End - last.Start < MaxSegmentSamples)
+            {
+                // No time left to wait for the pause: the phrase ends at the shorter silence after it.
+                Emit(output, window, last.Start, last.End);
+                consumed = last.End;
+            }
+            else
+            {
+                // Speech without a single pause for MaxSegment: cut it there.
+                int start = last.Start;
+                while (length - start >= MaxSegmentSamples)
+                {
+                    Emit(output, window, start, start + MaxSegmentSamples);
+                    start += MaxSegmentSamples;
+                    consumed = start;
+                }
+
+                consumed = Math.Max(consumed, start - LeadSamples);
+                speechGoesOn = true;
+            }
         }
 
         if (closeAll)

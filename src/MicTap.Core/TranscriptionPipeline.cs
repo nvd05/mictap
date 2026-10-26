@@ -5,22 +5,27 @@ using Serilog;
 
 namespace MicTap.Core;
 
-/// <summary>Live text of the latest seconds; <paramref name="Silence"/> when the VAD heard no speech there.</summary>
+/// <summary>
+/// Live text of the speech not yet in the transcript; <paramref name="Silence"/> when the VAD heard no speech there.
+/// </summary>
 public sealed record LiveTranscript(SessionInfo Session, string Text, bool Silence);
 
 public sealed record SegmentTranscript(SessionInfo Session, TranscriptLine Line);
 
 /// <summary>
-/// Second consumer of the recorder. Final text: captured audio goes through the VAD into speech segments, each is
-/// recognized in the language of its start and appended to transcript.jsonl; silence never reaches Whisper.
-/// Live text: a ring of the latest <see cref="LiveWindow"/> is recognized every few seconds when it holds speech.
+/// Second consumer of the recorder. Final text: captured audio goes through the VAD into phrases, each is recognized
+/// in the language of its start and appended to transcript.jsonl; silence never reaches Whisper.
+/// Live text: every few seconds, and at once after a phrase gets its final text, the audio after the last finished
+/// phrase is recognized when it holds speech, so the draft never repeats what the transcript already has.
 /// The recorder only enqueues, so recognition never blocks recording. A failed transcriber is reloaded by the
 /// <see cref="TranscriberHost"/> and the segment is retried; segments wait in the queue meanwhile. Any other error
 /// stops the pipeline and is reported through <see cref="Failed"/>.
 /// </summary>
 public sealed class TranscriptionPipeline : IDisposable
 {
-    public static readonly TimeSpan LiveWindow = TimeSpan.FromSeconds(10);
+    /// <summary>The longest phrase and a little more: the draft can cover a whole phrase that is still being spoken.</summary>
+    public static readonly TimeSpan LiveWindow = SpeechSegmenter.MaxSegment + TimeSpan.FromSeconds(2);
+
     public static readonly TimeSpan DefaultLiveInterval = TimeSpan.FromSeconds(3);
 
     private static readonly TimeSpan DisposeTimeout = TimeSpan.FromSeconds(10);
@@ -33,9 +38,13 @@ public sealed class TranscriptionPipeline : IDisposable
     // Every captured block and mark, in order: the segmenter must see all audio.
     private readonly Channel<object> _stream = Channel.CreateUnbounded<object>(new UnboundedChannelOptions { SingleReader = true });
 
-    // 200 blocks of 100 ms: twice the live window, so a slow pass drops only audio that has left the window anyway.
+    // Blocks of 100 ms for twice the live window, so a slow pass drops only audio that has left the window anyway.
     private readonly Channel<CapturedAudio> _live = Channel.CreateBounded<CapturedAudio>(
-        new BoundedChannelOptions(200) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+        new BoundedChannelOptions((int)(LiveWindow.TotalSeconds * 20)) { FullMode = BoundedChannelFullMode.DropOldest, SingleReader = true });
+
+    // A phrase got its final text: the draft is recognized again at once, without it.
+    private readonly Channel<bool> _liveWake = Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
     private readonly Channel<PendingSegment> _segments = Channel.CreateUnbounded<PendingSegment>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
@@ -45,7 +54,9 @@ public sealed class TranscriptionPipeline : IDisposable
     private readonly Dictionary<string, JsonlTranscriptSink> _sinks = [ ];
     private readonly ConcurrentDictionary<string, ChunkJanitor> _janitors = new();
     private LiveLanguage? _liveLanguage;
+    private Finished? _finished;
     private Task _loops = Task.CompletedTask;
+    private long _pauseTicks = SpeechSegmenter.DefaultPause.Ticks;
     private int _pending;
     private int _failed;
 
@@ -62,7 +73,7 @@ public sealed class TranscriptionPipeline : IDisposable
         _liveInterval = liveInterval;
     }
 
-    /// <summary>New live text of the latest audio; replaces the previous one.</summary>
+    /// <summary>New live text of the speech not yet in the transcript; replaces the previous one.</summary>
     public event EventHandler<LiveTranscript>? LiveTextChanged;
 
     /// <summary>True while a live pass runs.</summary>
@@ -76,6 +87,13 @@ public sealed class TranscriptionPipeline : IDisposable
 
     /// <summary>Raised once: recognition stopped on this error. Recording is not affected.</summary>
     public event EventHandler<Exception>? Failed;
+
+    /// <summary>Silence that ends a phrase; a change applies from the next recording.</summary>
+    public TimeSpan PhrasePause
+    {
+        get => TimeSpan.FromTicks(Interlocked.Read(ref _pauseTicks));
+        set => Interlocked.Exchange(ref _pauseTicks, value.Ticks);
+    }
 
     public void Start() => _loops = Task.WhenAll(Task.Run(SegmentLoopAsync), Task.Run(FinalLoopAsync), Task.Run(LiveLoopAsync));
 
@@ -101,6 +119,7 @@ public sealed class TranscriptionPipeline : IDisposable
         }
 
         _stream.Writer.TryWrite(started);
+        Volatile.Write(ref _finished, new Finished(started.Session, started.Offset));
         Volatile.Write(ref _liveLanguage, new LiveLanguage(started.Session, started.Language));
     }
 
@@ -175,7 +194,7 @@ public sealed class TranscriptionPipeline : IDisposable
                 {
                     case RecordingStarted started:
                         session = started.Session;
-                        segmenter = new SpeechSegmenter(detect, started.Language, started.Offset);
+                        segmenter = new SpeechSegmenter(detect, started.Language, started.Offset, PhrasePause);
                         janitor = _janitors.GetValueOrDefault(session.Folder);
                         break;
                     case LanguageMarked marked when marked.Session == session:
@@ -238,6 +257,8 @@ public sealed class TranscriptionPipeline : IDisposable
                     SegmentTranscribed?.Invoke(this, new SegmentTranscript(pending.Session, line));
                 }
 
+                Volatile.Write(ref _finished, new Finished(pending.Session, segment.End));
+                _liveWake.Writer.TryWrite(true);
                 pending.Janitor?.Written();
             }
         }
@@ -256,20 +277,21 @@ public sealed class TranscriptionPipeline : IDisposable
         try
         {
             SpeechDetector detect = (await _detectors.WaitAsync(cancellation))();
-            AudioRing ring = AudioRing.For(PcmFormat.Mono16k, LiveWindow);
+            PcmFormat format = PcmFormat.Mono16k;
+            AudioRing ring = AudioRing.For(format, LiveWindow);
+            TimeSpan ringEnd = TimeSpan.Zero;
             SessionInfo? session = null;
             LiveLanguage? language = null;
-            long recognized = 0;
-            using var timer = new PeriodicTimer(_liveInterval);
-            while (await timer.WaitForNextTickAsync(cancellation))
+            (TimeSpan From, TimeSpan To) recognized = default;
+            while (true)
             {
+                await NextLivePassAsync(cancellation);
                 LiveLanguage? latest = Volatile.Read(ref _liveLanguage);
                 if (!ReferenceEquals(latest, language) && latest is not null)
                 {
                     // A new recording or a new language: what was said before belongs to the old one.
                     language = latest;
                     ring.Clear();
-                    recognized = 0;
                     if (latest.Session == session)
                     {
                         LiveTextChanged?.Invoke(this, new LiveTranscript(session, "", Silence: false));
@@ -278,24 +300,36 @@ public sealed class TranscriptionPipeline : IDisposable
 
                 while (_live.Reader.TryRead(out CapturedAudio? audio))
                 {
-                    if (audio.Session != session)
+                    if (audio.Session != session || audio.At != ringEnd)
                     {
+                        // Another recording, or blocks dropped while a pass was slow: the ring starts over here.
                         session = audio.Session;
                         ring.Clear();
-                        recognized = 0;
                     }
 
                     ring.Write(audio.Pcm.Span);
+                    ringEnd = audio.At + format.DurationOf(audio.Pcm.Length);
                 }
 
-                if (session is null || language is null || ring.Written == recognized)
+                if (session is null || language is null)
                 {
-                    continue; // nothing new: not recording
+                    continue; // not recording
                 }
 
-                recognized = ring.Written;
-                float[] window = ring.Snapshot();
-                if (detect(window).Count == 0)
+                // Only speech after the last finished phrase: what the transcript has is not repeated.
+                TimeSpan ringStart = ringEnd - format.DurationOf(ring.Count * (long)format.BlockAlign);
+                TimeSpan from = Volatile.Read(ref _finished) is { } finished && finished.Session == session && finished.At > ringStart
+                    ? finished.At
+                    : ringStart;
+                if (recognized == (from, ringEnd))
+                {
+                    continue; // nothing new
+                }
+
+                recognized = (from, ringEnd);
+                float[] samples = ring.Snapshot();
+                float[] window = samples[(int)Math.Min(samples.Length, (from - ringStart).Ticks * format.SampleRate / TimeSpan.TicksPerSecond)..];
+                if (window.Length == 0 || detect(window).Count == 0)
                 {
                     LiveTextChanged?.Invoke(this, new LiveTranscript(session, "", Silence: true));
                     continue;
@@ -335,6 +369,21 @@ public sealed class TranscriptionPipeline : IDisposable
         }
     }
 
+    /// <summary>Waits for the next live pass: the interval, or less when a phrase has just got its final text.</summary>
+    private async Task NextLivePassAsync(CancellationToken cancellation)
+    {
+        using var interval = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
+        interval.CancelAfter(_liveInterval);
+        try
+        {
+            await _liveWake.Reader.ReadAsync(interval.Token);
+        }
+        catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+        {
+            // The interval is over: a regular pass.
+        }
+    }
+
     private void Queue(SessionInfo session, IReadOnlyList<SpeechSegment> segments, SpeechSegmenter segmenter, ChunkJanitor? janitor)
     {
         janitor?.Segmented(segments, segmenter.Committed);
@@ -370,4 +419,7 @@ public sealed class TranscriptionPipeline : IDisposable
     private sealed record PendingSegment(SessionInfo Session, SpeechSegment Segment, ChunkJanitor? Janitor);
 
     private sealed record LiveLanguage(SessionInfo Session, string Language);
+
+    /// <summary>The session's audio before <paramref name="At"/> is in the transcript, or held no speech.</summary>
+    private sealed record Finished(SessionInfo Session, TimeSpan At);
 }

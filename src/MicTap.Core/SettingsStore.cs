@@ -52,5 +52,12 @@ public sealed class SettingsStore(string filePath)
         {
             throw new InvalidDataException($"Settings file {FilePath}: hubPort must be 1..65535, got {settings.HubPort}.");
         }
+
+        double minPause = SpeechSegmenter.MinSilence.TotalSeconds;
+        if (settings.PhrasePauseSeconds < minPause || settings.PhrasePauseSeconds > AppSettings.MaxPhrasePauseSeconds)
+        {
+            throw new InvalidDataException(
+                $"Settings file {FilePath}: phrasePauseSeconds must be {minPause}..{AppSettings.MaxPhrasePauseSeconds}, got {settings.PhrasePauseSeconds}.");
+        }
     }
 }

@@ -125,6 +125,7 @@ public sealed partial class MainViewModel : ObservableObject
         _appVersion = appVersion;
         _logger = logger.ForContext<MainViewModel>();
         RootFolder = settings.RootFolder ?? Core.Projects.DefaultRoot;
+        transcript.Pipeline.PhrasePause = TimeSpan.FromSeconds(settings.PhrasePauseSeconds);
         _infoTimer = new DispatcherTimer(InfoShownFor, DispatcherPriority.Background, (_, _) => ClearInfo(), _dispatcher);
         _infoTimer.Stop();
         recorder.LevelChanged += OnLevelChanged;

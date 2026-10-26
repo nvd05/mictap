@@ -130,6 +130,36 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Live_text_leaves_out_phrases_that_already_have_their_final_text()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((samples, _) => $"{samples.Length / 16}ms"));
+        var live = new List<string>();
+        pipeline.LiveTextChanged += (_, text) => { lock (live) live.Add(text.Text); };
+        _recorder.Start(Options("ru"), _source);
+
+        Push(FakeSpeech.SpeechPcm(2.5), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1));
+        await Eventually(() => Lines().Length == 1);
+        await Eventually(() => { lock (live) return live.Contains("2000ms"); }); // 1 s of silence and 1 s of speech after the phrase
+        await _recorder.StopAsync();
+
+        Assert.Equal("2500ms", Lines()[0].Text);
+    }
+
+    [Fact]
+    public async Task Phrase_pause_set_on_the_pipeline_joins_speech_into_one_line()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((samples, _) => $"{samples.Length / 16}ms"));
+        pipeline.PhrasePause = TimeSpan.FromSeconds(3);
+        _recorder.Start(Options("ru"), _source);
+
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(4));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        Assert.Equal((0.0, 3.0, "3000ms"), (Lines()[0].Start, Lines()[0].End, Lines()[0].Text));
+    }
+
+    [Fact]
     public async Task Edit_through_the_sink_rewrites_the_line_by_seq()
     {
         using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "черновик"));

@@ -10,6 +10,10 @@ public sealed record AppSettings
 
     public const int DefaultHubPort = 47310;
 
+    public const double DefaultPhrasePauseSeconds = 3;
+
+    public const double MaxPhrasePauseSeconds = 10;
+
     /// <summary>Folder of projects; null means <see cref="Projects.DefaultRoot"/>.</summary>
     public string? RootFolder { get; init; }
 
@@ -22,6 +26,9 @@ public sealed record AppSettings
 
     /// <summary>Port of the agents hub on 127.0.0.1; the mictap CLI reads it from here.</summary>
     public int HubPort { get; init; } = DefaultHubPort;
+
+    /// <summary>Silence that ends a phrase: a line of transcript.jsonl and a segment for the agents.</summary>
+    public double PhrasePauseSeconds { get; init; } = DefaultPhrasePauseSeconds;
 }
 
 /// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>

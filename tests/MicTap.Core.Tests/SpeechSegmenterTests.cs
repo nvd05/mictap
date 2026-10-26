@@ -50,6 +50,41 @@ public sealed class SpeechSegmenterTests
     }
 
     [Fact]
+    public void Longer_pause_joins_speech_with_shorter_silences_into_one_phrase()
+    {
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru", pause: TimeSpan.FromSeconds(3));
+
+        IReadOnlyList<SpeechSegment> whileTalking = FeedInBlocks(segmenter, [ .. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1), .. FakeSpeech.Speech(1.5), .. FakeSpeech.Silence(2.5) ]);
+        IReadOnlyList<SpeechSegment> afterPause = FeedInBlocks(segmenter, FakeSpeech.Silence(1));
+
+        Assert.Empty(whileTalking);
+        Assert.Equal([ (0.0, 4.5) ], afterPause.Select(Bounds));
+        Assert.Empty(segmenter.Flush());
+    }
+
+    [Fact]
+    public void Phrase_that_would_outgrow_thirty_seconds_ends_at_the_last_pause_between_words()
+    {
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru", pause: TimeSpan.FromSeconds(3));
+
+        IReadOnlyList<SpeechSegment> whileTalking = FeedInBlocks(segmenter, [ .. FakeSpeech.Speech(20), .. FakeSpeech.Silence(1), .. FakeSpeech.Speech(15) ]);
+        IReadOnlyList<SpeechSegment> rest = segmenter.Flush();
+
+        Assert.Equal([ (0.0, 20.0) ], whileTalking.Select(Bounds));
+        Assert.Equal([ (21.0, 36.0) ], rest.Select(Bounds));
+    }
+
+    [Fact]
+    public void Phrase_reaching_thirty_seconds_ends_at_the_silence_after_it_without_waiting_for_the_pause()
+    {
+        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru", pause: TimeSpan.FromSeconds(3));
+
+        IReadOnlyList<SpeechSegment> segments = FeedInBlocks(segmenter, [ .. FakeSpeech.Speech(29), .. FakeSpeech.Silence(1.5) ]);
+
+        Assert.Equal([ (0.0, 29.0) ], segments.Select(Bounds));
+    }
+
+    [Fact]
     public void Language_mark_cuts_speech_and_switches_the_language()
     {
         var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");

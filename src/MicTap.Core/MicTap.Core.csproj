@@ -7,6 +7,10 @@
     <PackageReference Include="NAudio.Wasapi" Version="2.2.1" />
     <PackageReference Include="NAudio.WinMM" Version="2.2.1" />
     <PackageReference Include="Serilog" Version="4.4.0" />
+    <PackageReference Include="Whisper.net" Version="1.9.1" />
+    <!-- Whisper: CPU runtime as the visible fallback; Cuda12, not Cuda: the CUDA 13 build needs driver 580+. -->
+    <PackageReference Include="Whisper.net.Runtime" Version="1.9.1" />
+    <PackageReference Include="Whisper.net.Runtime.Cuda12" Version="1.9.1" />
   </ItemGroup>
 
   <ItemGroup>

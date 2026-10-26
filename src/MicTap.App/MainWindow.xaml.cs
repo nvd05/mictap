@@ -1,6 +1,7 @@
 ﻿using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
-using System.Windows.Media;
+using System.Windows.Controls;
 using H.NotifyIcon.Core;
 using MaterialDesignThemes.Wpf;
 
@@ -11,6 +12,7 @@ public partial class MainWindow : Window
     private readonly MainViewModel _viewModel;
     private bool _confirmingClose;
     private bool _closeConfirmed;
+    private System.Drawing.Icon? _trayIcon;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -20,6 +22,7 @@ public partial class MainWindow : Window
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         viewModel.RecordingFailed += OnRecordingFailed;
         UpdateTrayIcon();
+        AddFailureSimulation();
     }
 
     protected override void OnStateChanged(EventArgs e)
@@ -36,6 +39,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         TrayIcon.Dispose();
+        _trayIcon?.Dispose();
         base.OnClosed(e);
     }
 
@@ -79,15 +83,29 @@ public partial class MainWindow : Window
         Activate();
     }
 
-    private void UpdateTrayIcon() =>
-        TrayIcon.IconSource = (ImageSource)FindResource(_viewModel.IsRecording ? "RecordingIcon" : "IdleIcon");
+    private void UpdateTrayIcon()
+    {
+        System.Drawing.Icon? previous = _trayIcon;
+        _trayIcon = TrayIcons.Render(_viewModel.IsRecording, _viewModel.Language);
+        TrayIcon.Icon = _trayIcon;
+        previous?.Dispose();
+    }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.IsRecording))
+        if (e.PropertyName is nameof(MainViewModel.IsRecording) or nameof(MainViewModel.Language))
         {
             UpdateTrayIcon();
         }
+    }
+
+    /// <summary>Debug builds only: a tray item that makes the next recognition pass fail, to check recovery by hand.</summary>
+    [Conditional("DEBUG")]
+    private void AddFailureSimulation()
+    {
+        var item = new MenuItem { Header = "Имитировать сбой распознавания", Icon = new PackIcon { Kind = PackIconKind.AlertOctagonOutline } };
+        item.Click += (_, _) => _viewModel.Transcript.SimulateFailure();
+        TrayIcon.ContextMenu.Items.Insert(1, item);
     }
 
     private void OnRecordingFailed(object? sender, string message)

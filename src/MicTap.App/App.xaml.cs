@@ -10,6 +10,7 @@ public partial class App : Application
 {
     private Mutex? _singleInstance;
     private TranscriptViewModel? _transcript;
+    private GlobalHotkeys? _hotkeys;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -46,12 +47,20 @@ public partial class App : Application
         MainWindow.Show();
         viewModel.Initialize();
         _transcript.Start();
+
+        _hotkeys = new GlobalHotkeys();
+        HotkeySettings keys = viewModel.Hotkeys;
+        viewModel.ShowHotkeyProblems([
+            .. new[] { _hotkeys.Register(keys.ToggleLanguage, viewModel.ToggleLanguage), _hotkeys.Register(keys.ToggleRecording, viewModel.ToggleRecording) }
+                .OfType<string>(),
+        ]);
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         if (_singleInstance is not null)
         {
+            _hotkeys?.Dispose();
             _transcript?.Dispose();
             Log.Information("mictap exited");
             Log.CloseAndFlush();

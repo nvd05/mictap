@@ -18,6 +18,7 @@ public sealed partial class MainViewModel : ObservableObject
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private AppSettings _settings;
     private bool _refreshingDevices;
+    private bool _ready;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RecordButtonText))]
@@ -61,6 +62,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _isError;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LanguageText), nameof(TrayToolTip))]
     private string _language = AppSettings.DefaultLanguage;
 
     public MainViewModel(
@@ -77,6 +79,7 @@ public sealed partial class MainViewModel : ObservableObject
         recorder.LevelChanged += OnLevelChanged;
         recorder.ProgressChanged += OnProgressChanged;
         recorder.Stopped += OnRecordingStopped;
+        _ready = true;
     }
 
     /// <summary>Recording stopped on its own; the argument explains why.</summary>
@@ -98,7 +101,13 @@ public sealed partial class MainViewModel : ObservableObject
         : RootFolder is null ? "Сначала выберите папку"
         : "Начать запись";
 
-    public string TrayToolTip => IsRecording ? $"mictap: идёт запись, {RecordedText}" : "mictap: запись не идёт";
+    public string LanguageText => Language.ToUpperInvariant();
+
+    public HotkeySettings Hotkeys => _settings.Hotkeys;
+
+    public string TrayToolTip => IsRecording
+        ? $"mictap: идёт запись, {RecordedText}, язык {LanguageText}"
+        : $"mictap: запись не идёт, язык {LanguageText}";
 
     /// <summary>Lists microphones and repairs chunks that a crash left open in the latest session.</summary>
     public void Initialize()
@@ -112,6 +121,38 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     public Task StopRecordingAsync() => _recorder.StopAsync();
+
+    /// <summary>Hotkey: the next language of the list, round and round.</summary>
+    public void ToggleLanguage()
+    {
+        IReadOnlyList<string> languages = AppSettings.Languages;
+        Language = languages[(languages.ToList().IndexOf(Language) + 1) % languages.Count];
+    }
+
+    /// <summary>Hotkey: starts or stops recording.</summary>
+    public void ToggleRecording()
+    {
+        if (IsRecording)
+        {
+            StopCommand.Execute(null);
+        }
+        else if (StartCommand.CanExecute(null))
+        {
+            StartCommand.Execute(null);
+        }
+        else if (!IsStarting)
+        {
+            ShowMessage("Запись по хоткею не началась: сначала выберите папку и микрофон.", isError: true);
+        }
+    }
+
+    public void ShowHotkeyProblems(IReadOnlyList<string> problems)
+    {
+        if (problems.Count > 0)
+        {
+            ShowMessage($"Хоткеи не работают:\n{string.Join("\n", problems)}\nИзмените их в {_settingsStore.FilePath} и перезапустите mictap.", isError: true);
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanEditSettings))]
     private void ChooseFolder()
@@ -178,6 +219,11 @@ public sealed partial class MainViewModel : ObservableObject
     {
         // During a recording the switch is a mark: speech from here on is recognized in the new language.
         _recorder.MarkLanguage(value);
+        if (_ready)
+        {
+            LanguageCue.Play(value, _logger);
+        }
+
         if (value != _settings.Language)
         {
             Save(_settings with { Language = value });

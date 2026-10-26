@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Threading.Channels;
 using Serilog;
 
@@ -139,10 +140,16 @@ public sealed class TranscriptionPipeline : IDisposable
 
                 recognized = ring.Written;
                 LiveBusyChanged?.Invoke(this, true);
+                long started = Stopwatch.GetTimestamp();
+                float[] window = ring.Snapshot();
                 IReadOnlyList<TranscriptSegment> segments =
-                    await Transcriber.TranscribeAsync(ring.Snapshot(), _language(), cancellation);
+                    await Transcriber.TranscribeAsync(window, _language(), cancellation);
                 LiveBusyChanged?.Invoke(this, false);
-                LiveTextChanged?.Invoke(this, new LiveTranscript(session, Join(segments)));
+                string text = Join(segments);
+                _logger.Debug(
+                    "Live pass: {Audio:0.0} s of audio in {Elapsed:0.0} s, {Chars} chars",
+                    window.Length / (double)PcmFormat.Mono16k.SampleRate, Stopwatch.GetElapsedTime(started).TotalSeconds, text.Length);
+                LiveTextChanged?.Invoke(this, new LiveTranscript(session, text));
             }
         }
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
@@ -166,13 +173,16 @@ public sealed class TranscriptionPipeline : IDisposable
                     continue;
                 }
 
+                long started = Stopwatch.GetTimestamp();
                 float[] samples = WavSamples.Read(done.Chunk.Path);
                 IReadOnlyList<TranscriptSegment> segments =
                     await Transcriber.TranscribeAsync(samples, _language(), cancellation);
                 TimeSpan end = done.Start + PcmFormat.Mono16k.DurationOf(done.Chunk.DataBytes);
                 var line = new TranscriptLine(done.Chunk.Index, Seconds(done.Start), Seconds(end), Join(segments));
                 SinkFor(done.Session).Put(line);
-                _logger.Information("Chunk {Chunk} of {Session} transcribed", done.Chunk.Index, done.Session.Name);
+                _logger.Information(
+                    "Chunk {Chunk} of {Session} transcribed in {Elapsed:0.0} s",
+                    done.Chunk.Index, done.Session.Name, Stopwatch.GetElapsedTime(started).TotalSeconds);
                 ChunkTranscribed?.Invoke(this, new ChunkTranscript(done.Session, line));
             }
         }

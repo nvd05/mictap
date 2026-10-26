@@ -39,12 +39,15 @@ tests/MicTap.Core.Tests/
   policy.json, пакетная обработка файлов.
 
 ## Данные на диске
-- Настройки: `%APPDATA%\mictap\settings.json` — rootFolder, deviceName, chunkSeconds (по умолчанию 60).
+- Настройки: `%APPDATA%\mictap\settings.json` — rootFolder, deviceName, chunkSeconds (по умолчанию 60),
+  language (ru / ja).
 - Логи: `%APPDATA%\mictap\logs\`.
+- Модель: `%APPDATA%\mictap\models\ggml-large-v3-turbo.bin`, скачивается при первом запуске.
 - Сессия: `<rootFolder>\<yyyy-MM-dd_HHmm>\`
   - `audio\000.wav`, `001.wav`, … — чанки по chunkSeconds
   - `meta.json` — schemaVersion (1), started, device, format, chunkSeconds, appVersion
-  - `transcript.jsonl` — зарезервировано для v0.2, в v0.1 не создавать
+  - `transcript.jsonl` — строка на готовый чанк: schemaVersion (1), chunk, start, end (секунды от начала
+    сессии), text. Правка текста в окне переписывает строку своего чанка.
 
 ## Надёжность (обязательно)
 - Flush на диск не реже раза в 2 с. Падение приложения теряет секунды, не сессию.

@@ -227,6 +227,17 @@ public partial class MainWindow : Window
 
     private void OnDeleteRouterAiKey(object sender, RoutedEventArgs e) => _viewModel.DeleteRouterAiKey();
 
+    private void OnReplaceRouterAiKey(object sender, RoutedEventArgs e) => _viewModel.ReplaceRouterAiKey();
+
+    private void OnCancelRouterAiKey(object sender, RoutedEventArgs e)
+    {
+        ((Panel)((FrameworkElement)sender).Parent).Children.OfType<PasswordBox>().Single().Clear();
+        _viewModel.ShowRouterAiKey();
+    }
+
+    private void OnRouterAiKeyChanged(object sender, RoutedEventArgs e) =>
+        _viewModel.CanSaveRouterAiKey = ((PasswordBox)sender).Password.Trim().Length > 0;
+
     /// <summary>New lines scroll the transcript to its end unless the user scrolled up to read.</summary>
     private void FollowTranscript()
     {

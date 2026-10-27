@@ -44,6 +44,7 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _selecting;
     private AgentsState? _agentsState;
     private SessionNode? _recordingNode;
+    private long _sessionOffsetTicks; // where the recording starts in its session: the timer shows session time
 
     [ObservableProperty]
     private string _rootFolder = Core.Projects.DefaultRoot;
@@ -75,6 +76,23 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private EngineChoice? _selectedEngine;
+
+    [ObservableProperty]
+    private DraftOption? _selectedDraft;
+
+    /// <summary>A Router AI key is saved; the settings show it masked with «Заменить» and «Удалить».</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRouterAiKeyInput), nameof(ShowRouterAiKeyActions))]
+    private bool _hasRouterAiKey;
+
+    /// <summary>The user chose «Заменить»: the input shows although a key is saved.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowRouterAiKeyInput), nameof(ShowRouterAiKeyActions))]
+    private bool _isReplacingRouterAiKey;
+
+    /// <summary>Something is typed in the key box: only then is there anything to save.</summary>
+    [ObservableProperty]
+    private bool _canSaveRouterAiKey;
 
     /// <summary>Agents working with the recording, waiting or thinking: the send button is there only for them.</summary>
     [ObservableProperty]
@@ -155,6 +173,7 @@ public sealed partial class MainViewModel : ObservableObject
         recorder.LevelChanged += OnLevelChanged;
         recorder.ProgressChanged += OnProgressChanged;
         recorder.Stopped += OnRecordingStopped;
+        recorder.Started += (_, started) => Interlocked.Exchange(ref _sessionOffsetTicks, started.Offset.Ticks);
         transcript.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(TranscriptViewModel.IsRetranscribing))
@@ -190,6 +209,17 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>Languages of the selected project; the first one is its default.</summary>
     public ObservableCollection<LanguageOption> Languages { get; } = [];
+
+    public static IReadOnlyList<DraftOption> DraftOptions { get; } =
+    [
+        new(3, "Каждые 3 с — быстро"),
+        new(10, "Каждые 10 с — экономнее"),
+        new(0, "Выключен — видеокарта только для готовых фраз"),
+    ];
+
+    public bool ShowRouterAiKeyInput => !HasRouterAiKey || IsReplacingRouterAiKey;
+
+    public bool ShowRouterAiKeyActions => HasRouterAiKey && !IsReplacingRouterAiKey;
 
     /// <summary>Who recognizes the phrases of the selected project: the graphics card or a Router AI model with its price.</summary>
     public ObservableCollection<EngineChoice> EngineChoices { get; } = [];
@@ -268,6 +298,9 @@ public sealed partial class MainViewModel : ObservableObject
         LoadProjects();
         RepairProjects();
         _ = LoadCloudModelsAsync();
+        SelectedDraft = DraftOptions.FirstOrDefault(o => o.Seconds == _settings.LiveDraftSeconds)
+            ?? new DraftOption(_settings.LiveDraftSeconds, $"Каждые {_settings.LiveDraftSeconds} с (из settings.json)");
+        Transcript.SetDraftInterval(_settings.LiveDraftSeconds);
     }
 
     public Task StopRecordingAsync() => _recorder.StopAsync();
@@ -634,6 +667,13 @@ public sealed partial class MainViewModel : ObservableObject
         ShowRouterAiKey();
     }
 
+    /// <summary>«Заменить»: the input shows under the saved key; «Отмена» or saving goes back.</summary>
+    public void ReplaceRouterAiKey()
+    {
+        IsReplacingRouterAiKey = true;
+        CanSaveRouterAiKey = false;
+    }
+
     public void DeleteRouterAiKey()
     {
         try
@@ -651,20 +691,27 @@ public sealed partial class MainViewModel : ObservableObject
         ShowRouterAiKey();
     }
 
-    /// <summary>Reads whether a key is saved, for the settings dialog; the key itself is not shown.</summary>
+    /// <summary>Reads whether a key is saved, for the settings dialog; only its first and last characters are shown.</summary>
     public void ShowRouterAiKey()
     {
+        IsReplacingRouterAiKey = false;
+        CanSaveRouterAiKey = false;
         try
         {
-            RouterAiKeyText = CloudKeys.Read() is { Length: > 0 }
-                ? "Ключ сохранён в диспетчере учётных данных Windows."
-                : "Ключа нет: проекты с Router AI ждут его, фразы копятся в очереди.";
+            string? key = CloudKeys.Read();
+            HasRouterAiKey = key is { Length: > 0 };
+            RouterAiKeyText = key is { Length: > 0 }
+                ? $"Ключ сохранён: {Mask(key)}"
+                : "Ключа нет. Создайте его в кабинете Router AI и вставьте сюда.";
         }
         catch (System.ComponentModel.Win32Exception ex)
         {
+            HasRouterAiKey = false;
             RouterAiKeyText = $"Ключ не прочитан: {ex.Message}";
         }
     }
+
+    private static string Mask(string key) => key.Length > 10 ? $"{key[ ..3 ]}…{key[ ^4.. ]}" : "…";
 
     public void DismissMessage()
     {
@@ -838,6 +885,18 @@ public sealed partial class MainViewModel : ObservableObject
         Language = value?.Settings.DefaultLanguage ?? "ru";
         _quietLanguage = false;
         RefreshEngineChoices();
+    }
+
+    partial void OnSelectedDraftChanged(DraftOption? value)
+    {
+        if (value is null || value.Seconds == _settings.LiveDraftSeconds)
+        {
+            return;
+        }
+
+        Save(_settings with { LiveDraftSeconds = value.Seconds });
+        Transcript.SetDraftInterval(value.Seconds);
+        _logger.Information("Live draft {Draft}", value.Seconds == 0 ? "off" : $"every {value.Seconds} s");
     }
 
     partial void OnSelectedEngineChanged(EngineChoice? value)
@@ -1263,10 +1322,11 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
+    /// <summary>«Записано» counts this recording; the timer shows session time, as the phrases do.</summary>
     private void ShowRecorded(TimeSpan recorded)
     {
         RecordedText = FormatMinutes(recorded);
-        ElapsedText = FormatElapsed(recorded);
+        ElapsedText = FormatElapsed(TimeSpan.FromTicks(Interlocked.Read(ref _sessionOffsetTicks)) + recorded);
     }
 
     private static string Describe(AgentPresence agent, DateTimeOffset now) => agent.State switch
@@ -1303,6 +1363,12 @@ public sealed partial class MainViewModel : ObservableObject
 }
 
 public sealed record LanguageOption(string Code, string Name);
+
+/// <summary>How often the draft is recognized; <paramref name="Seconds"/> 0 is off.</summary>
+public sealed record DraftOption(int Seconds, string Name)
+{
+    public override string ToString() => Name;
+}
 
 /// <summary>An item of the engine box: <paramref name="Model"/> null is the local Whisper on the graphics card.</summary>
 public sealed record EngineChoice(string? Model, string Title, string Price)

@@ -68,6 +68,10 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private string _statusText = "";
 
+    /// <summary>The draft is off in the settings: the recording bar says so instead of «Слушаю…».</summary>
+    [ObservableProperty]
+    private bool _isDraftOff;
+
     /// <summary>The status line's cloud part while a recording's phrases go to Router AI; empty otherwise.</summary>
     [ObservableProperty]
     private string _cloudText = "";
@@ -143,6 +147,19 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     {
         _host.Start();
         _pipeline.Start();
+    }
+
+    /// <summary>How often the draft is recognized, in seconds; 0 turns it off. Applies to the recording under way too.</summary>
+    public void SetDraftInterval(int seconds)
+    {
+        _pipeline.LiveInterval = seconds > 0 ? TimeSpan.FromSeconds(seconds) : null;
+        IsDraftOff = seconds == 0;
+        if (IsDraftOff)
+        {
+            NowText = "";
+            IsSilence = false;
+            IsLiveBusy = false;
+        }
     }
 
     /// <summary>Shows the text of <paramref name="session"/> in «Записано»; null clears it.</summary>
@@ -457,7 +474,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private void OnLiveText(object? sender, LiveTranscript live) =>
         _dispatcher.InvokeAsync(() =>
         {
-            if (_live && live.Session == _liveSession)
+            if (_live && live.Session == _liveSession && !IsDraftOff)
             {
                 NowText = live.Text;
                 IsSilence = live.Silence;

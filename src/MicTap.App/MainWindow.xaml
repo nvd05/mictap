@@ -163,6 +163,13 @@
                                   ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsEnabled="{Binding CanEditSettings}" />
                     </DockPanel>
 
+                    <TextBlock Text="Черновик в панели записи" Style="{StaticResource SettingsHeader}" />
+                    <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                              AutomationProperties.Name="Частота черновика"
+                              ItemsSource="{x:Static local:MainViewModel.DraftOptions}" SelectedItem="{Binding SelectedDraft}" />
+                    <TextBlock Style="{StaticResource SettingsNote}"
+                               Text="Черновик — главная постоянная нагрузка на видеокарту: то, что звучит сейчас, распознаётся заново с каждым обновлением. Готовые фразы распознаются один раз при любой частоте. Реже или выключен — меньше расход батареи." />
+
                     <TextBlock Text="Хоткеи" Style="{StaticResource SettingsHeader}" />
                     <Border CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">
                         <Grid Margin="14,6">
@@ -214,12 +221,23 @@
                     <TextBlock Text="Router AI" Style="{StaticResource SettingsHeader}" />
                     <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}" TextWrapping="Wrap" Text="{Binding RouterAiKeyText}"
                                AutomationProperties.Name="Состояние ключа Router AI" />
-                    <DockPanel Margin="0,8,0,0">
-                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Удалить" Style="{StaticResource MaterialDesignFlatButton}"
+                    <!-- A saved key: replace or delete it. -->
+                    <StackPanel Margin="0,8,0,0" Orientation="Horizontal"
+                                Visibility="{Binding ShowRouterAiKeyActions, Converter={StaticResource VisibleWhenTrue}}">
+                        <Button Content="Заменить" Style="{StaticResource MaterialDesignOutlinedButton}" Click="OnReplaceRouterAiKey"
+                                AutomationProperties.Name="Заменить ключ Router AI" />
+                        <Button Margin="8,0,0,0" Content="Удалить" Style="{StaticResource MaterialDesignFlatButton}"
                                 Click="OnDeleteRouterAiKey" AutomationProperties.Name="Удалить ключ Router AI" />
+                    </StackPanel>
+                    <!-- No key yet, or replacing it: paste and save; «Сохранить» only with something pasted. -->
+                    <DockPanel Margin="0,8,0,0" Visibility="{Binding ShowRouterAiKeyInput, Converter={StaticResource VisibleWhenTrue}}">
+                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Отмена" Style="{StaticResource MaterialDesignFlatButton}"
+                                Click="OnCancelRouterAiKey" AutomationProperties.Name="Не менять ключ Router AI"
+                                Visibility="{Binding HasRouterAiKey, Converter={StaticResource VisibleWhenTrue}}" />
                         <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Сохранить" Style="{StaticResource MaterialDesignOutlinedButton}"
+                                IsEnabled="{Binding CanSaveRouterAiKey}"
                                 Click="OnSaveRouterAiKey" AutomationProperties.Name="Сохранить ключ Router AI" />
-                        <PasswordBox Style="{StaticResource MaterialDesignOutlinedPasswordBox}"
+                        <PasswordBox Style="{StaticResource MaterialDesignOutlinedPasswordBox}" PasswordChanged="OnRouterAiKeyChanged"
                                      materialDesign:TextFieldAssist.TextFieldCornerRadius="12" materialDesign:HintAssist.Hint="Ключ Router AI (sk-…)"
                                      AutomationProperties.Name="Ключ Router AI" />
                     </DockPanel>
@@ -574,7 +592,7 @@
                             </Grid>
 
                             <StackPanel DockPanel.Dock="Left" Margin="14,0,12,0" Width="96" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding ElapsedText}" AutomationProperties.Name="Время записи"
+                                <TextBlock Text="{Binding ElapsedText}" AutomationProperties.Name="Время записи" ToolTip="Время сессии — как у фраз в тексте"
                                            Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
                                 <ProgressBar Margin="0,6,0,0" Height="6" Minimum="0" Maximum="100"
                                              Style="{StaticResource MaterialDesignLinearProgressBar}"
@@ -591,34 +609,6 @@
                                     AutomationProperties.Name="{Binding SendToAgentsTitle}">
                                 <materialDesign:PackIcon Kind="Send" Width="24" Height="24" />
                             </Button>
-
-                            <!-- Who recognizes the phrases of this project: switched here, before a recording; the price is per minute of speech. -->
-                            <ComboBox DockPanel.Dock="Right" Width="210" Margin="12,0,0,0" VerticalAlignment="Center"
-                                      Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                                      materialDesign:HintAssist.Hint="Распознавание" AutomationProperties.Name="Распознавание фраз"
-                                      ToolTip="Кто распознаёт фразы этого проекта: видеокарта или модель Router AI (платно). Меняется до записи."
-                                      IsEnabled="{Binding IsIdle}" MaxDropDownHeight="420"
-                                      ItemsSource="{Binding EngineChoices}" SelectedItem="{Binding SelectedEngine}">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type local:EngineChoice}">
-                                        <Grid Width="330">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding Price}" Opacity="0.6" />
-                                        </Grid>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-
-                            <ComboBox DockPanel.Dock="Right" Width="150" Margin="12,0,0,0" VerticalAlignment="Center"
-                                      Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                                      materialDesign:HintAssist.Hint="{Binding LanguageHint}" AutomationProperties.Name="Язык речи"
-                                      ToolTip="{Binding LanguageToolTip}"
-                                      DisplayMemberPath="Name" SelectedValuePath="Code"
-                                      ItemsSource="{Binding Languages}" SelectedValue="{Binding Language}" />
 
                             <!-- The draft: speech not yet in the text above, replaced every few seconds; the latest lines stay in view. -->
                             <Border MinHeight="56" CornerRadius="12" Padding="14,8" Background="#0A000000" DataContext="{Binding Transcript}">
@@ -639,6 +629,9 @@
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsSilence}" Value="True">
                                                             <Setter Property="Text" Value="(тишина)" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding IsDraftOff}" Value="True">
+                                                            <Setter Property="Text" Value="Черновик выключен в настройках — фразы появятся в тексте после паузы." />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsLive}" Value="False">
                                                             <Setter Property="Text"
@@ -698,6 +691,36 @@
                     <materialDesign:Card Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16" Padding="14,10,20,14">
                         <DockPanel DataContext="{Binding Transcript}">
                             <DockPanel DockPanel.Dock="Top">
+                                <!-- The project's language and who recognizes its phrases: next to the session, out of the way of the draft. -->
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
+                                            DataContext="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}">
+                                    <ComboBox Width="150" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                                              materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                                              materialDesign:HintAssist.Hint="{Binding LanguageHint}" AutomationProperties.Name="Язык речи"
+                                              ToolTip="{Binding LanguageToolTip}"
+                                              DisplayMemberPath="Name" SelectedValuePath="Code"
+                                              ItemsSource="{Binding Languages}" SelectedValue="{Binding Language}" />
+                                    <!-- The price is per minute of speech; switched before a recording. -->
+                                    <ComboBox Width="250" Margin="10,0,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                                              materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                                              materialDesign:HintAssist.Hint="Распознавание" AutomationProperties.Name="Распознавание фраз"
+                                              ToolTip="Кто распознаёт фразы этого проекта: видеокарта или модель Router AI (платно). Меняется до записи."
+                                              IsEnabled="{Binding IsIdle}" MaxDropDownHeight="420" Grid.IsSharedSizeScope="True"
+                                              ItemsSource="{Binding EngineChoices}" SelectedItem="{Binding SelectedEngine}">
+                                        <ComboBox.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type local:EngineChoice}">
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="Model" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="1" Margin="16,0,0,0" Text="{Binding Price}" Opacity="0.6" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ComboBox.ItemTemplate>
+                                    </ComboBox>
+                                </StackPanel>
                                 <Button x:Name="SessionMenuButton" DockPanel.Dock="Left" Height="36" Padding="8,0"
                                         Style="{StaticResource MaterialDesignFlatButton}" materialDesign:ButtonAssist.CornerRadius="12"
                                         Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"

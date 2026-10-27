@@ -59,6 +59,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private string? _cloudModel;
     private bool _cloudFailing;
     private CloudUsage _cloudSpent = CloudUsage.None;
+    private CloudUsage _shownSpent = CloudUsage.None;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(RecognitionText))]
@@ -147,7 +148,10 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             string draft = IsDraftOff ? "черновик выключен" : $"черновик — {RuntimeText}";
             if (_cloudModel is null)
             {
-                return IsDraftOff ? $"{RuntimeText}, черновик выключен" : RuntimeText;
+                string local = IsDraftOff ? $"{RuntimeText}, черновик выключен" : RuntimeText;
+                return _shownSpent.Requests == 0
+                    ? local
+                    : $"{local} · Router AI в этой сессии: {_shownSpent.Rubles:0.00} ₽ за {_shownSpent.Seconds / 60:0.#} мин речи";
             }
 
             string phrases = _cloudFailing
@@ -202,6 +206,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     {
         _session = session;
         Items.Clear();
+        ShowSpent(session);
         if (session is null || !File.Exists(Path.Combine(session.Folder, JsonlTranscriptSink.FileName)))
         {
             return;
@@ -525,6 +530,22 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     private void ShowCloudText() => OnPropertyChanged(nameof(RecognitionText));
 
+    /// <summary>What the shown session has cost in Router AI so far, for the status line when nothing records into it.</summary>
+    private void ShowSpent(SessionInfo? session)
+    {
+        try
+        {
+            _shownSpent = session is null ? CloudUsage.None : CloudUsageLog.Read(session);
+        }
+        catch (InvalidDataException ex)
+        {
+            _logger.Error(ex, "Cloud usage of {Session} not read", session!.Name);
+            _shownSpent = CloudUsage.None;
+        }
+
+        ShowCloudText();
+    }
+
     /// <summary>Pipeline thread: one cloud answer is paid for; the session's cloud.json adds it up.</summary>
     private void OnCloudSpent(SessionInfo session, CloudSpend spend)
     {
@@ -544,8 +565,14 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             if (session == _liveSession && _cloudModel is not null)
             {
                 _cloudSpent = total;
-                ShowCloudText();
             }
+
+            if (session == _session)
+            {
+                _shownSpent = total;
+            }
+
+            ShowCloudText();
         });
     }
 

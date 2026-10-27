@@ -247,9 +247,12 @@
                     </DockPanel>
 
                     <TextBlock Text="Черновик в панели записи" Style="{StaticResource SettingsHeader}" />
-                    <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                              AutomationProperties.Name="Частота черновика"
-                              ItemsSource="{x:Static local:MainViewModel.DraftOptions}" SelectedItem="{Binding SelectedDraft}" />
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Right" Width="290" Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding DraftText}"
+                                   Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                        <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                                AutomationProperties.Name="Частота черновика, секунды; 0 — выключен" Value="{Binding DraftSeconds}" />
+                    </DockPanel>
                     <TextBlock Style="{StaticResource SettingsNote}"
                                Text="Черновик — главная постоянная нагрузка на видеокарту: то, что звучит сейчас, распознаётся заново с каждым обновлением. Готовые фразы распознаются один раз при любой частоте. Реже или выключен — меньше расход батареи." />
 
@@ -563,6 +566,7 @@
                             <TextBlock Text="Проекты" VerticalAlignment="Center" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
                         </DockPanel>
                         <TreeView x:Name="ProjectTree" ItemsSource="{Binding Projects}" ItemContainerStyle="{StaticResource TreeRow}" BorderThickness="0" Background="Transparent"
+                                  ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                                   SelectedItemChanged="OnTreeSelectionChanged" AutomationProperties.Name="Проекты и сессии"
                                   Tag="{Binding}">
                             <TreeView.Resources>

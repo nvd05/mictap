@@ -58,14 +58,14 @@ public sealed partial class MainViewModel : ObservableObject
         nameof(HasRecordingAgents))]
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand),
-        nameof(RetranscribeCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand),
+        nameof(RetranscribeCommand), nameof(CompareModelsCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand),
         nameof(RenameSessionCommand), nameof(SendToAgentsCommand), nameof(DeleteSessionCommand), nameof(DeleteProjectCommand))]
     private bool _isRecording;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEditSettings))]
     [NotifyCanExecuteChangedFor(
-        nameof(StartCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand), nameof(RetranscribeCommand),
+        nameof(StartCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand), nameof(RetranscribeCommand), nameof(CompareModelsCommand),
         nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RenameSessionCommand),
         nameof(DeleteSessionCommand), nameof(DeleteProjectCommand))]
     private bool _isStarting;
@@ -76,8 +76,10 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private EngineChoice? _selectedEngine;
 
+    /// <summary>How often the draft is recognized, from the settings slider: 0 is off.</summary>
     [ObservableProperty]
-    private DraftOption? _selectedDraft;
+    [NotifyPropertyChangedFor(nameof(DraftText))]
+    private int _draftSeconds;
 
     [ObservableProperty]
     private ArchiveOption? _selectedArchive;
@@ -128,14 +130,14 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(Title), nameof(TrayToolTip), nameof(EmptyText), nameof(SessionNote))]
     [NotifyCanExecuteChangedFor(
-        nameof(StartCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RetranscribeCommand),
+        nameof(StartCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RetranscribeCommand), nameof(CompareModelsCommand),
         nameof(RenameSessionCommand), nameof(DeleteProjectCommand))]
     private ProjectInfo? _selectedProject;
 
     /// <summary>The session shown in the transcript and recognized again by «Распознать заново».</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SessionHeader), nameof(SessionNote), nameof(EmptyText))]
-    [NotifyCanExecuteChangedFor(nameof(RetranscribeCommand), nameof(RenameSessionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RetranscribeCommand), nameof(CompareModelsCommand), nameof(RenameSessionCommand))]
     private SessionInfo? _selectedSession;
 
     /// <summary>The tree node of <see cref="SelectedSession"/>, for the session menu above the text.</summary>
@@ -230,12 +232,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>What the archive holds, for its dialog.</summary>
     public ObservableCollection<ArchiveRow> ArchiveRows { get; } = [];
 
-    public static IReadOnlyList<DraftOption> DraftOptions { get; } =
-    [
-        new(3, "Каждые 3 с — быстро"),
-        new(10, "Каждые 10 с — экономнее"),
-        new(0, "Выключен — видеокарта только для готовых фраз"),
-    ];
+    public string DraftText => DraftSeconds == 0 ? "выключен — видеокарта только для готовых фраз" : $"каждые {DraftSeconds} с";
 
     public bool ShowRouterAiKeyInput => !HasRouterAiKey || IsReplacingRouterAiKey;
 
@@ -322,8 +319,7 @@ public sealed partial class MainViewModel : ObservableObject
             ?? new ArchiveOption(_settings.ArchiveDays, $"{_settings.ArchiveDays} дн. (из settings.json)");
         PurgeArchive();
         _ = new DispatcherTimer(TimeSpan.FromHours(1), DispatcherPriority.Background, (_, _) => PurgeArchive(), _dispatcher);
-        SelectedDraft = DraftOptions.FirstOrDefault(o => o.Seconds == _settings.LiveDraftSeconds)
-            ?? new DraftOption(_settings.LiveDraftSeconds, $"Каждые {_settings.LiveDraftSeconds} с (из settings.json)");
+        DraftSeconds = _settings.LiveDraftSeconds;
         Transcript.SetDraftInterval(_settings.LiveDraftSeconds);
     }
 
@@ -767,6 +763,11 @@ public sealed partial class MainViewModel : ObservableObject
             SessionName = name;
         }
 
+        if (SessionText == before.Name)
+        {
+            SessionText = name;
+        }
+
         _logger.Information("Session {Before} renamed to {After}", before.Name, name);
         ShowMessage($"Сессия переименована: {before.Name} → {name}.", isError: false);
     }
@@ -1039,16 +1040,16 @@ public sealed partial class MainViewModel : ObservableObject
         PurgeArchive();
     }
 
-    partial void OnSelectedDraftChanged(DraftOption? value)
+    partial void OnDraftSecondsChanged(int value)
     {
-        if (value is null || value.Seconds == _settings.LiveDraftSeconds)
+        if (value == _settings.LiveDraftSeconds)
         {
             return;
         }
 
-        Save(_settings with { LiveDraftSeconds = value.Seconds });
-        Transcript.SetDraftInterval(value.Seconds);
-        _logger.Information("Live draft {Draft}", value.Seconds == 0 ? "off" : $"every {value.Seconds} s");
+        Save(_settings with { LiveDraftSeconds = value });
+        Transcript.SetDraftInterval(value);
+        _logger.Information("Live draft {Draft}", value == 0 ? "off" : $"every {value} s");
     }
 
     partial void OnSelectedEngineChanged(EngineChoice? value)
@@ -1579,12 +1580,6 @@ public sealed partial class ArchiveRow(ArchiveEntry entry, string title, string 
             : "";
         return new ArchiveRow(entry, title, deleted + expires);
     }
-}
-
-/// <summary>How often the draft is recognized; <paramref name="Seconds"/> 0 is off.</summary>
-public sealed record DraftOption(int Seconds, string Name)
-{
-    public override string ToString() => Name;
 }
 
 /// <summary>An item of the engine box: <paramref name="Model"/> null is the local Whisper on the graphics card.</summary>

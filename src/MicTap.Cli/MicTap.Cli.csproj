@@ -4,6 +4,8 @@
     <OutputType>Exe</OutputType>
     <AssemblyName>mictap</AssemblyName>
     <RootNamespace>MicTap.Cli</RootNamespace>
+    <!-- The same microphone as the window app, instead of the console's default icon. -->
+    <ApplicationIcon>..\MicTap.App\Assets\mictap.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>

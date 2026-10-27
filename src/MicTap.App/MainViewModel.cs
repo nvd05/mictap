@@ -460,7 +460,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             ProjectInfo saved = Core.Projects.Save(project, settings);
             _logger.Information("Project {Project} settings saved", saved.Name);
-            LoadProjects(select: saved.Folder);
+            UpdateProjectInPlace(saved);
             ShowMessage($"Настройки проекта «{saved.Name}» сохранены.", isError: false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
@@ -1063,7 +1063,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             ProjectInfo saved = Core.Projects.Save(project, settings);
             _logger.Information("Project {Project} phrases now go to {Engine}", saved.Name, value.Model ?? "the local Whisper");
-            LoadProjects(select: saved.Folder);
+            UpdateProjectInPlace(saved);
             bool recordingHere = _recordingNode is { } recording && recording.Project.Project.Folder == saved.Folder;
             Transcript.EngineSwitched(recordingHere ? _recordingNode!.Session : null, value.Model);
             ShowMessage(
@@ -1184,6 +1184,27 @@ public sealed partial class MainViewModel : ObservableObject
         SessionInfo session = node?.Session ?? SelectedSession!;
         ProjectInfo project = node?.Project.Project ?? SelectedProject!;
         return Transcript.RetranscribeAsync(session, project.Settings.DefaultLanguage, project.Settings.PhrasePause);
+    }
+
+    /// <summary>
+    /// New settings of the selected project, without rebuilding the tree: the shown session stays shown, and the
+    /// language in use stays (switching it would put a mark into a recording).
+    /// </summary>
+    private void UpdateProjectInPlace(ProjectInfo saved)
+    {
+        if (Projects.FirstOrDefault(p => p.Project.Folder == saved.Folder) is { } node)
+        {
+            node.Project = saved;
+        }
+
+        string language = Language;
+        SelectedProject = saved;
+        if (Language != language && Languages.Any(l => l.Code == language))
+        {
+            _quietLanguage = true;
+            Language = language;
+            _quietLanguage = false;
+        }
     }
 
     /// <summary>The speech-to-text models of Router AI with prices, from its public catalog; offline, the project's own model.</summary>

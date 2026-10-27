@@ -39,6 +39,8 @@ public sealed partial class MainViewModel : ObservableObject
     private AppSettings _settings;
     private bool _refreshingDevices;
     private bool _quietLanguage = true; // no tone and no mark while the language follows the selected project
+    private bool _quietEngine; // the engine box follows the selected project without saving it back
+    private IReadOnlyList<CloudModelInfo> _cloudModels = [];
     private bool _selecting;
     private AgentsState? _agentsState;
     private SessionNode? _recordingNode;
@@ -70,6 +72,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private double _level;
+
+    [ObservableProperty]
+    private EngineChoice? _selectedEngine;
 
     /// <summary>Agents working with the recording, waiting or thinking: the send button is there only for them.</summary>
     [ObservableProperty]
@@ -186,6 +191,9 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Languages of the selected project; the first one is its default.</summary>
     public ObservableCollection<LanguageOption> Languages { get; } = [];
 
+    /// <summary>Who recognizes the phrases of the selected project: the graphics card or a Router AI model with its price.</summary>
+    public ObservableCollection<EngineChoice> EngineChoices { get; } = [];
+
     /// <summary>Agents of the shown session: waiting, thinking or gone.</summary>
     public ObservableCollection<AgentRow> Agents { get; } = [];
 
@@ -259,6 +267,7 @@ public sealed partial class MainViewModel : ObservableObject
         RefreshDevices();
         LoadProjects();
         RepairProjects();
+        _ = LoadCloudModelsAsync();
     }
 
     public Task StopRecordingAsync() => _recorder.StopAsync();
@@ -828,6 +837,38 @@ public sealed partial class MainViewModel : ObservableObject
 
         Language = value?.Settings.DefaultLanguage ?? "ru";
         _quietLanguage = false;
+        RefreshEngineChoices();
+    }
+
+    partial void OnSelectedEngineChanged(EngineChoice? value)
+    {
+        if (_quietEngine || value is null || SelectedProject is not { } project || project.Settings.CloudModelInUse == value.Model)
+        {
+            return;
+        }
+
+        ProjectSettings settings = project.Settings with
+        {
+            Engine = value.Model is null ? TranscriptionEngine.Local : TranscriptionEngine.RouterAi,
+            CloudModel = value.Model ?? project.Settings.CloudModel,
+        };
+        try
+        {
+            ProjectInfo saved = Core.Projects.Save(project, settings);
+            _logger.Information("Project {Project} phrases now go to {Engine}", saved.Name, value.Model ?? "the local Whisper");
+            LoadProjects(select: saved.Folder);
+            ShowMessage(
+                value.Model is null
+                    ? $"Проект «{saved.Name}»: фразы распознаёт видеокарта. Действует со следующей записи."
+                    : $"Проект «{saved.Name}»: фразы распознаёт Router AI · {value.Model} ({value.Price}). Действует со следующей записи.",
+                isError: false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _logger.Error(ex, "Switching the engine of {Project} failed", project.Name);
+            ShowMessage($"Распознавание не переключено: {ex.Message}", isError: true);
+            RefreshEngineChoices();
+        }
     }
 
     partial void OnSelectedDeviceChanged(AudioDevice? value)
@@ -934,6 +975,52 @@ public sealed partial class MainViewModel : ObservableObject
         ProjectInfo project = node?.Project.Project ?? SelectedProject!;
         return Transcript.RetranscribeAsync(session, project.Settings.DefaultLanguage, project.Settings.PhrasePause);
     }
+
+    /// <summary>The speech-to-text models of Router AI with prices, from its public catalog; offline, the project's own model.</summary>
+    private async Task LoadCloudModelsAsync()
+    {
+        using var http = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(20) };
+        try
+        {
+            _cloudModels = await RouterAiModels.LoadAsync(http, CancellationToken.None);
+            _logger.Information("Router AI catalog: {Count} speech-to-text models", _cloudModels.Count);
+        }
+        catch (Exception ex) when (ex is System.Net.Http.HttpRequestException or TaskCanceledException or System.Text.Json.JsonException
+            or KeyNotFoundException or InvalidOperationException)
+        {
+            _logger.Warning(ex, "Router AI catalog not loaded; the engine box offers the projects' own models only");
+            return;
+        }
+
+        RefreshEngineChoices();
+    }
+
+    /// <summary>The engine box for the selected project: the graphics card, the catalog's models and the project's own model.</summary>
+    private void RefreshEngineChoices()
+    {
+        _quietEngine = true;
+        EngineChoices.Clear();
+        EngineChoices.Add(new EngineChoice(null, "Видеокарта · Whisper", "бесплатно"));
+        string? current = SelectedProject?.Settings.CloudModelInUse;
+        foreach (CloudModelInfo model in _cloudModels)
+        {
+            EngineChoices.Add(new EngineChoice(model.Id, model.Id, PriceText(model.RublesPerMinute)));
+        }
+
+        foreach (string model in new[] { current, SelectedProject?.Settings.CloudModel, RouterAiTranscriber.DefaultModel }.OfType<string>().Distinct())
+        {
+            if (EngineChoices.All(choice => choice.Model != model))
+            {
+                EngineChoices.Insert(1, new EngineChoice(model, model, "цена неизвестна"));
+            }
+        }
+
+        SelectedEngine = EngineChoices.First(choice => choice.Model == current);
+        _quietEngine = false;
+    }
+
+    private static string PriceText(double? rublesPerMinute) =>
+        rublesPerMinute is { } price ? $"{price:0.###} ₽/мин" : "по токенам";
 
     /// <summary>Reads the projects of the root; an empty root gets a first project so recording works at once.</summary>
     private void LoadProjects(string? select = null)
@@ -1216,6 +1303,12 @@ public sealed partial class MainViewModel : ObservableObject
 }
 
 public sealed record LanguageOption(string Code, string Name);
+
+/// <summary>An item of the engine box: <paramref name="Model"/> null is the local Whisper on the graphics card.</summary>
+public sealed record EngineChoice(string? Model, string Title, string Price)
+{
+    public override string ToString() => $"{Title} — {Price}";
+}
 
 /// <summary>An agent of the shown session and what it is doing, in words.</summary>
 public sealed record AgentRow(string Name, string State);

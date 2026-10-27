@@ -592,6 +592,27 @@
                                 <materialDesign:PackIcon Kind="Send" Width="24" Height="24" />
                             </Button>
 
+                            <!-- Who recognizes the phrases of this project: switched here, before a recording; the price is per minute of speech. -->
+                            <ComboBox DockPanel.Dock="Right" Width="210" Margin="12,0,0,0" VerticalAlignment="Center"
+                                      Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                                      materialDesign:HintAssist.Hint="Распознавание" AutomationProperties.Name="Распознавание фраз"
+                                      ToolTip="Кто распознаёт фразы этого проекта: видеокарта или модель Router AI (платно). Меняется до записи."
+                                      IsEnabled="{Binding IsIdle}" MaxDropDownHeight="420"
+                                      ItemsSource="{Binding EngineChoices}" SelectedItem="{Binding SelectedEngine}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type local:EngineChoice}">
+                                        <Grid Width="330">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="1" Margin="12,0,0,0" Text="{Binding Price}" Opacity="0.6" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+
                             <ComboBox DockPanel.Dock="Right" Width="150" Margin="12,0,0,0" VerticalAlignment="Center"
                                       Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                                       materialDesign:HintAssist.Hint="{Binding LanguageHint}" AutomationProperties.Name="Язык речи"

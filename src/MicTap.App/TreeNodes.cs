@@ -35,7 +35,25 @@ public sealed partial class ProjectNode : ObservableObject
         AudioRetention.DeleteAfterTranscript => "Звук удаляется, как только фраза записана в текст.",
         _ => "Звук не сохраняется: «Распознать заново» недоступно.",
     } + $"\nФраза заканчивается после паузы {Project.Settings.PhrasePauseSeconds:0.0} с."
-      + (Project.Settings.CloudModelInUse is { } model ? $"\nФразы распознаёт Router AI: {model}." : "");
+      + (Project.Settings.CloudModelInUse is { } model ? $"\nФразы распознаёт Router AI: {model}." : "")
+      + CloudSpentText;
+
+    /// <summary>What the project's sessions spent in Router AI, when they spent anything.</summary>
+    private string CloudSpentText
+    {
+        get
+        {
+            try
+            {
+                CloudUsage total = CloudUsageLog.Total(Project.Folder);
+                return total.Requests == 0 ? "" : $"\nRouter AI: потрачено {total.Rubles:0.00} ₽ за {total.Seconds / 60:0.#} мин звука.";
+            }
+            catch (System.IO.InvalidDataException ex)
+            {
+                return $"\nRouter AI: расход не прочитан — {ex.Message}";
+            }
+        }
+    }
 
     public ObservableCollection<SessionNode> Sessions { get; } = [];
 

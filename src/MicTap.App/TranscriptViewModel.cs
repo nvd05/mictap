@@ -57,6 +57,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private DateTime _endedAt;
     private string? _cloudModel;
     private bool _cloudFailing;
+    private CloudUsage _cloudSpent = CloudUsage.None;
 
     [ObservableProperty]
     private string _runtimeText = "—";
@@ -107,7 +108,8 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _host.StateChanged += (_, state) => _dispatcher.InvokeAsync(() => ShowState(state));
         _detectors = Task.Run(LoadDetectorsAsync);
         _pipeline = new TranscriptionPipeline(
-            _host, _detectors, logger, model => new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read()));
+            _host, _detectors, logger,
+            (session, model) => new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read(), spend => OnCloudSpent(session, spend)));
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
         _pipeline.SegmentTranscribed += OnSegmentTranscribed;
@@ -122,7 +124,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         {
             if (session == _liveSession && !_live)
             {
-                ShowCloud(null); // its last phrases are in: nothing goes to the cloud any more
+                ShowCloud(null, session); // its last phrases are in: nothing goes to the cloud any more
             }
         });
         _pipeline.Attach(recorder);
@@ -173,7 +175,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     /// </summary>
     public void BeginSession(SessionInfo session, string? cloudModel)
     {
-        ShowCloud(cloudModel);
+        ShowCloud(cloudModel, session);
         ShowSession(session);
         _liveSession = session;
         _live = true;
@@ -385,11 +387,50 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void ShowCloud(string? model)
+    private void ShowCloud(string? model, SessionInfo session)
     {
         _cloudModel = model;
         _cloudFailing = false;
-        CloudText = model is null ? "" : $"   Фразы Router AI · {model}";
+        try
+        {
+            _cloudSpent = model is null ? CloudUsage.None : CloudUsageLog.Read(session);
+        }
+        catch (InvalidDataException ex)
+        {
+            _logger.Error(ex, "Cloud usage of {Session} not read", session.Name);
+            _cloudSpent = CloudUsage.None;
+        }
+
+        ShowCloudText();
+    }
+
+    private void ShowCloudText() =>
+        CloudText = _cloudModel is null ? ""
+            : _cloudFailing ? "   Фразы Router AI · сбой"
+            : $"   Фразы Router AI · {_cloudModel} · {_cloudSpent.Rubles:0.00} ₽";
+
+    /// <summary>Pipeline thread: one cloud answer is paid for; the session's cloud.json adds it up.</summary>
+    private void OnCloudSpent(SessionInfo session, CloudSpend spend)
+    {
+        CloudUsage total;
+        try
+        {
+            total = CloudUsageLog.Add(session, spend);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            _logger.Error(ex, "Cloud usage of {Session} not saved", session.Name);
+            return;
+        }
+
+        _dispatcher.InvokeAsync(() =>
+        {
+            if (session == _liveSession && _cloudModel is not null)
+            {
+                _cloudSpent = total;
+                ShowCloudText();
+            }
+        });
     }
 
     private void ShowCloudProblem(string? problem)
@@ -402,13 +443,13 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         if (problem is not null)
         {
             _cloudFailing = true;
-            CloudText = "   Фразы Router AI · сбой";
+            ShowCloudText();
             StatusText = $"Router AI: {problem}. Фразы ждут в очереди, запись идёт.";
         }
         else if (_cloudFailing)
         {
             _cloudFailing = false;
-            CloudText = $"   Фразы Router AI · {_cloudModel}";
+            ShowCloudText();
             StatusText = "";
         }
     }

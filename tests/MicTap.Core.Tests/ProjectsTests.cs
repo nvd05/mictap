@@ -22,8 +22,11 @@ public sealed class ProjectsTests : IDisposable
         Assert.Equal(AudioRetention.DeleteAfterTranscript, loaded.Settings.AudioRetention);
         Assert.Equal("ja", loaded.Settings.DefaultLanguage);
         JsonElement root = JsonDocument.Parse(File.ReadAllText(project.SettingsFile)).RootElement;
-        Assert.Equal([ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds" ], root.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(
+            [ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds", "engine", "cloudModel" ],
+            root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal("local", root.GetProperty("engine").GetString());
         Assert.Equal(1.2, root.GetProperty("phrasePauseSeconds").GetDouble());
         Assert.Equal("deleteAfterTranscript", root.GetProperty("audioRetention").GetString());
     }
@@ -82,6 +85,37 @@ public sealed class ProjectsTests : IDisposable
 
         Assert.Equal(TimeSpan.FromSeconds(1.2), Projects.Load(folder).Settings.PhrasePause);
         Assert.Equal(TimeSpan.FromSeconds(3), Projects.Load(japanese.Folder).Settings.PhrasePause);
+    }
+
+    [Fact]
+    public void Router_ai_engine_and_model_round_trip_and_older_files_are_local()
+    {
+        string folder = Path.Combine(_temp.Path, "Общий");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(
+            Path.Combine(folder, "project.json"),
+            """{ "schemaVersion": 2, "name": "Общий", "languages": [ "ru" ], "audioRetention": "keep", "phrasePauseSeconds": 1.2 }""");
+        ProjectInfo cloud = Projects.Create(
+            _temp.Path,
+            new ProjectSettings("Японский", [ "ja", "ru" ], AudioRetention.Keep, 3, TranscriptionEngine.RouterAi, "openai/gpt-4o-transcribe"));
+
+        ProjectSettings old = Projects.Load(folder).Settings;
+        ProjectSettings loaded = Projects.Load(cloud.Folder).Settings;
+
+        Assert.Equal((TranscriptionEngine.Local, (string?)null), (old.Engine, old.CloudModelInUse));
+        Assert.Equal((TranscriptionEngine.RouterAi, "openai/gpt-4o-transcribe"), (loaded.Engine, loaded.CloudModelInUse));
+        Assert.Contains("\"engine\": \"routerAi\"", File.ReadAllText(cloud.SettingsFile));
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("whisper")]
+    [InlineData("openai/ whisper")]
+    public void Router_ai_model_must_look_like_provider_slash_model(string model)
+    {
+        var settings = new ProjectSettings("Облако", [ "ru" ], AudioRetention.Keep, 1.2, TranscriptionEngine.RouterAi, model);
+
+        Assert.Throws<ArgumentException>(() => Projects.Validate(settings));
     }
 
     [Theory]

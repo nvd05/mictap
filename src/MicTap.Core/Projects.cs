@@ -17,18 +17,31 @@ public enum AudioRetention
     None,
 }
 
+/// <summary>Who recognizes the finished phrases of a project. The live draft is always recognized on this computer.</summary>
+public enum TranscriptionEngine
+{
+    /// <summary>Whisper on this computer.</summary>
+    Local,
+
+    /// <summary>Router AI, a paid cloud; see <see cref="RouterAiTranscriber"/>.</summary>
+    RouterAi,
+}
+
 /// <summary>
 /// Contents of project.json. The first language is the default; the language hotkey goes round the list.
 /// <paramref name="PhrasePauseSeconds"/> is the silence that ends a phrase: short for lectures, longer for a
 /// conversation where one thinks before answering. Schema 2 added it; a schema 1 file reads with the default.
+/// <paramref name="Engine"/> and <paramref name="CloudModel"/> came with schema 3; older files read as local.
 /// </summary>
 public sealed record ProjectSettings(
     string Name,
     IReadOnlyList<string> Languages,
     AudioRetention AudioRetention,
-    double PhrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds)
+    double PhrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds,
+    TranscriptionEngine Engine = TranscriptionEngine.Local,
+    string CloudModel = RouterAiTranscriber.DefaultModel)
 {
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 
     public const double DefaultPhrasePauseSeconds = 1.2;
 
@@ -42,6 +55,10 @@ public sealed record ProjectSettings(
 
     [JsonIgnore]
     public TimeSpan PhrasePause => TimeSpan.FromSeconds(PhrasePauseSeconds);
+
+    /// <summary>The Router AI model for the phrases, or null when they are recognized on this computer.</summary>
+    [JsonIgnore]
+    public string? CloudModelInUse => Engine == TranscriptionEngine.RouterAi ? CloudModel : null;
 }
 
 /// <summary>A project folder under the root: &lt;root&gt;\&lt;project&gt;\project.json and its sessions.</summary>
@@ -166,8 +183,16 @@ public static partial class Projects
             throw new ArgumentException(
                 $"Пауза фразы — от {minPause} до {ProjectSettings.MaxPhrasePauseSeconds} с, а не {settings.PhrasePauseSeconds}.");
         }
+
+        if (settings.Engine == TranscriptionEngine.RouterAi && !CloudModelId().IsMatch(settings.CloudModel ?? ""))
+        {
+            throw new ArgumentException($"«{settings.CloudModel}» — не модель Router AI; нужен вид openai/whisper-large-v3.");
+        }
     }
 
     [GeneratedRegex("^[a-z]{2,3}$")]
     private static partial Regex LanguageCode();
+
+    [GeneratedRegex(@"^[\w.-]+/[\w.:-]+$")]
+    private static partial Regex CloudModelId();
 }

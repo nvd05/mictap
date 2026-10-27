@@ -5,8 +5,8 @@ public sealed record SpeechSegment(TimeSpan Start, TimeSpan End, string Language
 
 /// <summary>
 /// Cuts a stream of 16 kHz mono samples into phrases of speech. A phrase ends after a pause of silence, at a language
-/// mark, or before it grows past <see cref="MaxSegment"/>: then it ends at the last pause between words, and only
-/// speech without any such pause is cut at <see cref="MaxSegment"/>. Silence never becomes a segment.
+/// mark, at a <see cref="Flush"/>, or before it grows past <see cref="MaxSegment"/>: then it ends at the last pause
+/// between words, and only speech without any such pause is cut at <see cref="MaxSegment"/>. Silence never becomes a segment.
 /// Each segment carries the language in effect at its start. Not thread-safe.
 /// </summary>
 public sealed class SpeechSegmenter
@@ -92,7 +92,10 @@ public sealed class SpeechSegmenter
         return output;
     }
 
-    /// <summary>End of the stream: the remaining speech becomes segments.</summary>
+    /// <summary>
+    /// Every phrase ends now, without waiting for its pause: the remaining speech becomes segments. At the end of the
+    /// stream, or in the middle of it when the text is wanted at once; later audio goes on as usual.
+    /// </summary>
     public IReadOnlyList<SpeechSegment> Flush()
     {
         var output = new List<SpeechSegment>();

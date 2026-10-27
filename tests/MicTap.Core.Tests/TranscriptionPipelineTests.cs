@@ -167,10 +167,28 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Push_ends_the_phrase_being_spoken_and_comes_after_its_line()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((samples, _) => $"{samples.Length / 16}ms"));
+        var linesAtPush = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        pipeline.Pushed += (_, _) => linesAtPush.TrySetResult(Lines().Length);
+        SessionInfo session = _recorder.Start(Options("ru") with { PhrasePause = TimeSpan.FromSeconds(3) }, _source);
+
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        pipeline.Push(session);
+
+        Assert.Equal(1, await linesAtPush.Task.WaitAsync(Patience));
+        Assert.Equal((0.0, 1.0, "1000ms"), (Lines()[ 0 ].Start, Lines()[ 0 ].End, Lines()[ 0 ].Text));
+        Assert.True(_recorder.IsRecording);
+        await _recorder.StopAsync();
+    }
+
+    [Fact]
     public async Task Segment_that_whisper_made_up_is_left_out_of_the_transcript()
     {
-        var said = new Queue<string>([ "Продолжение следует...", "настоящая фраза" ]);
-        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => said.Dequeue()));
+        // By length, not by call order: live passes ask Whisper too.
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((samples, _) =>
+            samples.Length == FakeSpeech.Rate / 2 ? "Продолжение следует..." : "настоящая фраза"));
         SessionInfo session = _recorder.Start(Options("ru"), _source);
 
         Push(FakeSpeech.SpeechPcm(0.5), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));

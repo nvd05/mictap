@@ -46,7 +46,8 @@ public sealed class TranscriptionPipeline : IDisposable
     private readonly Channel<bool> _liveWake = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
-    private readonly Channel<PendingSegment> _segments = Channel.CreateUnbounded<PendingSegment>(
+    // Phrases to recognize, in order, and pushes: a push follows the phrases said before it.
+    private readonly Channel<object> _segments = Channel.CreateUnbounded<object>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
     private readonly CancellationTokenSource _stop = new();
@@ -80,6 +81,12 @@ public sealed class TranscriptionPipeline : IDisposable
 
     /// <summary>A segment's text was appended to transcript.jsonl.</summary>
     public event EventHandler<SegmentTranscript>? SegmentTranscribed;
+
+    /// <summary>
+    /// After <see cref="Push"/>: everything said before it is in the transcript. Not raised for a push that comes after
+    /// the recording has ended.
+    /// </summary>
+    public event EventHandler<SessionInfo>? Pushed;
 
     /// <summary>Number of speech segments waiting for recognition.</summary>
     public event EventHandler<int>? QueueChanged;
@@ -145,6 +152,12 @@ public sealed class TranscriptionPipeline : IDisposable
         }
     }
 
+    /// <summary>
+    /// The user wants the text at once: the phrase being spoken ends here instead of at its pause, and
+    /// <see cref="Pushed"/> follows once it and every earlier phrase are in the transcript.
+    /// </summary>
+    public void Push(SessionInfo session) => _stream.Writer.TryWrite(new PushRequest(session));
+
     /// <summary>The transcript of a session; the user's edits go through <see cref="ITranscriptSink.Edit"/>.</summary>
     public JsonlTranscriptSink SinkFor(SessionInfo session)
     {
@@ -205,6 +218,10 @@ public sealed class TranscriptionPipeline : IDisposable
                     case CapturedAudio audio when audio.Session == session:
                         Queue(session, segmenter!.Add(WavSamples.FromPcm16(audio.Pcm.Span)), segmenter, janitor);
                         break;
+                    case PushRequest push when push.Session == session:
+                        Queue(session, segmenter!.Flush(), segmenter, janitor);
+                        _segments.Writer.TryWrite(push);
+                        break;
                     case SessionEnd end when end.Session == session:
                         Queue(session, segmenter!.Flush(), segmenter, janitor);
                         janitor = null;
@@ -228,8 +245,15 @@ public sealed class TranscriptionPipeline : IDisposable
         CancellationToken cancellation = _stop.Token;
         try
         {
-            await foreach (PendingSegment pending in _segments.Reader.ReadAllAsync(cancellation))
+            await foreach (object item in _segments.Reader.ReadAllAsync(cancellation))
             {
+                if (item is PushRequest push)
+                {
+                    Pushed?.Invoke(this, push.Session); // the phrases before it are written by now
+                    continue;
+                }
+
+                var pending = (PendingSegment)item;
                 SpeechSegment segment = pending.Segment;
                 long started = Stopwatch.GetTimestamp();
                 IReadOnlyList<TranscriptSegment> recognized;
@@ -428,6 +452,8 @@ public sealed class TranscriptionPipeline : IDisposable
     private static double Seconds(TimeSpan time) => Math.Round(time.TotalSeconds, 2);
 
     private sealed record SessionEnd(SessionInfo Session);
+
+    private sealed record PushRequest(SessionInfo Session);
 
     private sealed record PendingSegment(SessionInfo Session, SpeechSegment Segment, ChunkJanitor? Janitor);
 

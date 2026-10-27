@@ -140,11 +140,15 @@ public partial class MainWindow : Window
         await DialogHost.Show(content, "MainDialog");
     }
 
-    /// <summary>Typing into the engine box searches it; the text of the picked engine is not a search.</summary>
+    /// <summary>
+    /// Typing into the engine box searches it. Only typing: the text the box gets from a pick, from the project or
+    /// while the list is rebuilt is not a search — reacting to it reopened the list in a loop.
+    /// </summary>
     private void OnEngineSearchChanged(object sender, TextChangedEventArgs e)
     {
         var box = (ComboBox)sender;
-        if (box.SelectedItem is EngineChoice chosen && box.Text == chosen.ToString())
+        if (_viewModel.IsUpdatingEngines || !box.IsKeyboardFocusWithin
+            || (box.SelectedItem is EngineChoice chosen && box.Text == chosen.ToString()))
         {
             return;
         }

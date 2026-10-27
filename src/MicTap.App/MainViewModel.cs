@@ -1280,6 +1280,7 @@ public sealed partial class MainViewModel : ObservableObject
     {
         _quietEngine = true;
         _engineFilter = "";
+        EngineChoicesView.Refresh();
         EngineChoices.Clear();
         EngineChoices.Add(new EngineChoice(null, "Видеокарта · Whisper", "бесплатно"));
         string? current = SelectedProject?.Settings.CloudModelInUse;
@@ -1307,16 +1308,18 @@ public sealed partial class MainViewModel : ObservableObject
         EngineChoicesView.Refresh();
     }
 
-    /// <summary>The engine list closed: the search is over, and without a pick the project's engine shows again.</summary>
+    /// <summary>The engine list is being rebuilt or set from the project: its text changes are not the user's typing.</summary>
+    public bool IsUpdatingEngines => _quietEngine;
+
+    /// <summary>The engine list closed: a search is over, and without a pick the project's engine shows again.</summary>
     public void EngineSearchClosed()
     {
-        bool searched = _engineFilter.Length > 0;
-        _engineFilter = "";
-        EngineChoicesView.Refresh();
-        if (searched || SelectedEngine is null)
+        if (_engineFilter.Length == 0 && SelectedEngine is not null)
         {
-            RefreshEngineChoices();
+            return; // no search: nothing to undo
         }
+
+        RefreshEngineChoices();
     }
 
     private System.ComponentModel.ICollectionView CreateEngineChoicesView()

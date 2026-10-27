@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private bool _closeConfirmed;
     private System.Drawing.Icon? _trayIcon;
     private Point _dragStart;
+    private bool _searchingEngines;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -147,13 +148,31 @@ public partial class MainWindow : Window
     private void OnEngineSearchChanged(object sender, TextChangedEventArgs e)
     {
         var box = (ComboBox)sender;
-        if (_viewModel.IsUpdatingEngines || !box.IsKeyboardFocusWithin
+        if (_searchingEngines || _viewModel.IsUpdatingEngines || !box.IsKeyboardFocusWithin
             || (box.SelectedItem is EngineChoice chosen && box.Text == chosen.ToString()))
         {
             return;
         }
 
-        _viewModel.FilterEngines(box.Text);
+        // A search that hides the project's engine unselects it, and the box then clears its text: put the typing back.
+        var editor = (TextBox)e.OriginalSource;
+        string typed = editor.Text;
+        int caret = editor.CaretIndex;
+        _searchingEngines = true;
+        try
+        {
+            _viewModel.FilterEngines(typed);
+            if (editor.Text != typed)
+            {
+                editor.Text = typed;
+                editor.CaretIndex = caret;
+            }
+        }
+        finally
+        {
+            _searchingEngines = false;
+        }
+
         box.IsDropDownOpen = true;
     }
 

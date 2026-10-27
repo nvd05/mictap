@@ -213,7 +213,7 @@ public sealed partial class MainViewModel : ObservableObject
     public string LanguageToolTip => $"Следующий язык проекта — {Hotkeys.ToggleLanguage}, работает и из трея.";
 
     public string IdleDraftText =>
-        $"Нажмите запись или {Hotkeys.ToggleRecording} — здесь появится то, что вы говорите. {Hotkeys.ToggleLanguage} — следующий язык.";
+        $"Нажмите запись или {Hotkeys.ToggleRecording} — здесь появится то, что вы говорите. {Hotkeys.ForcePush} — отправить агенту.";
 
     public string SendToAgentsToolTip =>
         $"Отправить агенту сейчас — {Hotkeys.ForcePush}, во время записи, и из трея. Фраза, которую вы договорили, сразу уходит в текст, " +

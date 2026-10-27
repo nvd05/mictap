@@ -10,9 +10,9 @@ public sealed class CloudTranscriptionException(string message, Exception? inner
 /// <summary>
 /// Router AI (routerai.ru), an OpenAI-compatible cloud: a phrase goes as WAV to POST /audio/transcriptions with the
 /// project's model and language, the answer's text becomes the phrase. The key is the user's, read on every call, so a
-/// key saved while phrases wait is used by their next attempt.
+/// key saved while phrases wait is used by their next attempt. Each answer's seconds and rubles go to <paramref name="spent"/>.
 /// </summary>
-public sealed class RouterAiTranscriber(HttpClient http, string model, Func<string?> key) : ITranscriber
+public sealed class RouterAiTranscriber(HttpClient http, string model, Func<string?> key, Action<CloudSpend>? spent = null) : ITranscriber
 {
     public static readonly Uri Endpoint = new("https://routerai.ru/api/v1/audio/transcriptions");
 
@@ -47,16 +47,24 @@ public sealed class RouterAiTranscriber(HttpClient http, string model, Func<stri
         }
 
         string text;
+        double seconds = samples.Length / 16000.0;
+        double? rubles = null;
         try
         {
             using JsonDocument json = JsonDocument.Parse(body);
             text = json.RootElement.GetProperty("text").GetString()?.Trim() ?? "";
+            if (json.RootElement.TryGetProperty("usage", out JsonElement usage))
+            {
+                seconds = usage.TryGetProperty("seconds", out JsonElement billed) && billed.TryGetDouble(out double value) ? value : seconds;
+                rubles = usage.TryGetProperty("cost", out JsonElement cost) && cost.TryGetDouble(out double price) ? price : null;
+            }
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
         {
             throw new CloudTranscriptionException($"Router AI прислал не текст: {Shorten(body)}", ex);
         }
 
+        spent?.Invoke(new CloudSpend(seconds, rubles));
         return text.Length == 0 ? [] : [ new TranscriptSegment(TimeSpan.Zero, TimeSpan.FromSeconds(samples.Length / 16000.0), text) ];
     }
 

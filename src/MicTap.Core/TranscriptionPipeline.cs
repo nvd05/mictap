@@ -35,7 +35,7 @@ public sealed class TranscriptionPipeline : IDisposable
     private readonly Task<Func<SpeechDetector>> _detectors;
     private readonly ILogger _logger;
     private readonly TimeSpan _liveInterval;
-    private readonly Func<string, ITranscriber>? _cloud;
+    private readonly Func<SessionInfo, string, ITranscriber>? _cloud;
 
     // Every captured block and mark, in order: the segmenter must see all audio.
     private readonly Channel<object> _stream = Channel.CreateUnbounded<object>(new UnboundedChannelOptions { SingleReader = true });
@@ -62,16 +62,16 @@ public sealed class TranscriptionPipeline : IDisposable
     private int _pending;
     private int _failed;
 
-    /// <param name="cloud">Makes the cloud transcriber for a model, for recordings that name one.</param>
+    /// <param name="cloud">Makes the cloud transcriber for a recording into a session that names a model.</param>
     public TranscriptionPipeline(
-        TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, Func<string, ITranscriber>? cloud = null)
+        TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, Func<SessionInfo, string, ITranscriber>? cloud = null)
         : this(host, detectors, logger, DefaultLiveInterval, cloud)
     {
     }
 
     internal TranscriptionPipeline(
         TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, TimeSpan liveInterval,
-        Func<string, ITranscriber>? cloud = null)
+        Func<SessionInfo, string, ITranscriber>? cloud = null)
     {
         _host = host;
         _detectors = detectors;
@@ -226,7 +226,7 @@ public sealed class TranscriptionPipeline : IDisposable
                         segmenter = new SpeechSegmenter(detect, started.Language, started.Offset, started.PhrasePause);
                         janitor = _janitors.GetValueOrDefault(session.Folder);
                         cloud = started.CloudModel is { } model
-                            ? _cloud?.Invoke(model) ?? throw new InvalidOperationException($"No cloud transcriber for {model}")
+                            ? _cloud?.Invoke(session, model) ?? throw new InvalidOperationException($"No cloud transcriber for {model}")
                             : null;
                         break;
                     case LanguageMarked marked when marked.Session == session:

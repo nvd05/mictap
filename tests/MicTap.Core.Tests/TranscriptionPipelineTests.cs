@@ -204,7 +204,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         var cloudModels = new ConcurrentQueue<string>();
         var cloud = FakeTranscriber.Saying((_, language) => $"облако {language}");
         var local = FakeTranscriber.Saying((_, _) => "локально");
-        using TranscriptionPipeline pipeline = Run(local, model =>
+        using TranscriptionPipeline pipeline = Run(local, (_, model) =>
         {
             cloudModels.Enqueue(model);
             return cloud;
@@ -228,7 +228,7 @@ public sealed class TranscriptionPipelineTests : IDisposable
         var cloud = new FakeTranscriber((_, _, _) => Interlocked.Increment(ref attempts) == 1
             ? throw new CloudTranscriptionException("Router AI ответил 502: bad gateway")
             : Task.FromResult("со второго раза"));
-        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "локально"), _ => cloud);
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "локально"), (_, _) => cloud);
         pipeline.CloudProblem += (_, problem) => problems.Enqueue(problem);
         _recorder.Start(Options("ru") with { CloudModel = "m/x" }, _source);
 
@@ -323,10 +323,10 @@ public sealed class TranscriptionPipelineTests : IDisposable
         Assert.Equal(3, Directory.EnumerateFiles(session.AudioFolder).Count());
     }
 
-    private TranscriptionPipeline Run(FakeTranscriber transcriber, Func<string, ITranscriber>? cloud = null) =>
+    private TranscriptionPipeline Run(FakeTranscriber transcriber, Func<SessionInfo, string, ITranscriber>? cloud = null) =>
         Run(_ => Task.FromResult<ITranscriber>(transcriber), cloud);
 
-    private TranscriptionPipeline Run(Func<CancellationToken, Task<ITranscriber>> load, Func<string, ITranscriber>? cloud = null)
+    private TranscriptionPipeline Run(Func<CancellationToken, Task<ITranscriber>> load, Func<SessionInfo, string, ITranscriber>? cloud = null)
     {
         _host = new TranscriberHost(load, Logger.None, TimeProvider.System, TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(80));
         var pipeline = new TranscriptionPipeline(

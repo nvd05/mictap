@@ -10,9 +10,10 @@ public sealed class RouterAiTranscriberTests
     [Fact]
     public async Task Phrase_goes_as_wav_with_model_language_and_bearer_key_and_the_text_comes_back()
     {
-        var handler = new FakeHandler(HttpStatusCode.OK, """{"text":"  привет, мир ","usage":{"seconds":1.5,"cost":0.01}}""");
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"text":"  привет, мир ","usage":{"seconds":1.6,"cost":0.01}}""");
         using var http = new HttpClient(handler);
-        var transcriber = new RouterAiTranscriber(http, "openai/whisper-large-v3", () => Key);
+        var spent = new List<CloudSpend>();
+        var transcriber = new RouterAiTranscriber(http, "openai/whisper-large-v3", () => Key, spent.Add);
 
         IReadOnlyList<TranscriptSegment> segments = await transcriber.TranscribeAsync(FakeSpeech.Speech(1.5), "ru", CancellationToken.None);
 
@@ -26,6 +27,50 @@ public sealed class RouterAiTranscriberTests
         Assert.Equal("phrase.wav", handler.FileName);
         Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(handler.File!, 0, 4));
         Assert.Equal(WavHeader.Size + 1.5 * 16000 * 2, handler.File!.Length);
+        Assert.Equal([ new CloudSpend(1.6, 0.01) ], spent);
+    }
+
+    [Fact]
+    public void Session_spending_adds_up_in_cloud_json_and_the_project_total_sums_its_sessions()
+    {
+        using var temp = new TempFolder();
+        ProjectInfo project = Projects.Create(temp.Path, new ProjectSettings("Облако", [ "ru" ], AudioRetention.Keep));
+        SessionInfo first = SessionFolders.Open(project.Folder, "Пара 1");
+        SessionInfo second = SessionFolders.Open(project.Folder, "Пара 2");
+        foreach (SessionInfo session in new[] { first, second })
+        {
+            new SessionMeta(
+                [ new SessionStart(DateTimeOffset.Now, 0) ], "Mic", MetaFormat.From(PcmFormat.Mono16k), 60, "test",
+                [ new LanguageMark(0, "ru") ]).WriteTo(session);
+        }
+
+        CloudUsageLog.Add(first, new CloudSpend(10, 0.5));
+        CloudUsage firstTotal = CloudUsageLog.Add(first, new CloudSpend(5, null));
+        CloudUsageLog.Add(second, new CloudSpend(20, 1));
+
+        Assert.Equal(new CloudUsage(2, 15, 0.5), firstTotal);
+        Assert.Equal(new CloudUsage(2, 15, 0.5), CloudUsageLog.Read(first));
+        Assert.Equal(new CloudUsage(3, 35, 1.5), CloudUsageLog.Total(project.Folder));
+        Assert.Equal(CloudUsage.None, CloudUsageLog.Read(new SessionInfo("нет", Path.Combine(project.Folder, "нет"))));
+    }
+
+    [Fact]
+    public void Catalog_gives_transcription_models_priced_by_the_second_first_and_cheapest_first()
+    {
+        const string catalog = """
+            {"data":[
+              {"id":"openai/gpt-4o-transcribe","name":"GPT-4o Transcribe","architecture":{"output_modalities":["transcription"]},"pricing":{"prompt":0.0002,"completion":0.001}},
+              {"id":"openai/whisper-large-v3","name":"Whisper Large v3","architecture":{"output_modalities":["transcription"]},"pricing":{"seconds":0.0008}},
+              {"id":"openai/gpt-5","name":"GPT-5","architecture":{"output_modalities":["text"]},"pricing":{"prompt":0.1}},
+              {"id":"openai/whisper-large-v3-turbo","name":"Whisper Turbo","architecture":{"output_modalities":["transcription"]},"pricing":{"seconds":0.0003}}
+            ]}
+            """;
+
+        IReadOnlyList<CloudModelInfo> models = RouterAiModels.Parse(catalog);
+
+        Assert.Equal([ "openai/whisper-large-v3-turbo", "openai/whisper-large-v3", "openai/gpt-4o-transcribe" ], models.Select(m => m.Id));
+        Assert.Equal(0.018, models[ 0 ].RublesPerMinute!.Value, 6);
+        Assert.Null(models[ 2 ].RublesPerMinute);
     }
 
     [Fact]

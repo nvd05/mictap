@@ -19,8 +19,8 @@ Windows-приложение: непрерывно пишет микрофон �
 - Хаб: ASP.NET Core + SignalR только внутри процесса приложения (FrameworkReference
   Microsoft.AspNetCore.App в MicTap.Hub). Отдельный серверный процесс по-прежнему запрещён.
 - CLI: Microsoft.AspNetCore.SignalR.Client, System.CommandLine.
-- Запрещено: Python, ASP.NET вне MicTap.Hub, брокеры, БД, облачные API, пакеты сверх списка
-  (иначе WARNINGS).
+- Запрещено: Python, ASP.NET вне MicTap.Hub, брокеры, БД, облачные API (кроме Router AI для фраз проекта,
+  см. v0.6), пакеты сверх списка (иначе WARNINGS).
 
 ## Структура (внутри mictap/)
 ```
@@ -51,9 +51,10 @@ tests/MicTap.Hub.Tests/
 - Настройки: `%APPDATA%\mictap\settings.json` — rootFolder, deviceName, chunkSeconds (60), hotkeys
   {toggleLanguage, toggleRecording, forcePush}, hubPort (47310).
 - Логи `%APPDATA%\mictap\logs\`, модели `%APPDATA%\mictap\models\`.
-- Проекты: `<rootFolder>\<проект>\project.json` — schemaVersion 2, name, languages, audioRetention,
+- Проекты: `<rootFolder>\<проект>\project.json` — schemaVersion 3, name, languages, audioRetention,
   phrasePauseSeconds (тишина, после которой фраза закончена: 0,5–10 с, по умолчанию 1,2; файл schemaVersion 1
-  читается с 1,2).
+  читается с 1,2), engine (local | routerAi), cloudModel (по умолчанию openai/whisper-large-v3); файлы 1–2 — local.
+- Ключ Router AI — в диспетчере учётных данных Windows (generic credential `mictap/routerai`), не в файлах.
 - Сессия `<rootFolder>\<проект>\<сессия>\`:
   - `audio\000.wav`, … — чанки по chunkSeconds (кроме audioRetention: none)
   - `meta.json` — schemaVersion 2, starts[], device, format, chunkSeconds, appVersion, languageMarks[]
@@ -248,6 +249,16 @@ JSON и выход; в UI агент «ждёт» → «думает».
   RecordingTranscribed); до этого wait без --session находит эту запись. Сбой распознавания ожидание не держит.
 - Через Claude Desktop `--max-wait` ≤ 45: мост бросает вызов через 60 с, а Windows-MCP держит процесс до своего
   таймаута; закончившийся раньше следующего вызова wait двигает курсор мимо агента. Написано в `wait --help`.
+
+### v0.6 — Router AI для фраз проекта
+- В настройках проекта «Кто распознаёт фразы»: на этом компьютере (Whisper) или Router AI (облако, платно) с моделью
+  (по умолчанию openai/whisper-large-v3). Готовые фразы такого проекта уходят WAV-файлом в
+  `POST https://routerai.ru/api/v1/audio/transcriptions` (multipart: file, model, language, temperature 0); черновик
+  в панели записи по-прежнему локальный. Лекции — в проектах с локальным распознаванием.
+- Сбой облака (нет сети, нет ключа, HTTP-ошибка, не текст в ответе) — фраза ждёт и повторяется с тем же backoff
+  1 → 30 с; в строке статуса «Фразы Router AI · сбой» и причина. Молча на локальный Whisper не переключается.
+- Ключ вставляет пользователь в «Настройках»; хранится в диспетчере учётных данных Windows, в журнал не пишется.
+- «Распознать заново» по-прежнему локальный.
 
 ### Позже
 Opus-кодирование, пакетная обработка записей с телефона, веб-UI на телефон поверх хаба.

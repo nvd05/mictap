@@ -72,6 +72,16 @@ powershell -ExecutionPolicy Bypass -File tools\install-app.ps1    # mictap в %L
 При первом запуске модели (Whisper 1,6 ГБ и VAD 0,9 МБ) скачиваются в `%APPDATA%\mictap\models\` — прогресс
 в окне. Записывать можно сразу: фразы ждут в очереди, пока модель не загрузится.
 
+## Router AI: фразы в облаке
+
+Проекту можно поручить распознавание облаку Router AI (routerai.ru, платно, по секундам звука): в «Настройках
+проекта» — «Кто распознаёт фразы» → «Router AI» и модель (по умолчанию `openai/whisper-large-v3`; есть
+`openai/gpt-4o-transcribe`, `elevenlabs/scribe-v2` и другие — список в каталоге моделей Router AI). Ключ создаётся в
+кабинете Router AI и вставляется в «Настройках» mictap → «Router AI» → «Сохранить»; он хранится в диспетчере учётных
+данных Windows, не в файлах. Готовые фразы такого проекта уходят в облако, черновик в панели записи распознаётся на
+этом компьютере. Нет сети или ключа — фразы ждут в очереди и отправляются, как только получится; в строке статуса
+«Фразы Router AI · сбой» и причина. «Распознать заново» работает локально.
+
 ## Агенты: команда mictap
 
 Пока mictap запущен, внутри него работает хаб на `127.0.0.1:47310` (порт — `hubPort` в `settings.json`;
@@ -108,9 +118,11 @@ PATH меняется для новых окон терминала: после 
 - Модели: `%APPDATA%\mictap\models\ggml-large-v3-turbo.bin` и `ggml-silero-v6.2.0.bin` (VAD); SHA-256
   проверяется после скачивания.
 - Проект: `<rootFolder>\<проект>\project.json` —
-  `{"schemaVersion":2,"name":"Японский","languages":["ja","ru"],"audioRetention":"deleteAfterTranscript","phrasePauseSeconds":3}`,
+  `{"schemaVersion":3,"name":"Японский","languages":["ja","ru"],"audioRetention":"deleteAfterTranscript","phrasePauseSeconds":3,"engine":"routerAi","cloudModel":"openai/whisper-large-v3"}`,
   `audioRetention`: `keep` | `deleteAfterTranscript` | `none`; `phrasePauseSeconds` — молчание, после которого
-  фраза закончена, 0,5–10 с, по умолчанию 1,2 (файл `schemaVersion` 1 читается с 1,2).
+  фраза закончена, 0,5–10 с, по умолчанию 1,2 (файл `schemaVersion` 1 читается с 1,2); `engine`: `local` |
+  `routerAi`, `cloudModel` — модель Router AI (файлы версий 1–2 читаются как `local`).
+- Ключ Router AI: диспетчер учётных данных Windows → «Учётные данные Windows» → `mictap/routerai`.
 - Сессия: `<rootFolder>\<проект>\<сессия>\`:
   - `audio\000.wav`, `001.wav`, … — чанки по `chunkSeconds` (хранение; распознавание идёт по фразам);
     при `deleteAfterTranscript` чанк удаляется, когда вся его речь записана в текст, при `none` не пишется;

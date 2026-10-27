@@ -241,6 +241,37 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Switching_the_engine_moves_a_phrase_stuck_on_a_failing_model()
+    {
+        string? current = "google/chirp-3";
+        var problems = new ConcurrentQueue<string?>();
+        var dead = new FakeTranscriber((_, _, _) => throw new CloudTranscriptionException("Router AI ответил 503: No available providers"));
+        var alive = FakeTranscriber.Saying((_, _) => "nvidia");
+        var local = FakeTranscriber.Saying((_, _) => "видеокарта");
+        TranscriptionPipeline pipeline = RunWithModel(
+            local, (_, model) => model == "google/chirp-3" ? dead : alive, (_, _) => Volatile.Read(ref current));
+        using (pipeline)
+        {
+            pipeline.CloudProblem += (_, problem) => problems.Enqueue(problem);
+            _recorder.Start(Options("ru") with { CloudModel = "google/chirp-3" }, _source);
+
+            Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+            await Eventually(() => !problems.IsEmpty);
+            Volatile.Write(ref current, "nvidia/nemotron");
+            pipeline.EngineChanged();
+            await Eventually(() => Lines().Length == 1);
+
+            Volatile.Write(ref current, null);
+            Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+            await _recorder.StopAsync();
+            await Eventually(() => Lines().Length == 2);
+        }
+
+        Assert.Equal([ "nvidia", "видеокарта" ], Lines().Select(l => l.Text));
+        Assert.Null(problems.Last());
+    }
+
+    [Fact]
     public async Task Draft_off_leaves_whisper_to_the_finished_phrases()
     {
         var transcriber = FakeTranscriber.Saying((_, _) => "фраза");
@@ -346,11 +377,17 @@ public sealed class TranscriptionPipelineTests : IDisposable
     private TranscriptionPipeline Run(FakeTranscriber transcriber, Func<SessionInfo, string, ITranscriber>? cloud = null) =>
         Run(_ => Task.FromResult<ITranscriber>(transcriber), cloud);
 
-    private TranscriptionPipeline Run(Func<CancellationToken, Task<ITranscriber>> load, Func<SessionInfo, string, ITranscriber>? cloud = null)
+    private TranscriptionPipeline RunWithModel(
+        FakeTranscriber transcriber, Func<SessionInfo, string, ITranscriber> cloud, Func<SessionInfo, string?, string?> modelOf) =>
+        Run(_ => Task.FromResult<ITranscriber>(transcriber), cloud, modelOf);
+
+    private TranscriptionPipeline Run(
+        Func<CancellationToken, Task<ITranscriber>> load, Func<SessionInfo, string, ITranscriber>? cloud = null,
+        Func<SessionInfo, string?, string?>? modelOf = null)
     {
         _host = new TranscriberHost(load, Logger.None, TimeProvider.System, TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(80));
         var pipeline = new TranscriptionPipeline(
-            _host, Task.FromResult<Func<SpeechDetector>>(() => FakeSpeech.Detect), Logger.None, TimeSpan.FromMilliseconds(50), cloud);
+            _host, Task.FromResult<Func<SpeechDetector>>(() => FakeSpeech.Detect), Logger.None, TimeSpan.FromMilliseconds(50), cloud, modelOf);
         pipeline.SegmentTranscribed += (_, line) => { lock (_lines) _lines.Add(line); };
         pipeline.Attach(_recorder);
         _host.Start();

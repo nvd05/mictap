@@ -20,7 +20,9 @@ public sealed record SegmentTranscript(SessionInfo Session, TranscriptLine Line)
 /// The recorder only enqueues, so recognition never blocks recording. A failed transcriber is reloaded by the
 /// <see cref="TranscriberHost"/> and the segment is retried; segments wait in the queue meanwhile. A recording with a
 /// cloud model sends its finished phrases to the cloud instead, retried with the same backoff on failure; its live
-/// draft stays local. Any other error stops the pipeline and is reported through <see cref="Failed"/>.
+/// draft stays local. Each phrase, and each retry, goes to the engine its project uses at that moment, so switching
+/// the engine also moves the phrases stuck behind a failing model. Any other error stops the pipeline and is reported
+/// through <see cref="Failed"/>.
 /// </summary>
 public sealed class TranscriptionPipeline : IDisposable
 {
@@ -38,6 +40,11 @@ public sealed class TranscriptionPipeline : IDisposable
     private readonly Task<Func<SpeechDetector>> _detectors;
     private readonly ILogger _logger;
     private readonly Func<SessionInfo, string, ITranscriber>? _cloud;
+    private readonly Func<SessionInfo, string?, string?>? _modelOf;
+
+    // The user picked another engine: a phrase waiting for its next try goes again at once.
+    private readonly Channel<bool> _engineChanged = Channel.CreateBounded<bool>(
+        new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
     // Every captured block and mark, in order: the segmenter must see all audio.
     private readonly Channel<object> _stream = Channel.CreateUnbounded<object>(new UnboundedChannelOptions { SingleReader = true });
@@ -65,22 +72,28 @@ public sealed class TranscriptionPipeline : IDisposable
     private int _failed;
     private long _liveIntervalTicks;
 
-    /// <param name="cloud">Makes the cloud transcriber for a recording into a session that names a model.</param>
+    /// <param name="cloud">Makes the cloud transcriber of a model for a session's phrases.</param>
+    /// <param name="modelOf">
+    /// The cloud model a session's project uses now, or null for this computer, given the model its recording started
+    /// with; asked before every phrase and retry. Without it a recording keeps the model it started with.
+    /// </param>
     public TranscriptionPipeline(
-        TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, Func<SessionInfo, string, ITranscriber>? cloud = null)
-        : this(host, detectors, logger, DefaultLiveInterval, cloud)
+        TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, Func<SessionInfo, string, ITranscriber>? cloud = null,
+        Func<SessionInfo, string?, string?>? modelOf = null)
+        : this(host, detectors, logger, DefaultLiveInterval, cloud, modelOf)
     {
     }
 
     internal TranscriptionPipeline(
         TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, TimeSpan liveInterval,
-        Func<SessionInfo, string, ITranscriber>? cloud = null)
+        Func<SessionInfo, string, ITranscriber>? cloud = null, Func<SessionInfo, string?, string?>? modelOf = null)
     {
         _host = host;
         _detectors = detectors;
         _logger = logger.ForContext<TranscriptionPipeline>();
         _liveIntervalTicks = liveInterval.Ticks;
         _cloud = cloud;
+        _modelOf = modelOf;
     }
 
     /// <summary>
@@ -111,6 +124,9 @@ public sealed class TranscriptionPipeline : IDisposable
 
     /// <summary>A recording has ended and every phrase of it is in the transcript (or was left out as silence or an artifact).</summary>
     public event EventHandler<SessionInfo>? RecordingTranscribed;
+
+    /// <summary>The user switched a project's engine: a phrase waiting for its next try goes again now, with the new one.</summary>
+    public void EngineChanged() => _engineChanged.Writer.TryWrite(true);
 
     /// <summary>The cloud failed on a phrase and tries again later (the reason), or works again (null).</summary>
     public event EventHandler<string?>? CloudProblem;
@@ -230,7 +246,7 @@ public sealed class TranscriptionPipeline : IDisposable
             SpeechSegmenter? segmenter = null;
             SessionInfo? session = null;
             ChunkJanitor? janitor = null;
-            ITranscriber? cloud = null;
+            string? cloud = null;
             await foreach (object item in _stream.Reader.ReadAllAsync(cancellation))
             {
                 switch (item)
@@ -239,9 +255,7 @@ public sealed class TranscriptionPipeline : IDisposable
                         session = started.Session;
                         segmenter = new SpeechSegmenter(detect, started.Language, started.Offset, started.PhrasePause);
                         janitor = _janitors.GetValueOrDefault(session.Folder);
-                        cloud = started.CloudModel is { } model
-                            ? _cloud?.Invoke(session, model) ?? throw new InvalidOperationException($"No cloud transcriber for {model}")
-                            : null;
+                        cloud = started.CloudModel;
                         break;
                     case LanguageMarked marked when marked.Session == session:
                         Queue(session, segmenter!.Mark(TimeSpan.FromSeconds(marked.Mark.At), marked.Mark.Lang), segmenter, janitor, cloud);
@@ -297,9 +311,7 @@ public sealed class TranscriptionPipeline : IDisposable
                 var pending = (PendingSegment)item;
                 SpeechSegment segment = pending.Segment;
                 long started = Stopwatch.GetTimestamp();
-                IReadOnlyList<TranscriptSegment> recognized = pending.Cloud is { } cloud
-                    ? await TranscribeInCloudAsync(cloud, segment, cancellation)
-                    : await TranscribeLocallyAsync(segment, cancellation);
+                IReadOnlyList<TranscriptSegment> recognized = await RecognizeAsync(pending, cancellation);
 
                 QueueChanged?.Invoke(this, Interlocked.Decrement(ref _pending));
                 string text = Join(recognized);
@@ -458,14 +470,30 @@ public sealed class TranscriptionPipeline : IDisposable
         }
     }
 
-    /// <summary>Sends the phrase to the cloud until it answers: no network, no key or an HTTP error wait and try again.</summary>
-    private async Task<IReadOnlyList<TranscriptSegment>> TranscribeInCloudAsync(
-        ITranscriber cloud, SpeechSegment segment, CancellationToken cancellation)
+    /// <summary>
+    /// Recognizes a phrase with the engine its project uses now. The cloud is tried until it answers — no network, no
+    /// key or an HTTP error wait and try again — unless the user switches the engine meanwhile.
+    /// </summary>
+    private async Task<IReadOnlyList<TranscriptSegment>> RecognizeAsync(PendingSegment pending, CancellationToken cancellation)
     {
+        SpeechSegment segment = pending.Segment;
         TimeSpan retry = TranscriberHost.FirstRetry;
         bool failed = false;
         while (true)
         {
+            string? model = _modelOf is null ? pending.Model : _modelOf(pending.Session, pending.Model);
+            if (model is null)
+            {
+                if (failed)
+                {
+                    _logger.Information("Segment {Start:0.00}-{End:0.00} s goes to this computer instead", segment.Start.TotalSeconds, segment.End.TotalSeconds);
+                    CloudProblem?.Invoke(this, null);
+                }
+
+                return await TranscribeLocallyAsync(segment, cancellation);
+            }
+
+            ITranscriber cloud = _cloud?.Invoke(pending.Session, model) ?? throw new InvalidOperationException($"No cloud transcriber for {model}");
             try
             {
                 IReadOnlyList<TranscriptSegment> recognized = await cloud.TranscribeAsync(segment.Samples, segment.Language, cancellation);
@@ -486,9 +514,21 @@ public sealed class TranscriptionPipeline : IDisposable
                 _logger.Warning(
                     "{Cloud} failed on segment {Start:0.00}-{End:0.00} s: {Reason}; again in {Retry}",
                     cloud.Runtime, segment.Start.TotalSeconds, segment.End.TotalSeconds, reason, retry);
-                CloudProblem?.Invoke(this, $"{reason}. Повтор через {retry.TotalSeconds:0} с");
+                CloudProblem?.Invoke(this, $"{reason}. Повтор через {retry.TotalSeconds:0} с или сразу, если выбрать другую модель");
                 failed = true;
-                await Task.Delay(retry, cancellation);
+                using (var wait = CancellationTokenSource.CreateLinkedTokenSource(cancellation))
+                {
+                    wait.CancelAfter(retry);
+                    try
+                    {
+                        await _engineChanged.Reader.ReadAsync(wait.Token);
+                    }
+                    catch (OperationCanceledException) when (!cancellation.IsCancellationRequested)
+                    {
+                        // The pause is over: the same phrase goes again.
+                    }
+                }
+
                 retry = TimeSpan.FromTicks(Math.Min(retry.Ticks * 2, TranscriberHost.MaxRetry.Ticks));
             }
         }
@@ -521,7 +561,7 @@ public sealed class TranscriptionPipeline : IDisposable
     }
 
     private void Queue(
-        SessionInfo session, IReadOnlyList<SpeechSegment> segments, SpeechSegmenter segmenter, ChunkJanitor? janitor, ITranscriber? cloud)
+        SessionInfo session, IReadOnlyList<SpeechSegment> segments, SpeechSegmenter segmenter, ChunkJanitor? janitor, string? cloud)
     {
         janitor?.Segmented(segments, segmenter.Committed);
         foreach (SpeechSegment segment in segments)
@@ -555,8 +595,8 @@ public sealed class TranscriptionPipeline : IDisposable
 
     private sealed record PushRequest(SessionInfo Session);
 
-    /// <summary>A phrase to recognize; <paramref name="Cloud"/> recognizes it instead of the local host when set.</summary>
-    private sealed record PendingSegment(SessionInfo Session, SpeechSegment Segment, ChunkJanitor? Janitor, ITranscriber? Cloud);
+    /// <summary>A phrase to recognize; <paramref name="Model"/> is the cloud model its recording started with, if any.</summary>
+    private sealed record PendingSegment(SessionInfo Session, SpeechSegment Segment, ChunkJanitor? Janitor, string? Model);
 
     private sealed record LiveLanguage(SessionInfo Session, string Language);
 

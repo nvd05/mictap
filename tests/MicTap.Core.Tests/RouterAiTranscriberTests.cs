@@ -10,7 +10,7 @@ public sealed class RouterAiTranscriberTests
     [Fact]
     public async Task Phrase_goes_as_wav_with_model_language_and_bearer_key_and_the_text_comes_back()
     {
-        var handler = new FakeHandler(HttpStatusCode.OK, """{"text":"  привет, мир ","usage":{"seconds":1.6,"cost":0.01}}""");
+        var handler = new FakeHandler(HttpStatusCode.OK, """{"text":"  привет, мир ","usage":{"seconds":1.6,"cost":0.01,"input_tokens":83,"output_tokens":30}}""");
         using var http = new HttpClient(handler);
         var spent = new List<CloudSpend>();
         var transcriber = new RouterAiTranscriber(http, "openai/whisper-large-v3", () => Key, spent.Add);
@@ -27,7 +27,7 @@ public sealed class RouterAiTranscriberTests
         Assert.Equal("phrase.wav", handler.FileName);
         Assert.Equal("RIFF", System.Text.Encoding.ASCII.GetString(handler.File!, 0, 4));
         Assert.Equal(WavHeader.Size + 1.5 * 16000 * 2, handler.File!.Length);
-        Assert.Equal([ new CloudSpend(1.6, 0.01) ], spent);
+        Assert.Equal([ new CloudSpend(1.6, 0.01, 83, 30, 2) ], spent);
     }
 
     [Fact]
@@ -44,14 +44,30 @@ public sealed class RouterAiTranscriberTests
                 [ new LanguageMark(0, "ru") ]).WriteTo(session);
         }
 
-        CloudUsageLog.Add(first, new CloudSpend(10, 0.5));
-        CloudUsage firstTotal = CloudUsageLog.Add(first, new CloudSpend(5, null));
-        CloudUsageLog.Add(second, new CloudSpend(20, 1));
+        CloudUsageLog.Add(first, "x-ai/grok-stt-1.0", new CloudSpend(10, 0.5, Words: 20));
+        CloudUsage firstTotal = CloudUsageLog.Add(first, "openai/gpt-4o-mini-transcribe", new CloudSpend(5, 0.2, 40, 9, 8));
+        CloudUsageLog.Add(second, "x-ai/grok-stt-1.0", new CloudSpend(20, 1, Words: 30));
+        CloudUsage project1 = CloudUsageLog.Total(project.Folder);
 
-        Assert.Equal(new CloudUsage(2, 15, 0.5), firstTotal);
-        Assert.Equal(new CloudUsage(2, 15, 0.5), CloudUsageLog.Read(first));
-        Assert.Equal(new CloudUsage(3, 35, 1.5), CloudUsageLog.Total(project.Folder));
-        Assert.Equal(CloudUsage.None, CloudUsageLog.Read(new SessionInfo("нет", Path.Combine(project.Folder, "нет"))));
+        Assert.Equal((2, 15.0, 0.7), (firstTotal.Requests, firstTotal.Seconds, firstTotal.Rubles));
+        Assert.Equal(new ModelUsage(1, 5, 0.2, 40, 9, 8), CloudUsageLog.Read(first).Of("openai/gpt-4o-mini-transcribe"));
+        Assert.Equal((3, 1.7), (project1.Requests, Math.Round(project1.Rubles, 2)));
+        Assert.Equal(new ModelUsage(2, 30, 1.5, 0, 0, 50), project1.Of("x-ai/grok-stt-1.0"));
+        Assert.Equal(0, CloudUsageLog.Read(new SessionInfo("нет", Path.Combine(project.Folder, "нет"))).Requests);
+    }
+
+    [Fact]
+    public void Schema_1_cloud_json_reads_its_totals_as_spent_without_a_model()
+    {
+        using var temp = new TempFolder();
+        var session = new SessionInfo("Пара", temp.Path);
+        File.WriteAllText(Path.Combine(temp.Path, "cloud.json"), """{ "requests": 5, "seconds": 46.8, "rubles": 0.016, "schemaVersion": 1 }""");
+
+        CloudUsage usage = CloudUsageLog.Add(session, "x-ai/grok-stt-1.0", new CloudSpend(2, 0.01, Words: 3));
+
+        Assert.Equal((6, 0.026), (usage.Requests, Math.Round(usage.Rubles, 3)));
+        Assert.Equal(0.016, Math.Round(usage.RublesWithoutModel, 3));
+        Assert.Contains("\"schemaVersion\": 2", File.ReadAllText(Path.Combine(temp.Path, "cloud.json")));
     }
 
     [Fact]
@@ -60,9 +76,11 @@ public sealed class RouterAiTranscriberTests
         using var temp = new TempFolder();
         var session = new SessionInfo("Пара", temp.Path);
 
-        await Task.WhenAll(Enumerable.Range(0, 40).Select(_ => Task.Run(() => CloudUsageLog.Add(session, new CloudSpend(1, 0.5)))));
+        await Task.WhenAll(Enumerable.Range(0, 40).Select(i => Task.Run(() => CloudUsageLog.Add(session, $"m/{i % 4}", new CloudSpend(1, 0.5)))));
 
-        Assert.Equal(new CloudUsage(40, 40, 20), CloudUsageLog.Read(session));
+        CloudUsage usage = CloudUsageLog.Read(session);
+        Assert.Equal((40, 40.0, 20.0), (usage.Requests, usage.Seconds, usage.Rubles));
+        Assert.All(usage.ByModel.Values, model => Assert.Equal(10, model.Requests));
     }
 
     [Fact]

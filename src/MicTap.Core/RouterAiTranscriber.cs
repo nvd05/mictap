@@ -49,6 +49,8 @@ public sealed class RouterAiTranscriber(HttpClient http, string model, Func<stri
         string text;
         double seconds = samples.Length / 16000.0;
         double? rubles = null;
+        int? inputTokens = null;
+        int? outputTokens = null;
         try
         {
             using JsonDocument json = JsonDocument.Parse(body);
@@ -57,6 +59,8 @@ public sealed class RouterAiTranscriber(HttpClient http, string model, Func<stri
             {
                 seconds = usage.TryGetProperty("seconds", out JsonElement billed) && billed.TryGetDouble(out double value) ? value : seconds;
                 rubles = usage.TryGetProperty("cost", out JsonElement cost) && cost.TryGetDouble(out double price) ? price : null;
+                inputTokens = usage.TryGetProperty("input_tokens", out JsonElement input) && input.TryGetInt32(out int inCount) ? inCount : null;
+                outputTokens = usage.TryGetProperty("output_tokens", out JsonElement output) && output.TryGetInt32(out int outCount) ? outCount : null;
             }
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException)
@@ -64,7 +68,8 @@ public sealed class RouterAiTranscriber(HttpClient http, string model, Func<stri
             throw new CloudTranscriptionException($"Router AI прислал не текст: {Shorten(body)}", ex);
         }
 
-        spent?.Invoke(new CloudSpend(seconds, rubles));
+        int words = text.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries).Length;
+        spent?.Invoke(new CloudSpend(seconds, rubles, inputTokens, outputTokens, words));
         return text.Length == 0 ? [] : [ new TranscriptSegment(TimeSpan.Zero, TimeSpan.FromSeconds(samples.Length / 16000.0), text) ];
     }
 

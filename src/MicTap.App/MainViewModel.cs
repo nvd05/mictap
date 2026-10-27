@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MicTap.Core;
 using MicTap.Hub;
+using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Serilog;
 
@@ -54,14 +55,15 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand),
         nameof(RetranscribeCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand),
-        nameof(RenameSessionCommand), nameof(SendToAgentsCommand))]
+        nameof(RenameSessionCommand), nameof(SendToAgentsCommand), nameof(DeleteSessionCommand), nameof(DeleteProjectCommand))]
     private bool _isRecording;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanEditSettings))]
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand), nameof(RetranscribeCommand),
-        nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RenameSessionCommand))]
+        nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RenameSessionCommand),
+        nameof(DeleteSessionCommand), nameof(DeleteProjectCommand))]
     private bool _isStarting;
 
     [ObservableProperty]
@@ -90,7 +92,7 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(Title), nameof(TrayToolTip), nameof(EmptyText), nameof(SessionNote))]
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(EditProjectCommand), nameof(NewSessionCommand), nameof(RetranscribeCommand),
-        nameof(RenameSessionCommand))]
+        nameof(RenameSessionCommand), nameof(DeleteProjectCommand))]
     private ProjectInfo? _selectedProject;
 
     /// <summary>The session shown in the transcript and recognized again by «Распознать заново».</summary>
@@ -141,6 +143,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (e.PropertyName == nameof(TranscriptViewModel.IsRetranscribing))
             {
                 RetranscribeCommand.NotifyCanExecuteChanged();
+                DeleteSessionCommand.NotifyCanExecuteChanged();
             }
         };
     }
@@ -156,6 +159,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>The window asks for a new name of this session; null is the new session the next recording makes.</summary>
     public event EventHandler<SessionNode?>? RenameSessionRequested;
+
+    /// <summary>A project or a session is to go to the Recycle Bin once the user says yes.</summary>
+    public event EventHandler<DeleteRequest>? DeleteRequested;
 
     /// <summary>The window shows the settings dialog.</summary>
     public event EventHandler? SettingsRequested;
@@ -458,6 +464,62 @@ public sealed partial class MainViewModel : ObservableObject
         ShowMessage($"Сессия «{after.Name}» перенесена в проект «{target.Name}».", isError: false);
     }
 
+    /// <summary>Sends a session to the Recycle Bin with its transcript, audio and agent cursors.</summary>
+    public async Task DeleteSessionAsync(SessionNode node)
+    {
+        if (node == _recordingNode)
+        {
+            ShowMessage($"Сессия «{node.Name}» записывается — удалить её можно после остановки.", isError: true);
+            return;
+        }
+
+        if (!await Transcript.WhenIdleAsync(TimeSpan.FromSeconds(60)))
+        {
+            ShowMessage($"Сессия «{node.Name}» не удалена: распознавание ещё не закончило её текст.", isError: true);
+            return;
+        }
+
+        if (!Recycle(node.Session.Folder, $"Сессия «{node.Name}» не удалена"))
+        {
+            return;
+        }
+
+        Transcript.SessionDeleted(node.Session);
+        _logger.Information("Session {Session} of {Project} sent to the Recycle Bin", node.Name, node.Project.Name);
+        LoadProjects(select: node.Project.Project.Folder);
+        ShowMessage($"Сессия «{node.Name}» удалена в корзину.", isError: false);
+    }
+
+    /// <summary>Sends a project with all its sessions to the Recycle Bin; an empty root gets a first project again.</summary>
+    public async Task DeleteProjectAsync(ProjectNode node)
+    {
+        if (IsRecording || IsStarting)
+        {
+            ShowMessage($"Проект «{node.Name}» не удалён: идёт запись. Остановите её и повторите.", isError: true);
+            return;
+        }
+
+        if (!await Transcript.WhenIdleAsync(TimeSpan.FromSeconds(60)))
+        {
+            ShowMessage($"Проект «{node.Name}» не удалён: распознавание ещё не закончило текст его сессии.", isError: true);
+            return;
+        }
+
+        if (!Recycle(node.Project.Folder, $"Проект «{node.Name}» не удалён"))
+        {
+            return;
+        }
+
+        foreach (SessionNode session in node.Sessions)
+        {
+            Transcript.SessionDeleted(session.Session);
+        }
+
+        _logger.Information("Project {Project} with {Sessions} sessions sent to the Recycle Bin", node.Name, node.Sessions.Count);
+        LoadProjects(); // the selected project stays; the deleted one gives way to the first
+        ShowMessage($"Проект «{node.Name}» удалён в корзину.", isError: false);
+    }
+
     /// <summary>Renames a session folder; its transcript, audio and agent cursors move with it.</summary>
     public async Task RenameSessionAsync(SessionNode node, string typed)
     {
@@ -534,6 +596,29 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand(CanExecute = nameof(CanRenameSession))]
     private void RenameSession(SessionNode? node) => RenameSessionRequested?.Invoke(this, node);
+
+    private bool CanDeleteSession(SessionNode? node) =>
+        !IsStarting && node is not null && node != _recordingNode && !Transcript.IsRetranscribing;
+
+    [RelayCommand(CanExecute = nameof(CanDeleteSession))]
+    private void DeleteSession(SessionNode? node) =>
+        DeleteRequested?.Invoke(this, new DeleteRequest(
+            "Удалить сессию?",
+            $"Сессия «{node!.Name}» — текст, звук и записи агентов — уйдёт в корзину Windows; оттуда её можно восстановить.",
+            () => DeleteSessionAsync(node)));
+
+    [RelayCommand(CanExecute = nameof(CanEditProject))]
+    private void DeleteProject(ProjectNode? node)
+    {
+        ProjectNode project = node ?? Projects.First(p => p.Project.Folder == SelectedProject!.Folder);
+        DeleteRequested?.Invoke(this, new DeleteRequest(
+            "Удалить проект?",
+            project.Sessions.Count == 0
+                ? $"Проект «{project.Name}» уйдёт в корзину Windows; оттуда его можно восстановить."
+                : $"Проект «{project.Name}» и все его сессии ({project.Sessions.Count}) — текст, звук и записи агентов — уйдут в "
+                  + "корзину Windows; оттуда их можно восстановить.",
+            () => DeleteProjectAsync(project)));
+    }
 
     [RelayCommand]
     private void OpenSessionFolder(SessionNode? node)
@@ -945,6 +1030,22 @@ public sealed partial class MainViewModel : ObservableObject
                 await RenameSessionAsync(node, SessionName);
             }
         });
+
+    /// <summary>Sends a folder to the Recycle Bin; false, with <paramref name="failed"/> and the reason shown, when Windows refuses.</summary>
+    private bool Recycle(string folder, string failed)
+    {
+        try
+        {
+            FileSystem.DeleteDirectory(folder, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+        {
+            _logger.Error(ex, "Sending {Folder} to the Recycle Bin failed", folder);
+            ShowMessage($"{failed}: {ex.Message}", isError: true);
+            return false;
+        }
+    }
 
     private void Save(AppSettings settings)
     {

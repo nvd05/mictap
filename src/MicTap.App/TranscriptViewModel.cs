@@ -248,6 +248,16 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>The session folder went to the Recycle Bin: its transcript is no longer read or shown.</summary>
+    public void SessionDeleted(SessionInfo session)
+    {
+        _pipeline.ForgetSink(session);
+        if (_session == session)
+        {
+            ShowSession(null);
+        }
+    }
+
     /// <summary>Makes the next recognition pass fail, to see the transcriber come back on its own.</summary>
     public void SimulateFailure()
     {

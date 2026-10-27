@@ -88,6 +88,21 @@
             </StackPanel>
         </StackPanel>
 
+        <!-- Before a project or a session goes to the Recycle Bin. -->
+        <StackPanel x:Key="DeleteDialog" x:Shared="False" Margin="24" MaxWidth="420" d:DataContext="{d:DesignInstance Type=local:DeleteRequest}">
+            <TextBlock Text="{Binding Title}" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+            <TextBlock Margin="0,16,0,0" TextWrapping="Wrap" Opacity="0.8" Text="{Binding Text}"
+                       Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+            <StackPanel Margin="0,24,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Отмена" IsCancel="True" IsDefault="True" Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" />
+                <Button Content="Удалить" Margin="8,0,0,0" Style="{StaticResource MaterialDesignFlatButton}"
+                        Foreground="{StaticResource RecordBrush}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}"
+                        CommandParameter="{StaticResource Confirm}" />
+            </StackPanel>
+        </StackPanel>
+
         <Style x:Key="SettingsHeader" TargetType="TextBlock" BasedOn="{StaticResource MaterialDesignTitleSmallTextBlock}">
             <Setter Property="Margin" Value="0,14,0,4" />
         </Style>
@@ -266,6 +281,11 @@
                       Icon="{materialDesign:PackIcon Kind=Refresh}" />
             <Separator />
             <MenuItem Header="Перенести в проект" Tag="Move" Icon="{materialDesign:PackIcon Kind=FolderMoveOutline}" />
+            <Separator />
+            <MenuItem Header="Удалить" Command="{Binding DeleteSessionCommand}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      ToolTip="В корзину Windows: текст, звук и записи агентов; оттуда сессию можно восстановить"
+                      Icon="{materialDesign:PackIcon Kind=DeleteOutline}" />
         </ContextMenu>
 
         <Style x:Key="TreeRowBorder" TargetType="Border">
@@ -416,6 +436,11 @@
                                                 <MenuItem Header="Настройки проекта" Command="{Binding EditProjectCommand}"
                                                           CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                           Icon="{materialDesign:PackIcon Kind=CogOutline}" />
+                                                <Separator />
+                                                <MenuItem Header="Удалить проект" Command="{Binding DeleteProjectCommand}"
+                                                          CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                          ToolTip="В корзину Windows вместе со всеми сессиями; оттуда проект можно восстановить"
+                                                          Icon="{materialDesign:PackIcon Kind=DeleteOutline}" />
                                             </ContextMenu>
                                         </Border.ContextMenu>
                                         <DockPanel>
@@ -631,7 +656,7 @@
                                         Tag="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Window}}"
                                         ContextMenu="{StaticResource SessionMenu}" Click="OnSessionMenuClick"
                                         AutomationProperties.Name="Меню сессии"
-                                        ToolTip="Переименовать, открыть папку, распознать заново, перенести в другой проект">
+                                        ToolTip="Переименовать, открыть папку, распознать заново, перенести в другой проект, удалить">
                                     <StackPanel Orientation="Horizontal">
                                         <TextBlock Text="{Binding Tag.SessionHeader, RelativeSource={RelativeSource AncestorType=Button}}"
                                                    VerticalAlignment="Center" TextTrimming="CharacterEllipsis" MaxWidth="420"

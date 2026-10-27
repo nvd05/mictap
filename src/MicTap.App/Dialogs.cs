@@ -14,3 +14,6 @@ public sealed partial class RenameEditor(string title, string name, string hint,
 
     public string Confirm { get; } = confirm;
 }
+
+/// <summary>A delete the user confirms first; <paramref name="Delete"/> runs on yes.</summary>
+public sealed record DeleteRequest(string Title, string Text, Func<Task> Delete);

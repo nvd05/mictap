@@ -29,6 +29,7 @@ public partial class MainWindow : Window
         viewModel.EditProjectRequested += (_, project) =>
             _ = ShowProjectDialogAsync(ProjectEditor.For(project), settings => viewModel.SaveProject(project, settings));
         viewModel.RenameSessionRequested += (_, session) => _ = ShowRenameDialogAsync(session);
+        viewModel.DeleteRequested += (_, request) => _ = ConfirmDeleteAsync(request);
         viewModel.SettingsRequested += (_, _) => _ = ShowSettingsAsync();
         viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
         viewModel.Transcript.PropertyChanged += (_, e) =>
@@ -126,6 +127,17 @@ public partial class MainWindow : Window
         if (await DialogHost.Show(content, "MainDialog") is true)
         {
             await _viewModel.ApplyRenameAsync(session, editor.Name);
+        }
+    }
+
+    /// <summary>A delete goes ahead only after a yes in the dialog.</summary>
+    private async Task ConfirmDeleteAsync(DeleteRequest request)
+    {
+        var content = (FrameworkElement)FindResource("DeleteDialog");
+        content.DataContext = request;
+        if (await DialogHost.Show(content, "MainDialog") is true)
+        {
+            await request.Delete();
         }
     }
 

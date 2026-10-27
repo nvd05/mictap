@@ -3,23 +3,11 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace MicTap.Hub;
 
-/// <summary>SignalR hub /agents: what the mictap CLI calls. An open connection is the agent's presence.</summary>
+/// <summary>SignalR hub /agents: what the mictap CLI calls. An agent is waiting while one of its waits is open.</summary>
 internal sealed class AgentsHub(AgentsState state) : Microsoft.AspNetCore.SignalR.Hub
 {
     private string Agent =>
         Context.GetHttpContext()?.Request.Query[ AgentHub.AgentQuery ].ToString() is { Length: > 0 } name ? name : "agent";
-
-    public override Task OnConnectedAsync()
-    {
-        state.Connected(Agent, Context.ConnectionId);
-        return base.OnConnectedAsync();
-    }
-
-    public override Task OnDisconnectedAsync(Exception? exception)
-    {
-        state.Disconnected(Agent, Context.ConnectionId);
-        return base.OnDisconnectedAsync(exception);
-    }
 
     public StatusReply Status() => state.Status();
 

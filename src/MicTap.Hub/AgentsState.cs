@@ -4,7 +4,10 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace MicTap.Hub;
 
-/// <summary>Where an agent is: connected (waiting), out for a while (thinking), or gone for longer than <see cref="AgentsState.GoneAfter"/>.</summary>
+/// <summary>
+/// Where an agent is: in a wait (waiting), out of it for a while (thinking), or gone for longer than
+/// <see cref="AgentsState.GoneAfter"/>. Other calls, such as status, do not count as waiting.
+/// </summary>
 public enum AgentState
 {
     Waiting,
@@ -263,46 +266,24 @@ public sealed class AgentsState
         finally
         {
             Leave(session, waiter);
+            Left(request.Agent, connectionId);
         }
     }
 
-    public void Connected(string agent, string connectionId)
-    {
-        lock (_gate)
-        {
-            PresenceOf(agent).Connections.Add(connectionId);
-        }
-
-        AgentsChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    public void Disconnected(string agent, string connectionId)
-    {
-        lock (_gate)
-        {
-            Presence presence = PresenceOf(agent);
-            presence.Connections.Remove(connectionId);
-            presence.LastSeen = _time.GetUtcNow();
-        }
-
-        AgentsChanged?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>Agents of a session: connected ones wait, the others think until <see cref="GoneAfter"/>, then are gone.</summary>
+    /// <summary>Agents of a session: those in a wait are waiting, the others think until <see cref="GoneAfter"/>, then are gone.</summary>
     public IReadOnlyList<AgentPresence> AgentsOf(SessionInfo session)
     {
         var agents = new Dictionary<string, AgentPresence>(StringComparer.OrdinalIgnoreCase);
         foreach ((string agent, AgentCursor cursor) in AgentCursors.List(session))
         {
-            agents[ agent ] = new AgentPresence(agent, StateAt(connected: false, cursor.LastSeen), cursor.LastSeen);
+            agents[ agent ] = new AgentPresence(agent, StateAt(waiting: false, cursor.LastSeen), cursor.LastSeen);
         }
 
         lock (_gate)
         {
             foreach ((string agent, Presence presence) in _agents.Where(a => a.Value.Session == session))
             {
-                bool connected = presence.Connections.Count > 0;
-                agents[ agent ] = new AgentPresence(agent, StateAt(connected, presence.LastSeen), presence.LastSeen);
+                agents[ agent ] = new AgentPresence(agent, StateAt(presence.Waits.Count > 0, presence.LastSeen), presence.LastSeen);
             }
         }
 
@@ -317,14 +298,14 @@ public sealed class AgentsState
             [
                 .. _agents.Where(a => a.Value.Session is not null).Select(a => new AgentDto(
                     a.Key, a.Value.Project, a.Value.Session!.Name,
-                    StateAt(a.Value.Connections.Count > 0, a.Value.LastSeen).ToString().ToLowerInvariant(),
+                    StateAt(a.Value.Waits.Count > 0, a.Value.LastSeen).ToString().ToLowerInvariant(),
                     a.Value.LastSeen, a.Value.Cursor)),
             ];
         }
     }
 
-    private AgentState StateAt(bool connected, DateTimeOffset lastSeen) =>
-        connected ? AgentState.Waiting
+    private AgentState StateAt(bool waiting, DateTimeOffset lastSeen) =>
+        waiting ? AgentState.Waiting
         : _time.GetUtcNow() - lastSeen > GoneAfter ? AgentState.Gone
         : AgentState.Thinking;
 
@@ -333,7 +314,7 @@ public sealed class AgentsState
         lock (_gate)
         {
             Presence presence = PresenceOf(agent);
-            presence.Connections.Add(connectionId);
+            presence.Waits.Add(connectionId);
             presence.Project = project.Name;
             presence.Session = session;
             presence.Cursor = cursor;
@@ -349,6 +330,19 @@ public sealed class AgentsState
         {
             Presence presence = PresenceOf(agent);
             presence.Cursor = cursor;
+            presence.LastSeen = _time.GetUtcNow();
+        }
+
+        AgentsChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    /// <summary>A wait ended: answered, taken over, or its caller went away.</summary>
+    private void Left(string agent, string connectionId)
+    {
+        lock (_gate)
+        {
+            Presence presence = PresenceOf(agent);
+            presence.Waits.Remove(connectionId);
             presence.LastSeen = _time.GetUtcNow();
         }
 
@@ -565,7 +559,8 @@ public sealed class AgentsState
 
     private sealed class Presence
     {
-        public readonly HashSet<string> Connections = [];
+        /// <summary>Connections with a wait open.</summary>
+        public readonly HashSet<string> Waits = [];
         public string Project = "";
         public SessionInfo? Session;
         public DateTimeOffset LastSeen;

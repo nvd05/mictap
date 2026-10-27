@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using MicTap.Cli;
 using MicTap.Core;
 
@@ -261,6 +262,18 @@ public sealed class WaitTests : IAsyncLifetime
         AgentCursor cursor = AgentCursors.Read(_hub.Session, "claude")!;
         Assert.Equal(1, cursor.Cursor);
         Assert.Equal(new AgentPolicy(100, 1), cursor.Policy);
+    }
+
+    [Fact]
+    public async Task Only_an_open_wait_counts_as_waiting_not_the_status_call_itself()
+    {
+        _hub.Say("一");
+        await _hub.RunAsync("wait");
+
+        CliResult status = await _hub.RunAsync("status");
+
+        JsonElement agent = Assert.Single(status.Json.GetProperty("agents").EnumerateArray());
+        Assert.Equal(("claude", "thinking"), (agent.GetProperty("name").GetString(), agent.GetProperty("state").GetString()));
     }
 
     [Fact]

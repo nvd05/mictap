@@ -53,6 +53,12 @@ public sealed class SettingsStore(string filePath)
             throw new InvalidDataException($"Settings file {FilePath}: hubPort must be 1..65535, got {settings.HubPort}.");
         }
 
+        if (settings.ArchiveDays is < 0 or > AppSettings.MaxArchiveDays)
+        {
+            throw new InvalidDataException(
+                $"Settings file {FilePath}: archiveDays must be 0 (forever) .. {AppSettings.MaxArchiveDays}, got {settings.ArchiveDays}.");
+        }
+
         if (settings.LiveDraftSeconds is < 0 or > AppSettings.MaxLiveDraftSeconds)
         {
             throw new InvalidDataException(

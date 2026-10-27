@@ -14,6 +14,10 @@ public sealed record AppSettings
 
     public const int MaxLiveDraftSeconds = 60;
 
+    public const int DefaultArchiveDays = 30;
+
+    public const int MaxArchiveDays = 3650;
+
     /// <summary>Folder of projects; null means <see cref="Projects.DefaultRoot"/>.</summary>
     public string? RootFolder { get; init; }
 
@@ -32,6 +36,9 @@ public sealed record AppSettings
     /// graphics card's steady load: finished phrases are recognized once whatever this is.
     /// </summary>
     public int LiveDraftSeconds { get; init; } = DefaultLiveDraftSeconds;
+
+    /// <summary>Days a deleted project or session stays in the archive before it is deleted for good; 0 keeps it forever.</summary>
+    public int ArchiveDays { get; init; } = DefaultArchiveDays;
 }
 
 /// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>

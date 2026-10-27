@@ -67,7 +67,9 @@ public sealed class RouterAiTranscriberTests
 
         Assert.Equal((6, 0.026), (usage.Requests, Math.Round(usage.Rubles, 3)));
         Assert.Equal(0.016, Math.Round(usage.RublesWithoutModel, 3));
-        Assert.Contains("\"schemaVersion\": 2", File.ReadAllText(Path.Combine(temp.Path, "cloud.json")));
+        System.Text.Json.JsonElement root = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(temp.Path, "cloud.json"))).RootElement;
+        Assert.Equal([ "schemaVersion", "requests", "seconds", "rubles", "models" ], root.EnumerateObject().Select(p => p.Name));
+        Assert.Equal(2, root.GetProperty("schemaVersion").GetInt32());
     }
 
     [Fact]

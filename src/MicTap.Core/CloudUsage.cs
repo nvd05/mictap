@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace MicTap.Core;
 
@@ -32,12 +33,15 @@ public sealed record CloudUsage(int Requests, double Seconds, double Rubles, IRe
 
     public static CloudUsage None { get; } = new(0, 0, 0);
 
+    [JsonPropertyOrder(-1)]
     public int SchemaVersion => CurrentSchemaVersion;
 
     /// <summary>Per model; never null.</summary>
+    [JsonIgnore]
     public IReadOnlyDictionary<string, ModelUsage> ByModel => Models ?? new Dictionary<string, ModelUsage>();
 
     /// <summary>Rubles counted before cloud.json had models (schema 1).</summary>
+    [JsonIgnore]
     public double RublesWithoutModel => Math.Max(0, Rubles - ByModel.Values.Sum(m => m.Rubles));
 
     public ModelUsage Of(string model) => ByModel.GetValueOrDefault(model) ?? ModelUsage.None;

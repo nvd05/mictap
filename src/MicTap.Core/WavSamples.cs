@@ -43,6 +43,22 @@ public static class WavSamples
         throw new InvalidDataException($"{path} has no data chunk.");
     }
 
+    /// <summary>A complete 16 kHz mono 16-bit WAV file of <paramref name="samples"/>, -1..1 (clipped).</summary>
+    public static byte[] ToWav(ReadOnlySpan<float> samples)
+    {
+        var wav = new byte[ WavHeader.Size + samples.Length * 2 ];
+        WavHeader.CreateOpen(PcmFormat.Mono16k).CopyTo(wav, 0);
+        for (int i = 0; i < samples.Length; i++)
+        {
+            short value = (short)Math.Round(Math.Clamp(samples[ i ], -1f, 1f) * short.MaxValue);
+            BinaryPrimitives.WriteInt16LittleEndian(wav.AsSpan(WavHeader.Size + i * 2), value);
+        }
+
+        using var stream = new MemoryStream(wav);
+        WavHeader.WriteSizes(stream, samples.Length * 2L);
+        return wav;
+    }
+
     /// <summary>16-bit little-endian PCM as floats, -1..1.</summary>
     public static float[] FromPcm16(ReadOnlySpan<byte> pcm)
     {

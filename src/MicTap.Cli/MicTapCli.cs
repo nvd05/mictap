@@ -25,7 +25,8 @@ public static class MicTapCli
         "kept per --agent in the session's agents folder). Without --min-words and --max-wait it returns at the first " +
         "new segment, or at once if unread segments exist. --min-words N returns when the unread text has N words; " +
         "--max-wait SEC returns after SEC seconds with whatever accumulated; with both, whichever comes first. It also " +
-        "returns when the recording stops (reason session_stopped) and when the user presses «send to agent now» in mictap " +
+        "returns when the recording stops (reason session_stopped, once its last phrases are transcribed, so they are in the " +
+        "reply) and when the user presses «send to agent now» in mictap " +
         "(reason force_push, even below --min-words): the user has finished the thought and waits for your answer — answer " +
         "right away and call wait again only after that. A press while no wait runs makes the next wait return at once " +
         "with force_push. Without --project and --session it follows the active recording; with --project alone, the " +

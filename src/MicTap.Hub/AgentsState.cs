@@ -34,7 +34,9 @@ public sealed class AgentsState
     private readonly Dictionary<string, Presence> _agents = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Waiter>> _waiters = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pushes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Transcribing> _transcribing = new(StringComparer.OrdinalIgnoreCase);
     private Recording? _active;
+    private bool _transcriptionFailed;
     private string _root;
 
     /// <param name="readLines">The lines of a session as the pipeline has them, including the user's edits.</param>
@@ -72,9 +74,11 @@ public sealed class AgentsState
     {
         recorder.Started += (_, started) => RecordingStarted(started.Session, started.Language);
         recorder.LanguageMarked += (_, marked) => LanguageChanged(marked.Session, marked.Mark.Lang);
-        recorder.Stopped += (_, stopped) => RecordingStopped(stopped.Session);
+        recorder.Stopped += (_, stopped) => RecordingStopped(stopped.Session, transcribing: true);
         pipeline.SegmentTranscribed += (_, segment) => Pulse(segment.Session.Folder);
         pipeline.Pushed += (_, session) => Push(session);
+        pipeline.RecordingTranscribed += (_, session) => Transcribed(session);
+        pipeline.Failed += (_, _) => TranscriptionFailed();
     }
 
     public void RecordingStarted(SessionInfo session, string language)
@@ -99,7 +103,11 @@ public sealed class AgentsState
         }
     }
 
-    public void RecordingStopped(SessionInfo session)
+    /// <param name="transcribing">
+    /// The pipeline still recognizes the last phrases of the recording: waits end with session_stopped only once
+    /// <see cref="Transcribed"/> says they are in the transcript, so the agent gets all of them.
+    /// </param>
+    public void RecordingStopped(SessionInfo session, bool transcribing = false)
     {
         lock (_gate)
         {
@@ -109,9 +117,41 @@ public sealed class AgentsState
             }
 
             _pushes.Remove(session.Folder);
+            if (transcribing && !_transcriptionFailed)
+            {
+                CountTranscribing(session, 1);
+            }
         }
 
         Pulse(session.Folder);
+    }
+
+    /// <summary>Every phrase of a stopped recording is in the transcript. May come before <see cref="RecordingStopped"/>.</summary>
+    public void Transcribed(SessionInfo session)
+    {
+        lock (_gate)
+        {
+            CountTranscribing(session, -1);
+        }
+
+        Pulse(session.Folder);
+    }
+
+    /// <summary>Recognition stopped for good: no more phrases will come, so no wait holds for them.</summary>
+    public void TranscriptionFailed()
+    {
+        string[] folders;
+        lock (_gate)
+        {
+            _transcriptionFailed = true;
+            folders = [ .. _transcribing.Keys ];
+            _transcribing.Clear();
+        }
+
+        foreach (string folder in folders)
+        {
+            Pulse(folder);
+        }
     }
 
     /// <summary>
@@ -187,7 +227,8 @@ public sealed class AgentsState
     /// <summary>
     /// Holds until the agent's condition is met and returns the segments it has not read: at once if there are some
     /// and no condition is given; at <see cref="WaitRequest.MinWords"/> words; at <see cref="WaitRequest.MaxWaitSeconds"/>;
-    /// at a <see cref="Push"/>; or when the session is not recording. The agent's cursor moves to the last returned seq.
+    /// at a <see cref="Push"/>; or when the session is not recording and its last phrases are in. The agent's cursor
+    /// moves to the last returned seq.
     /// A newer wait of the same agent on the session takes over: this one then ends without moving the cursor, since
     /// nobody reads it any more (a tool call that gave up while the CLI went on waiting).
     /// </summary>
@@ -227,7 +268,7 @@ public sealed class AgentsState
                     break;
                 }
 
-                if (!IsRecording(session))
+                if (!IsGoingOn(session))
                 {
                     reason = WaitReasons.SessionStopped;
                     break;
@@ -438,11 +479,38 @@ public sealed class AgentsState
         }
     }
 
-    private bool IsRecording(SessionInfo session)
+    /// <summary>Recording, or stopped while its last phrases are still being recognized.</summary>
+    private bool IsGoingOn(SessionInfo session)
     {
         lock (_gate)
         {
-            return _active?.Session == session;
+            return _active?.Session == session || _transcribing.GetValueOrDefault(session.Folder)?.Pending > 0;
+        }
+    }
+
+    /// <summary>The recording going on, see <see cref="IsGoingOn"/>.</summary>
+    private SessionInfo? CurrentSession()
+    {
+        lock (_gate)
+        {
+            return _active?.Session ?? _transcribing.Values.FirstOrDefault(t => t.Pending > 0)?.Session;
+        }
+    }
+
+    /// <summary>
+    /// Stops and their transcripts finished, counted: either may come first, the session is still being recognized
+    /// while there are more stops. Called under the lock.
+    /// </summary>
+    private void CountTranscribing(SessionInfo session, int change)
+    {
+        int pending = (_transcribing.GetValueOrDefault(session.Folder)?.Pending ?? 0) + change;
+        if (pending == 0)
+        {
+            _transcribing.Remove(session.Folder);
+        }
+        else
+        {
+            _transcribing[ session.Folder ] = new Transcribing(session, pending);
         }
     }
 
@@ -460,36 +528,24 @@ public sealed class AgentsState
     }
 
     /// <summary>
-    /// The session meant: the active recording when nothing is named; a session name alone is looked up in every
-    /// project and must be unique.
+    /// The session meant: the recording going on when nothing is named (see <see cref="IsGoingOn"/>); a session name
+    /// alone is looked up in every project and must be unique.
     /// </summary>
     private (ProjectInfo Project, SessionInfo Session) Resolve(string? project, string? session)
     {
         if (project is null && session is null)
         {
-            Recording? active;
-            lock (_gate)
-            {
-                active = _active;
-            }
-
-            return active is null
-                ? throw new HubException($"{AgentHub.NotFound} no recording is running; name --project and --session")
-                : (Projects.Load(Path.GetDirectoryName(active.Session.Folder)!), active.Session);
+            return CurrentSession() is { } current
+                ? (Projects.Load(Path.GetDirectoryName(current.Folder)!), current)
+                : throw new HubException($"{AgentHub.NotFound} no recording is running; name --project and --session");
         }
 
         if (session is null)
         {
-            // A project alone: its running recording.
+            // A project alone: its recording going on.
             ProjectInfo named = FindProject(project!);
-            Recording? active;
-            lock (_gate)
-            {
-                active = _active;
-            }
-
-            return active is not null && SameFolder(Path.GetDirectoryName(active.Session.Folder)!, named.Folder)
-                ? (named, active.Session)
+            return CurrentSession() is { } current && SameFolder(Path.GetDirectoryName(current.Folder)!, named.Folder)
+                ? (named, current)
                 : throw new HubException($"{AgentHub.NotFound} project '{named.Name}' is not recording; name --session");
         }
 
@@ -534,6 +590,9 @@ public sealed class AgentsState
     private static SegmentDto ToDto(TranscriptLine line) => new(line.Seq, line.Start, line.End, line.Lang, line.Text);
 
     private sealed record Recording(SessionInfo Session, string Project, string Language);
+
+    /// <summary>A stopped recording whose last phrases are being recognized while <paramref name="Pending"/> is above zero.</summary>
+    private sealed record Transcribing(SessionInfo Session, int Pending);
 
     /// <summary>A wait in progress: its agent, whether a push reached it, and the signal that a newer wait took over.</summary>
     private sealed class Waiter(string agent) : IDisposable

@@ -127,6 +127,64 @@ public sealed class WaitTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Session_stopped_waits_until_the_last_phrases_are_transcribed()
+    {
+        Task<CliResult> waiting = _hub.RunAsync("wait", "--min-words", "100");
+        await Task.Delay(300);
+
+        _hub.State.RecordingStopped(_hub.Session, transcribing: true);
+        _hub.Say("последняя фраза", "ru");
+        await Task.Delay(300);
+        Assert.False(waiting.IsCompleted);
+
+        _hub.State.Transcribed(_hub.Session);
+        CliResult result = await waiting.WaitAsync(Patience);
+
+        Assert.Equal("session_stopped", result.Reason);
+        Assert.Equal([ 1 ], result.Seqs);
+    }
+
+    [Fact]
+    public async Task Transcript_finished_before_the_stop_is_reported_holds_nothing()
+    {
+        _hub.State.Transcribed(_hub.Session);
+        _hub.State.RecordingStopped(_hub.Session, transcribing: true);
+
+        CliResult result = await _hub.RunAsync("wait", "--project", "Японский", "--session", "Пара 1", "--min-words", "100").WaitAsync(Patience);
+
+        Assert.Equal("session_stopped", result.Reason);
+    }
+
+    [Fact]
+    public async Task Wait_without_a_session_follows_a_stopped_recording_until_its_last_phrases_are_in()
+    {
+        _hub.State.RecordingStopped(_hub.Session, transcribing: true);
+        _hub.Say("хвост", "ru");
+
+        CliResult status = await _hub.RunAsync("status");
+        CliResult result = await _hub.RunAsync("wait");
+        _hub.State.Transcribed(_hub.Session);
+        CliResult after = await _hub.RunAsync("wait");
+
+        Assert.Equal(JsonValueKind.Null, status.Json.GetProperty("recording").ValueKind);
+        Assert.Equal(("first_event", "Пара 1"), (result.Reason, result.Json.GetProperty("session").GetString()));
+        Assert.Equal([ 1 ], result.Seqs);
+        Assert.Equal(MicTapCli.NotFound, after.Code);
+    }
+
+    [Fact]
+    public async Task Failed_recognition_does_not_hold_session_stopped()
+    {
+        Task<CliResult> waiting = _hub.RunAsync("wait", "--min-words", "100");
+        await Task.Delay(300);
+
+        _hub.State.RecordingStopped(_hub.Session, transcribing: true);
+        _hub.State.TranscriptionFailed();
+
+        Assert.Equal("session_stopped", (await waiting.WaitAsync(Patience)).Reason);
+    }
+
+    [Fact]
     public async Task Named_session_is_waited_on_without_a_running_recording()
     {
         _hub.State.RecordingStopped(_hub.Session);

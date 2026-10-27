@@ -31,10 +31,12 @@ public sealed class TranscriptionPipeline : IDisposable
 
     private static readonly TimeSpan DisposeTimeout = TimeSpan.FromSeconds(10);
 
+    // With the draft off the live loop only keeps up with the audio, looking now and then whether it is back on.
+    private static readonly TimeSpan DraftOffCheck = TimeSpan.FromSeconds(1);
+
     private readonly TranscriberHost _host;
     private readonly Task<Func<SpeechDetector>> _detectors;
     private readonly ILogger _logger;
-    private readonly TimeSpan _liveInterval;
     private readonly Func<SessionInfo, string, ITranscriber>? _cloud;
 
     // Every captured block and mark, in order: the segmenter must see all audio.
@@ -61,6 +63,7 @@ public sealed class TranscriptionPipeline : IDisposable
     private Task _loops = Task.CompletedTask;
     private int _pending;
     private int _failed;
+    private long _liveIntervalTicks;
 
     /// <param name="cloud">Makes the cloud transcriber for a recording into a session that names a model.</param>
     public TranscriptionPipeline(
@@ -76,8 +79,19 @@ public sealed class TranscriptionPipeline : IDisposable
         _host = host;
         _detectors = detectors;
         _logger = logger.ForContext<TranscriptionPipeline>();
-        _liveInterval = liveInterval;
+        _liveIntervalTicks = liveInterval.Ticks;
         _cloud = cloud;
+    }
+
+    /// <summary>
+    /// How often the draft is recognized; null turns it off, so the graphics card works only on finished phrases. At
+    /// <see cref="DefaultLiveInterval"/> or less a finished phrase also brings a pass at once. Takes effect from the
+    /// next pass.
+    /// </summary>
+    public TimeSpan? LiveInterval
+    {
+        get => Interlocked.Read(ref _liveIntervalTicks) is > 0 and var ticks ? TimeSpan.FromTicks(ticks) : null;
+        set => Interlocked.Exchange(ref _liveIntervalTicks, value?.Ticks ?? 0);
     }
 
     /// <summary>New live text of the speech not yet in the transcript; replaces the previous one.</summary>
@@ -369,6 +383,12 @@ public sealed class TranscriptionPipeline : IDisposable
                     continue; // not recording
                 }
 
+                if (LiveInterval is null)
+                {
+                    recognized = default; // the draft is off: no VAD, no Whisper; the next pass after it is on again is fresh
+                    continue;
+                }
+
                 // Only speech after the last finished phrase: what the transcript has is not repeated.
                 TimeSpan ringStart = ringEnd - format.DurationOf(ring.Count * (long)format.BlockAlign);
                 TimeSpan from = Volatile.Read(ref _finished) is { } finished && finished.Session == session && finished.At > ringStart
@@ -474,11 +494,22 @@ public sealed class TranscriptionPipeline : IDisposable
         }
     }
 
-    /// <summary>Waits for the next live pass: the interval, or less when a phrase has just got its final text.</summary>
+    /// <summary>
+    /// Waits for the next live pass: the interval, or less when a phrase has just got its final text and the draft is
+    /// at its quickest. A slower draft spares the graphics card that extra pass too.
+    /// </summary>
     private async Task NextLivePassAsync(CancellationToken cancellation)
     {
+        TimeSpan? every = LiveInterval;
+        if (every is not { } quick || quick > DefaultLiveInterval)
+        {
+            _liveWake.Reader.TryRead(out _);
+            await Task.Delay(every ?? DraftOffCheck, cancellation);
+            return;
+        }
+
         using var interval = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        interval.CancelAfter(_liveInterval);
+        interval.CancelAfter(quick);
         try
         {
             await _liveWake.Reader.ReadAsync(interval.Token);

@@ -10,6 +10,10 @@ public sealed record AppSettings
 
     public const int DefaultHubPort = 47310;
 
+    public const int DefaultLiveDraftSeconds = 3;
+
+    public const int MaxLiveDraftSeconds = 60;
+
     /// <summary>Folder of projects; null means <see cref="Projects.DefaultRoot"/>.</summary>
     public string? RootFolder { get; init; }
 
@@ -22,6 +26,12 @@ public sealed record AppSettings
 
     /// <summary>Port of the agents hub on 127.0.0.1; the mictap CLI reads it from here.</summary>
     public int HubPort { get; init; } = DefaultHubPort;
+
+    /// <summary>
+    /// How often the draft of what is being said is recognized, in seconds; 0 turns the draft off. The draft is the
+    /// graphics card's steady load: finished phrases are recognized once whatever this is.
+    /// </summary>
+    public int LiveDraftSeconds { get; init; } = DefaultLiveDraftSeconds;
 }
 
 /// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>

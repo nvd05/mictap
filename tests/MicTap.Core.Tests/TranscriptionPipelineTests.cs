@@ -241,6 +241,26 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Draft_off_leaves_whisper_to_the_finished_phrases()
+    {
+        var transcriber = FakeTranscriber.Saying((_, _) => "фраза");
+        var drafts = new ConcurrentQueue<LiveTranscript>();
+        using TranscriptionPipeline pipeline = Run(transcriber);
+        pipeline.LiveInterval = null;
+        pipeline.LiveTextChanged += (_, live) => drafts.Enqueue(live);
+        _recorder.Start(Options("ru"), _source);
+
+        Push(FakeSpeech.SpeechPcm(1.5));
+        await Task.Delay(400); // several draft intervals of the test pipeline
+        Push(FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        Assert.Equal(1, transcriber.Calls);
+        Assert.DoesNotContain(drafts, live => live.Text.Length > 0);
+    }
+
+    [Fact]
     public async Task Segment_that_whisper_made_up_is_left_out_of_the_transcript()
     {
         // By length, not by call order: live passes ask Whisper too.

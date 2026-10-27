@@ -75,6 +75,29 @@ public sealed class SettingsStoreTests : IDisposable
         Assert.Throws<InvalidDataException>(() => new SettingsStore(path).Load());
     }
 
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(61)]
+    public void Out_of_range_live_draft_seconds_is_rejected(int seconds)
+    {
+        string path = Path.Combine(_temp.Path, "settings.json");
+        File.WriteAllText(path, $$"""{ "liveDraftSeconds": {{seconds}} }""");
+
+        Assert.Throws<InvalidDataException>(() => new SettingsStore(path).Load());
+    }
+
+    [Fact]
+    public void Live_draft_is_every_3_seconds_unless_set_and_0_turns_it_off()
+    {
+        string path = Path.Combine(_temp.Path, "settings.json");
+        var store = new SettingsStore(path);
+
+        int byDefault = store.Load().LiveDraftSeconds;
+        store.Save(store.Load() with { LiveDraftSeconds = 0 });
+
+        Assert.Equal((3, 0), (byDefault, store.Load().LiveDraftSeconds));
+    }
+
     [Fact]
     public void Hotkey_left_out_of_the_file_keeps_its_default()
     {

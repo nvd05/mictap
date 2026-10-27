@@ -46,11 +46,13 @@ public sealed class HubFixture : IAsyncDisposable
         State.Pulse(Session.Folder);
     }
 
-    public async Task<CliResult> RunAsync(params string[] args)
+    public Task<CliResult> RunAsync(params string[] args) => RunAsync(CancellationToken.None, args);
+
+    public async Task<CliResult> RunAsync(CancellationToken cancellation, params string[] args)
     {
         var output = new StringWriter();
         var error = new StringWriter();
-        int code = await MicTapCli.RunAsync(args, Host.Port, output, error, CancellationToken.None);
+        int code = await MicTapCli.RunAsync(args, Host.Port, output, error, cancellation);
         return new CliResult(code, output.ToString().Trim(), error.ToString().Trim());
     }
 

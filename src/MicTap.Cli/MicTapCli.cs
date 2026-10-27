@@ -17,6 +17,7 @@ public static class MicTapCli
     public const int NotFound = 2;
     public const int HubDown = 3;
     public const int BadArguments = 4;
+    public const int Superseded = 5;
 
     private const string WaitHelp =
         "Wait for new transcribed speech, print it as one JSON line and exit. Use it as a loop: call `mictap wait`, " +
@@ -24,11 +25,20 @@ public static class MicTapCli
         "kept per --agent in the session's agents folder). Without --min-words and --max-wait it returns at the first " +
         "new segment, or at once if unread segments exist. --min-words N returns when the unread text has N words; " +
         "--max-wait SEC returns after SEC seconds with whatever accumulated; with both, whichever comes first. It also " +
-        "returns when the recording stops (reason session_stopped). Without --project and --session it follows the " +
-        "active recording. Output: {project, session, reason, from_seq, to_seq, lang_now, segments:[{seq,start,end,lang,text}]}; " +
-        "reason is first_event, min_words, max_wait or session_stopped; start/end are seconds from the session start.";
+        "returns when the recording stops (reason session_stopped) and when the user presses «send to agent now» in mictap " +
+        "(reason force_push, even below --min-words): the user has finished the thought and waits for your answer — answer " +
+        "right away and call wait again only after that. A press while no wait runs makes the next wait return at once " +
+        "with force_push. Without --project and --session it follows the active recording; with --project alone, the " +
+        "recording of that project. A new wait of the same --agent on the same session takes over an older one still " +
+        "running: the older exits with code 5 and leaves the cursor alone. Behind a tool call with a time limit keep " +
+        "--max-wait well below it — 45 or less through Claude Desktop, which gives up on a call after 60 s: a wait that " +
+        "outlives the call and ends before your next one moves the cursor past segments you never saw. " +
+        "Output: {project, session, reason, from_seq, to_seq, lang_now, segments:[{seq,start,end,lang,text}]}; " +
+        "reason is first_event, min_words, max_wait, session_stopped or force_push; start/end are seconds from the session start.";
 
-    private const string ExitCodes = "Exit codes: 0 ok, 2 no such project or session (or nothing recording), 3 mictap is not running, 4 bad arguments.";
+    private const string ExitCodes =
+        "Exit codes: 0 ok, 2 no such project or session (or nothing recording), 3 mictap is not running, 4 bad arguments, " +
+        "5 a newer wait of the same agent took over.";
 
     private static readonly JsonSerializerOptions Json = new()
     {
@@ -43,12 +53,12 @@ public static class MicTapCli
             Description = "Your name; presence and the read cursor are kept per agent.",
             DefaultValueFactory = _ => "claude",
         };
-        var project = new Option<string?>("--project") { Description = "Project name (as shown in mictap)." };
+        var project = new Option<string?>("--project") { Description = "Project name (as shown in mictap); alone, its running recording." };
         var session = new Option<string?>("--session") { Description = "Session name." };
         var minWords = new Option<int?>("--min-words") { Description = "Return when the unread text has this many words." };
         var maxWait = new Option<double?>("--max-wait")
         {
-            Description = "Return after this many seconds with what has accumulated.",
+            Description = "Return after this many seconds with what has accumulated (45 or less through Claude Desktop).",
 
             // "0.5" whatever the Windows locale: agents write numbers the invariant way.
             CustomParser = result =>
@@ -79,13 +89,6 @@ public static class MicTapCli
         });
 
         var wait = new Command("wait", WaitHelp + " " + ExitCodes) { project, session, agent, minWords, maxWait, fromStart };
-        wait.Validators.Add(result =>
-        {
-            if (result.GetValue(project) is not null && result.GetValue(session) is null)
-            {
-                result.AddError("--project needs --session.");
-            }
-        });
         wait.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
             await hub.InvokeAsync<WaitReply>(
                 AgentHub.Wait,
@@ -160,8 +163,13 @@ public static class MicTapCli
         }
         catch (HubException ex) when (ex.Message.Contains(AgentHub.NotFound, StringComparison.Ordinal))
         {
-            await error.WriteLineAsync(ex.Message[ (ex.Message.IndexOf(AgentHub.NotFound, StringComparison.Ordinal) + AgentHub.NotFound.Length).. ].Trim());
+            await error.WriteLineAsync(After(ex.Message, AgentHub.NotFound));
             return NotFound;
+        }
+        catch (HubException ex) when (ex.Message.Contains(AgentHub.Superseded, StringComparison.Ordinal))
+        {
+            await error.WriteLineAsync(After(ex.Message, AgentHub.Superseded));
+            return Superseded;
         }
         catch (HubException ex)
         {
@@ -169,4 +177,8 @@ public static class MicTapCli
             return Failed;
         }
     }
+
+    /// <summary>The message after the prefix the hub marks it with; SignalR puts its own words in front.</summary>
+    private static string After(string message, string prefix) =>
+        message[ (message.IndexOf(prefix, StringComparison.Ordinal) + prefix.Length).. ].Trim();
 }

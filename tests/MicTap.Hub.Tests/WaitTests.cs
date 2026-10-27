@@ -138,6 +138,114 @@ public sealed class WaitTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Project_alone_means_its_running_recording()
+    {
+        _hub.Say("一");
+
+        CliResult result = await _hub.RunAsync("wait", "--project", "японский");
+        _hub.State.RecordingStopped(_hub.Session);
+        CliResult notRecording = await _hub.RunAsync("wait", "--project", "Японский");
+
+        Assert.Equal(("first_event", "Пара 1"), (result.Reason, result.Json.GetProperty("session").GetString()));
+        Assert.Equal(MicTapCli.NotFound, notRecording.Code);
+        Assert.Contains("not recording", notRecording.Error);
+    }
+
+    [Fact]
+    public async Task Newer_wait_of_the_same_agent_takes_over_and_the_older_leaves_the_cursor_alone()
+    {
+        _hub.Say("一");
+        Task<CliResult> older = _hub.RunAsync("wait", "--min-words", "100", "--max-wait", "30");
+        await Task.Delay(300);
+
+        CliResult newer = await _hub.RunAsync("wait", "--min-words", "100", "--max-wait", "0.5");
+        CliResult taken = await older.WaitAsync(Patience);
+        _hub.Say("二");
+        CliResult next = await _hub.RunAsync("wait");
+
+        Assert.Equal(MicTapCli.Superseded, taken.Code);
+        Assert.Contains("took over", taken.Error);
+        Assert.Equal("max_wait", newer.Reason);
+        Assert.Equal([ 1 ], newer.Seqs);
+        Assert.Equal([ 2 ], next.Seqs);
+    }
+
+    [Fact]
+    public async Task Waits_of_different_agents_do_not_take_over_each_other()
+    {
+        Task<CliResult> claude = _hub.RunAsync("wait", "--agent", "claude");
+        Task<CliResult> codex = _hub.RunAsync("wait", "--agent", "codex");
+        await Task.Delay(300);
+        Assert.False(claude.IsCompleted);
+
+        _hub.Say("一");
+        CliResult[] results = await Task.WhenAll(claude, codex).WaitAsync(Patience);
+
+        Assert.All(results, result => Assert.Equal([ 1 ], result.Seqs));
+    }
+
+    [Fact]
+    public async Task Wait_whose_caller_went_away_leaves_the_cursor_alone()
+    {
+        _hub.Say("一");
+        using var gone = new CancellationTokenSource();
+        Task<CliResult> abandoned = _hub.RunAsync(gone.Token, "wait", "--min-words", "100", "--max-wait", "1");
+        await Task.Delay(300);
+
+        await gone.CancelAsync();
+        Assert.NotEqual(MicTapCli.Ok, (await abandoned.WaitAsync(Patience)).Code);
+        await Task.Delay(1500); // past its --max-wait: had it gone on, it would have taken seq 1
+
+        CliResult next = await _hub.RunAsync("wait");
+
+        Assert.Equal([ 1 ], next.Seqs);
+        Assert.Equal(AgentState.Thinking, Assert.Single(_hub.State.AgentsOf(_hub.Session)).State);
+    }
+
+    [Fact]
+    public async Task Push_ends_every_wait_on_the_session_at_once_below_min_words()
+    {
+        _hub.Say("одно слово", "ru");
+        Task<CliResult> claude = _hub.RunAsync("wait", "--agent", "claude", "--min-words", "100");
+        Task<CliResult> codex = _hub.RunAsync("wait", "--agent", "codex", "--min-words", "100", "--max-wait", "30");
+        await Task.Delay(300);
+
+        _hub.State.Push(_hub.Session);
+
+        foreach (CliResult result in await Task.WhenAll(claude, codex).WaitAsync(Patience))
+        {
+            Assert.Equal("force_push", result.Reason);
+            Assert.Equal([ 1 ], result.Seqs);
+        }
+    }
+
+    [Fact]
+    public async Task Push_with_nobody_waiting_makes_the_next_wait_return_at_once_and_only_that_one()
+    {
+        _hub.State.Push(_hub.Session);
+
+        CliResult pushed = await _hub.RunAsync("wait", "--min-words", "100").WaitAsync(Patience);
+        CliResult after = await _hub.RunAsync("wait", "--max-wait", "0.3");
+
+        Assert.Equal("force_push", pushed.Reason);
+        Assert.Empty(pushed.Seqs);
+        Assert.Equal("max_wait", after.Reason);
+    }
+
+    [Fact]
+    public async Task Push_does_not_outlive_its_recording()
+    {
+        _hub.State.Push(_hub.Session);
+        _hub.State.RecordingStopped(_hub.Session);
+        _hub.State.Push(_hub.Session);
+        _hub.State.RecordingStarted(_hub.Session, "ja");
+
+        CliResult result = await _hub.RunAsync("wait", "--max-wait", "0.3");
+
+        Assert.Equal("max_wait", result.Reason);
+    }
+
+    [Fact]
     public async Task Cursor_and_presence_of_the_agent_are_kept()
     {
         _hub.Say("一");
@@ -192,7 +300,6 @@ public sealed class WaitTests : IAsyncLifetime
     [Theory]
     [InlineData("wait", "--min-words", "0")]
     [InlineData("wait", "--max-wait", "-1")]
-    [InlineData("wait", "--project", "Японский")]
     [InlineData("wait", "--bogus")]
     [InlineData("sessions")]
     [InlineData("dance")]
@@ -224,6 +331,8 @@ public sealed class WaitTests : IAsyncLifetime
         Assert.Equal(MicTapCli.Ok, help.Code);
         Assert.Contains("call it again", help.Output);
         Assert.Contains("--min-words", help.Output);
+        Assert.Contains("force_push", help.Output);
+        Assert.Contains("45 or less", help.Output);
     }
 
     [Fact]

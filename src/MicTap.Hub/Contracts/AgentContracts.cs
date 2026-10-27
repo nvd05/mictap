@@ -13,6 +13,9 @@ public static class AgentHub
     /// <summary>Prefix of a HubException message when the project or session does not exist (CLI exit code 2).</summary>
     public const string NotFound = "not_found:";
 
+    /// <summary>Prefix of a HubException message when a newer wait of the same agent on the session took over.</summary>
+    public const string Superseded = "superseded:";
+
     public const string Status = nameof(Status);
     public const string Projects = nameof(Projects);
     public const string Sessions = nameof(Sessions);
@@ -26,9 +29,12 @@ public static class WaitReasons
     public const string MinWords = "min_words";
     public const string MaxWait = "max_wait";
     public const string SessionStopped = "session_stopped";
+
+    /// <summary>The user pressed «send to agent now»: the thought is finished and an answer is awaited.</summary>
+    public const string ForcePush = "force_push";
 }
 
-/// <summary>Without a project and session the active recording is meant.</summary>
+/// <summary>Without a project and session the active recording is meant; with a project alone, its active recording.</summary>
 public sealed record WaitRequest(string? Project, string? Session, string Agent, int? MinWords, double? MaxWaitSeconds, bool FromStart);
 
 public sealed record TailRequest(string? Project, string Session, int FromSeq);

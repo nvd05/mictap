@@ -99,54 +99,55 @@
             </StackPanel>
         </StackPanel>
 
-        <!-- What the session spent in Router AI, model by model: a bar for the rubles, then minutes, answers, words and tokens. -->
-        <StackPanel x:Key="SpendDialog" x:Shared="False" Margin="24" Width="760" d:DataContext="{d:DesignInstance Type=local:SessionSpendView}">
+        <!-- What the session spent in Router AI, model by model: a bar for the rubles, then minutes, answers, words and tokens.
+             A click on a column header sorts the table. -->
+        <StackPanel x:Key="SpendDialog" x:Shared="False" Margin="24" Width="860" d:DataContext="{d:DesignInstance Type=local:SessionSpendView}">
+            <StackPanel.Resources>
+                <Style x:Key="SpendNumber" TargetType="TextBlock" BasedOn="{StaticResource MaterialDesignDataGridTextColumnStyle}">
+                    <Setter Property="HorizontalAlignment" Value="Right" />
+                </Style>
+                <Style x:Key="SpendNumberCell" TargetType="DataGridCell" BasedOn="{StaticResource MaterialDesignDataGridCell}">
+                    <Setter Property="HorizontalContentAlignment" Value="Right" />
+                </Style>
+                <Style x:Key="SpendNumberHeader" TargetType="DataGridColumnHeader" BasedOn="{StaticResource MaterialDesignDataGridColumnHeader}">
+                    <Setter Property="HorizontalContentAlignment" Value="Right" />
+                </Style>
+            </StackPanel.Resources>
             <TextBlock Text="Расход Router AI" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
             <TextBlock Margin="0,4,0,0" Text="{Binding Session}" Opacity="0.7" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
-            <Grid Margin="0,16,0,6" Visibility="{Binding HasRows, Converter={StaticResource VisibleWhenTrue}}" Opacity="0.6">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="210" />
-                    <ColumnDefinition Width="70" />
-                    <ColumnDefinition Width="50" />
-                    <ColumnDefinition Width="50" />
-                    <ColumnDefinition Width="60" />
-                    <ColumnDefinition Width="90" />
-                </Grid.ColumnDefinitions>
-                <TextBlock Text="Модель" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                <TextBlock Grid.Column="2" Text="₽" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                <TextBlock Grid.Column="3" Text="мин" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                <TextBlock Grid.Column="4" Text="фраз" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                <TextBlock Grid.Column="5" Text="слов" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                <TextBlock Grid.Column="6" Text="токены вх/вых" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-            </Grid>
-            <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding Rows}" AutomationProperties.Name="Расход по моделям">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate DataType="{x:Type local:SpendRow}">
-                            <Grid Margin="0,3">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="210" />
-                                    <ColumnDefinition Width="70" />
-                                    <ColumnDefinition Width="50" />
-                                    <ColumnDefinition Width="50" />
-                                    <ColumnDefinition Width="60" />
-                                    <ColumnDefinition Width="90" />
-                                </Grid.ColumnDefinitions>
-                                <TextBlock Text="{Binding Model}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                <Border Grid.Column="1" Height="12" CornerRadius="6" HorizontalAlignment="Left" VerticalAlignment="Center"
+            <DataGrid Margin="0,12,0,0" MaxHeight="440" ItemsSource="{Binding Rows}" AutomationProperties.Name="Расход по моделям"
+                      Visibility="{Binding HasRows, Converter={StaticResource VisibleWhenTrue}}"
+                      AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                      CanUserReorderColumns="False" CanUserResizeRows="False" HeadersVisibility="Column" SelectionMode="Single"
+                      GridLinesVisibility="None" Background="Transparent"
+                      materialDesign:DataGridAssist.CellPadding="8,5" materialDesign:DataGridAssist.ColumnHeaderPadding="8,6">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Модель" Binding="{Binding Model}" Width="*" />
+                    <DataGridTemplateColumn Header="₽ — полоской" Width="170" SortMemberPath="Rubles">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate DataType="{x:Type local:SpendRow}">
+                                <Border Height="12" CornerRadius="6" HorizontalAlignment="Left" VerticalAlignment="Center"
                                         Width="{Binding Bar}" Background="{DynamicResource MaterialDesign.Brush.Primary}" />
-                                <TextBlock Grid.Column="2" Text="{Binding Rubles}" TextAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="3" Text="{Binding Minutes}" TextAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="4" Text="{Binding Requests}" TextAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="5" Text="{Binding Words}" TextAlignment="Right" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="6" Text="{Binding Tokens}" TextAlignment="Right" VerticalAlignment="Center" />
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="₽" Binding="{Binding RublesText}" SortMemberPath="Rubles" Width="76"
+                                        ElementStyle="{StaticResource SpendNumber}" CellStyle="{StaticResource SpendNumberCell}"
+                                        HeaderStyle="{StaticResource SpendNumberHeader}" />
+                    <DataGridTextColumn Header="мин" Binding="{Binding MinutesText}" SortMemberPath="Minutes" Width="60"
+                                        ElementStyle="{StaticResource SpendNumber}" CellStyle="{StaticResource SpendNumberCell}"
+                                        HeaderStyle="{StaticResource SpendNumberHeader}" />
+                    <DataGridTextColumn Header="фраз" Binding="{Binding Requests}" Width="62"
+                                        ElementStyle="{StaticResource SpendNumber}" CellStyle="{StaticResource SpendNumberCell}"
+                                        HeaderStyle="{StaticResource SpendNumberHeader}" />
+                    <DataGridTextColumn Header="слов" Binding="{Binding Words}" Width="66"
+                                        ElementStyle="{StaticResource SpendNumber}" CellStyle="{StaticResource SpendNumberCell}"
+                                        HeaderStyle="{StaticResource SpendNumberHeader}" />
+                    <DataGridTextColumn Header="токены вх / вых" Binding="{Binding TokensText}" SortMemberPath="Tokens" Width="130"
+                                        ElementStyle="{StaticResource SpendNumber}" CellStyle="{StaticResource SpendNumberCell}"
+                                        HeaderStyle="{StaticResource SpendNumberHeader}" />
+                </DataGrid.Columns>
+            </DataGrid>
             <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Text="{Binding Total}" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
             <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Note}" Opacity="0.7" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
             <Button Margin="0,16,0,0" HorizontalAlignment="Right" Content="Закрыть" IsCancel="True" IsDefault="True"

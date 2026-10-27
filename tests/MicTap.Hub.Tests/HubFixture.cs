@@ -18,7 +18,9 @@ public sealed class HubFixture : IAsyncDisposable
             [ new SessionStart(DateTimeOffset.Now, 0) ], "Mic", MetaFormat.From(PcmFormat.Mono16k), 60, "0.5.0-test",
             [ new LanguageMark(0, "ja") ]).WriteTo(Session);
         Transcript = new JsonlTranscriptSink(Session.Folder);
-        State = new AgentsState(_root, s => new JsonlTranscriptSink(s.Folder).Lines, TimeProvider.System, "0.5.0-test");
+        // One sink per session, as the pipeline keeps them: reading the file while Say appends to it would fail.
+        State = new AgentsState(
+            _root, s => (s == Session ? Transcript : new JsonlTranscriptSink(s.Folder)).Lines, TimeProvider.System, "0.5.0-test");
     }
 
     public ProjectInfo Project { get; }

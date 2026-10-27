@@ -32,6 +32,8 @@ public enum TranscriptionEngine
 /// <paramref name="PhrasePauseSeconds"/> is the silence that ends a phrase: short for lectures, longer for a
 /// conversation where one thinks before answering. Schema 2 added it; a schema 1 file reads with the default.
 /// <paramref name="Engine"/> and <paramref name="CloudModel"/> came with schema 3; older files read as local.
+/// <paramref name="LikedModels"/> (schema 4) are the engines the user liked for this project: Router AI model ids and
+/// <see cref="LocalModel"/> for the graphics card; older files have none.
 /// </summary>
 public sealed record ProjectSettings(
     string Name,
@@ -39,9 +41,13 @@ public sealed record ProjectSettings(
     AudioRetention AudioRetention,
     double PhrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds,
     TranscriptionEngine Engine = TranscriptionEngine.Local,
-    string CloudModel = RouterAiTranscriber.DefaultModel)
+    string CloudModel = RouterAiTranscriber.DefaultModel,
+    IReadOnlyList<string>? LikedModels = null)
 {
-    public const int CurrentSchemaVersion = 3;
+    public const int CurrentSchemaVersion = 4;
+
+    /// <summary>The graphics card (Whisper on this computer) among <see cref="LikedModels"/>.</summary>
+    public const string LocalModel = "local";
 
     public const double DefaultPhrasePauseSeconds = 1.2;
 
@@ -49,6 +55,8 @@ public sealed record ProjectSettings(
 
     [JsonPropertyOrder(-1)]
     public int SchemaVersion => CurrentSchemaVersion;
+
+    public IReadOnlyList<string> LikedModels { get; init; } = LikedModels ?? [];
 
     [JsonIgnore]
     public string DefaultLanguage => Languages[ 0 ];
@@ -59,6 +67,17 @@ public sealed record ProjectSettings(
     /// <summary>The Router AI model for the phrases, or null when they are recognized on this computer.</summary>
     [JsonIgnore]
     public string? CloudModelInUse => Engine == TranscriptionEngine.RouterAi ? CloudModel : null;
+
+    /// <summary>Whether the user liked <paramref name="model"/> (null — the graphics card) for this project.</summary>
+    public bool Likes(string? model) => LikedModels.Contains(model ?? LocalModel);
+
+    /// <summary>These settings with <paramref name="model"/> (null — the graphics card) liked or not.</summary>
+    public ProjectSettings WithLike(string? model, bool liked)
+    {
+        string id = model ?? LocalModel;
+        IEnumerable<string> others = LikedModels.Where(m => m != id);
+        return this with { LikedModels = [ .. liked ? others.Append(id) : others ] };
+    }
 }
 
 /// <summary>A project folder under the root: &lt;root&gt;\&lt;project&gt;\project.json and its sessions.</summary>
@@ -187,6 +206,11 @@ public static partial class Projects
         if (settings.Engine == TranscriptionEngine.RouterAi && !CloudModelId().IsMatch(settings.CloudModel ?? ""))
         {
             throw new ArgumentException($"«{settings.CloudModel}» — не модель Router AI; нужен вид openai/whisper-large-v3.");
+        }
+
+        if (settings.LikedModels.FirstOrDefault(m => m != ProjectSettings.LocalModel && !CloudModelId().IsMatch(m ?? "")) is { } liked)
+        {
+            throw new ArgumentException($"«{liked}» в понравившихся — не модель Router AI и не {ProjectSettings.LocalModel}.");
         }
     }
 

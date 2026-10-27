@@ -23,9 +23,9 @@ public sealed class ProjectsTests : IDisposable
         Assert.Equal("ja", loaded.Settings.DefaultLanguage);
         JsonElement root = JsonDocument.Parse(File.ReadAllText(project.SettingsFile)).RootElement;
         Assert.Equal(
-            [ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds", "engine", "cloudModel" ],
+            [ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds", "engine", "cloudModel", "likedModels" ],
             root.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(3, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(4, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("local", root.GetProperty("engine").GetString());
         Assert.Equal(1.2, root.GetProperty("phrasePauseSeconds").GetDouble());
         Assert.Equal("deleteAfterTranscript", root.GetProperty("audioRetention").GetString());
@@ -105,6 +105,39 @@ public sealed class ProjectsTests : IDisposable
         Assert.Equal((TranscriptionEngine.Local, (string?)null), (old.Engine, old.CloudModelInUse));
         Assert.Equal((TranscriptionEngine.RouterAi, "openai/gpt-4o-transcribe"), (loaded.Engine, loaded.CloudModelInUse));
         Assert.Contains("\"engine\": \"routerAi\"", File.ReadAllText(cloud.SettingsFile));
+    }
+
+    [Fact]
+    public void Liked_models_round_trip_and_older_files_have_none()
+    {
+        string folder = Path.Combine(_temp.Path, "Общий");
+        Directory.CreateDirectory(folder);
+        File.WriteAllText(
+            Path.Combine(folder, "project.json"),
+            """{ "schemaVersion": 3, "name": "Общий", "languages": [ "ru" ], "audioRetention": "keep", "engine": "local" }""");
+        ProjectSettings liked = new ProjectSettings("Японский", [ "ja", "ru" ], AudioRetention.Keep)
+            .WithLike("x-ai/grok-stt-1.0", true)
+            .WithLike(null, true)
+            .WithLike("openai/gpt-transcribe", true)
+            .WithLike("x-ai/grok-stt-1.0", false);
+        ProjectInfo japanese = Projects.Create(_temp.Path, liked);
+
+        ProjectSettings old = Projects.Load(folder).Settings;
+        ProjectSettings loaded = Projects.Load(japanese.Folder).Settings;
+
+        Assert.False(old.Likes(null));
+        Assert.Equal([ "local", "openai/gpt-transcribe" ], loaded.LikedModels);
+        Assert.True(loaded.Likes(null));
+        Assert.False(loaded.Likes("x-ai/grok-stt-1.0"));
+        Assert.Contains("\"schemaVersion\": 4", File.ReadAllText(japanese.SettingsFile));
+    }
+
+    [Fact]
+    public void A_liked_model_must_be_a_router_ai_model_or_local()
+    {
+        var settings = new ProjectSettings("Облако", [ "ru" ], AudioRetention.Keep, LikedModels: [ "whisper" ]);
+
+        Assert.Throws<ArgumentException>(() => Projects.Validate(settings));
     }
 
     [Theory]

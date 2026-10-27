@@ -40,6 +40,9 @@ public sealed partial class ProjectEditor : ObservableObject
     [ObservableProperty]
     private string _error = "";
 
+    // Liked models are set in the engine box, not here: an edit keeps them.
+    private IReadOnlyList<string>? _likedModels;
+
     private ProjectEditor(bool isNew) => IsNew = isNew;
 
     public static IReadOnlyList<RetentionOption> RetentionOptions { get; } =
@@ -73,13 +76,15 @@ public sealed partial class ProjectEditor : ObservableObject
         PhrasePauseSeconds = project.Settings.PhrasePauseSeconds,
         Engine = project.Settings.Engine,
         CloudModel = project.Settings.CloudModel,
+        _likedModels = project.Settings.LikedModels,
     };
 
     /// <summary>The settings typed in; on a mistake <see cref="Error"/> says what is wrong and the result is null.</summary>
     public ProjectSettings? Build()
     {
         var settings = new ProjectSettings(
-            Name.Trim(), Projects.ParseLanguages(LanguagesText), Retention, Math.Round(PhrasePauseSeconds, 1), Engine, CloudModel.Trim());
+            Name.Trim(), Projects.ParseLanguages(LanguagesText), Retention, Math.Round(PhrasePauseSeconds, 1), Engine, CloudModel.Trim(),
+            _likedModels);
         try
         {
             Projects.Validate(settings);

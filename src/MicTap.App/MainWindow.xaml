@@ -583,11 +583,12 @@
                                              Value="{Binding Level, Mode=OneWay}" AutomationProperties.Name="Уровень" />
                             </StackPanel>
 
-                            <!-- Send, as in a chat: the agent gets the text now instead of at its pause or word count. -->
+                            <!-- Send, as in a chat: the agents get the text now instead of at their pause or word count. Only when some work with the recording. -->
                             <Button DockPanel.Dock="Right" Width="44" Height="44" Margin="8,0,0,0" VerticalAlignment="Center"
                                     Style="{StaticResource MaterialDesignIconButton}" Command="{Binding SendToAgentsCommand}"
-                                    ToolTip="{Binding SendToAgentsToolTip}" ToolTipService.ShowOnDisabled="True"
-                                    AutomationProperties.Name="Отправить агенту сейчас">
+                                    ToolTip="{Binding SendToAgentsToolTip}"
+                                    Visibility="{Binding HasRecordingAgents, Converter={StaticResource VisibleWhenTrue}}"
+                                    AutomationProperties.Name="{Binding SendToAgentsTitle}">
                                 <materialDesign:PackIcon Kind="Send" Width="24" Height="24" />
                             </Button>
 

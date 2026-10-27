@@ -51,7 +51,9 @@ public sealed partial class MainViewModel : ObservableObject
     private AudioDevice? _selectedDevice;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CanEditSettings), nameof(IsIdle), nameof(TrayToolTip), nameof(EmptyText), nameof(SessionNote), nameof(SessionHeader))]
+    [NotifyPropertyChangedFor(
+        nameof(CanEditSettings), nameof(IsIdle), nameof(TrayToolTip), nameof(EmptyText), nameof(SessionNote), nameof(SessionHeader),
+        nameof(HasRecordingAgents))]
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand),
         nameof(RetranscribeCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand),
@@ -68,6 +70,12 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private double _level;
+
+    /// <summary>Agents working with the recording, waiting or thinking: the send button is there only for them.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRecordingAgents), nameof(SendToAgentsTitle), nameof(SendToAgentsToolTip))]
+    [NotifyCanExecuteChangedFor(nameof(SendToAgentsCommand))]
+    private int _recordingAgents;
 
     /// <summary>Whether a Router AI key is saved, as the settings dialog says it.</summary>
     [ObservableProperty]
@@ -225,9 +233,15 @@ public sealed partial class MainViewModel : ObservableObject
     public string IdleDraftText =>
         $"Нажмите запись или {Hotkeys.ToggleRecording} — здесь появится то, что вы говорите. {Hotkeys.ForcePush} — отправить агенту.";
 
+    public bool HasRecordingAgents => IsRecording && RecordingAgents > 0;
+
+    public string SendToAgentsTitle => RecordingAgents > 1 ? "Отправить агентам сейчас" : "Отправить агенту сейчас";
+
     public string SendToAgentsToolTip =>
-        $"Отправить агенту сейчас — {Hotkeys.ForcePush}, во время записи, и из трея. Фраза, которую вы договорили, сразу уходит в текст, " +
-        "а агент получает всё, что ещё не читал, и отвечает, не дожидаясь паузы и нужного числа слов.";
+        $"{SendToAgentsTitle} — {Hotkeys.ForcePush}, во время записи и из трея.\n"
+        + (RecordingAgents > 1
+            ? "Фраза, которую вы договорили, сразу уходит в текст, агенты получают всё, что ещё не читали."
+            : "Фраза, которую вы договорили, сразу уходит в текст, агент получает всё, что ещё не читал.");
 
     public HotkeySettings Hotkeys => _settings.Hotkeys;
 
@@ -331,14 +345,24 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
+        if (RecordingAgents == 0)
+        {
+            ShowMessage("Отправлять некому: к этой записи не подключён ни один агент.", isError: true);
+            return;
+        }
+
         SessionInfo session = _recordingNode.Session;
         Transcript.Pipeline.Push(session);
         Cues.Pushed(_logger);
         int waiting = _agentsState?.AgentsOf(session).Count(a => a.State == AgentState.Waiting) ?? 0;
         ShowMessage(
-            waiting > 0
-                ? "Отправлено агенту: последняя фраза распознаётся, и он сразу получит весь текст."
-                : "Отправлено: агент сейчас не ждёт, получит текст сразу, как только снова спросит.",
+            (waiting, RecordingAgents) switch
+            {
+                (0, 1) => "Отправлено: агент сейчас не ждёт и получит текст, как только снова спросит.",
+                (0, _) => "Отправлено: агенты сейчас не ждут и получат текст, как только снова спросят.",
+                (_, 1) => "Отправлено агенту: последняя фраза распознаётся, и он сразу получит весь текст.",
+                _ => "Отправлено агентам: последняя фраза распознаётся, и они сразу получат весь текст.",
+            },
             isError: false);
     }
 
@@ -896,7 +920,7 @@ public sealed partial class MainViewModel : ObservableObject
     [RelayCommand(CanExecute = nameof(IsRecording))]
     private Task StopAsync() => _recorder.StopAsync();
 
-    [RelayCommand(CanExecute = nameof(IsRecording))]
+    [RelayCommand(CanExecute = nameof(HasRecordingAgents))]
     private void SendToAgents() => SendToAgentsNow();
 
     private bool CanRetranscribe(SessionNode? node) =>
@@ -1020,6 +1044,8 @@ public sealed partial class MainViewModel : ObservableObject
 
             project.AgentCount = inProject;
         }
+
+        RecordingAgents = _recordingNode is null ? 0 : _agentsState.AgentsOf(_recordingNode.Session).Count(a => a.State != AgentState.Gone);
 
         AgentRow[] rows = SelectedSession is null
             ? []

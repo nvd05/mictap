@@ -485,6 +485,7 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         Transcript.SessionDeleted(node.Session);
+        ForgetLastRecorded(node);
         _logger.Information("Session {Session} of {Project} sent to the Recycle Bin", node.Name, node.Project.Name);
         LoadProjects(select: node.Project.Project.Folder);
         ShowMessage($"Сессия «{node.Name}» удалена в корзину.", isError: false);
@@ -513,6 +514,7 @@ public sealed partial class MainViewModel : ObservableObject
         foreach (SessionNode session in node.Sessions)
         {
             Transcript.SessionDeleted(session.Session);
+            ForgetLastRecorded(session);
         }
 
         _logger.Information("Project {Project} with {Sessions} sessions sent to the Recycle Bin", node.Name, node.Sessions.Count);
@@ -1030,6 +1032,16 @@ public sealed partial class MainViewModel : ObservableObject
                 await RenameSessionAsync(node, SessionName);
             }
         });
+
+    /// <summary>The status line names the last recorded session: not once it is in the Recycle Bin.</summary>
+    private void ForgetLastRecorded(SessionNode deleted)
+    {
+        if (_recordingNode == deleted)
+        {
+            _recordingNode = null;
+            SessionText = "—";
+        }
+    }
 
     /// <summary>Sends a folder to the Recycle Bin; false, with <paramref name="failed"/> and the reason shown, when Windows refuses.</summary>
     private bool Recycle(string folder, string failed)

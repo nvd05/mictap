@@ -17,6 +17,7 @@
             <SolidColorBrush x:Key="ErrorContainerBrush" Color="#F9DEDC" />
             <SolidColorBrush x:Key="OnErrorContainerBrush" Color="#410E0B" />
             <BooleanToVisibilityConverter x:Key="VisibleWhenTrue" />
+            <materialDesign:BooleanToVisibilityConverter x:Key="CollapsedWhenTrue" TrueValue="Collapsed" FalseValue="Visible" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

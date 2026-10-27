@@ -6,7 +6,6 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using MicTap.Core;
 using MicTap.Hub;
-using Microsoft.VisualBasic.FileIO;
 using Microsoft.Win32;
 using Serilog;
 
@@ -79,6 +78,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     [ObservableProperty]
     private DraftOption? _selectedDraft;
+
+    [ObservableProperty]
+    private ArchiveOption? _selectedArchive;
 
     /// <summary>A Router AI key is saved; the settings show it masked with «Заменить» and «Удалить».</summary>
     [ObservableProperty]
@@ -196,8 +198,10 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The window asks for a new name of this session; null is the new session the next recording makes.</summary>
     public event EventHandler<SessionNode?>? RenameSessionRequested;
 
-    /// <summary>A project or a session is to go to the Recycle Bin once the user says yes.</summary>
+    /// <summary>A project or a session is to go to the archive once the user says yes.</summary>
     public event EventHandler<DeleteRequest>? DeleteRequested;
+
+    public event EventHandler? ArchiveRequested;
 
     /// <summary>The window shows the settings dialog.</summary>
     public event EventHandler? SettingsRequested;
@@ -209,6 +213,18 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>Languages of the selected project; the first one is its default.</summary>
     public ObservableCollection<LanguageOption> Languages { get; } = [];
+
+    public static IReadOnlyList<ArchiveOption> ArchiveOptions { get; } =
+    [
+        new(7, "7 дней"),
+        new(30, "30 дней"),
+        new(90, "90 дней"),
+        new(365, "Год"),
+        new(0, "Всегда — удалять только руками"),
+    ];
+
+    /// <summary>What the archive holds, for its dialog.</summary>
+    public ObservableCollection<ArchiveRow> ArchiveRows { get; } = [];
 
     public static IReadOnlyList<DraftOption> DraftOptions { get; } =
     [
@@ -298,6 +314,10 @@ public sealed partial class MainViewModel : ObservableObject
         LoadProjects();
         RepairProjects();
         _ = LoadCloudModelsAsync();
+        SelectedArchive = ArchiveOptions.FirstOrDefault(o => o.Days == _settings.ArchiveDays)
+            ?? new ArchiveOption(_settings.ArchiveDays, $"{_settings.ArchiveDays} дн. (из settings.json)");
+        PurgeArchive();
+        _ = new DispatcherTimer(TimeSpan.FromHours(1), DispatcherPriority.Background, (_, _) => PurgeArchive(), _dispatcher);
         SelectedDraft = DraftOptions.FirstOrDefault(o => o.Seconds == _settings.LiveDraftSeconds)
             ?? new DraftOption(_settings.LiveDraftSeconds, $"Каждые {_settings.LiveDraftSeconds} с (из settings.json)");
         Transcript.SetDraftInterval(_settings.LiveDraftSeconds);
@@ -534,7 +554,7 @@ public sealed partial class MainViewModel : ObservableObject
         ShowMessage($"Сессия «{after.Name}» перенесена в проект «{target.Name}».", isError: false);
     }
 
-    /// <summary>Sends a session to the Recycle Bin with its transcript, audio and agent cursors.</summary>
+    /// <summary>Moves a session to the archive with its transcript, audio and agent cursors.</summary>
     public async Task DeleteSessionAsync(SessionNode node)
     {
         if (node == _recordingNode)
@@ -549,19 +569,25 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        if (!Recycle(node.Session.Folder, $"Сессия «{node.Name}» не удалена"))
+        try
         {
+            Archive.ArchiveSession(RootFolder, node.Project.Project, node.Session, DateTimeOffset.Now);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Error(ex, "Archiving session {Session} failed", node.Name);
+            ShowMessage($"Сессия «{node.Name}» не удалена: {ex.Message}", isError: true);
             return;
         }
 
         Transcript.SessionDeleted(node.Session);
         ForgetLastRecorded(node);
-        _logger.Information("Session {Session} of {Project} sent to the Recycle Bin", node.Name, node.Project.Name);
+        _logger.Information("Session {Session} of {Project} moved to the archive", node.Name, node.Project.Name);
         LoadProjects(select: node.Project.Project.Folder);
-        ShowMessage($"Сессия «{node.Name}» удалена в корзину.", isError: false);
+        ShowMessage($"Сессия «{node.Name}» в архиве. {ArchiveNote}", isError: false);
     }
 
-    /// <summary>Sends a project with all its sessions to the Recycle Bin; an empty root gets a first project again.</summary>
+    /// <summary>Moves a project with all its sessions to the archive; an empty root gets a first project again.</summary>
     public async Task DeleteProjectAsync(ProjectNode node)
     {
         if (IsRecording || IsStarting)
@@ -576,8 +602,14 @@ public sealed partial class MainViewModel : ObservableObject
             return;
         }
 
-        if (!Recycle(node.Project.Folder, $"Проект «{node.Name}» не удалён"))
+        try
         {
+            Archive.ArchiveProject(RootFolder, node.Project, DateTimeOffset.Now);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Error(ex, "Archiving project {Project} failed", node.Name);
+            ShowMessage($"Проект «{node.Name}» не удалён: {ex.Message}", isError: true);
             return;
         }
 
@@ -587,9 +619,105 @@ public sealed partial class MainViewModel : ObservableObject
             ForgetLastRecorded(session);
         }
 
-        _logger.Information("Project {Project} with {Sessions} sessions sent to the Recycle Bin", node.Name, node.Sessions.Count);
+        _logger.Information("Project {Project} with {Sessions} sessions moved to the archive", node.Name, node.Sessions.Count);
         LoadProjects(); // the selected project stays; the deleted one gives way to the first
-        ShowMessage($"Проект «{node.Name}» удалён в корзину.", isError: false);
+        ShowMessage($"Проект «{node.Name}» в архиве. {ArchiveNote}", isError: false);
+    }
+
+    /// <summary>Puts an archived project or session back where it was and selects it.</summary>
+    public void RestoreArchived(ArchiveRow row)
+    {
+        string restored;
+        try
+        {
+            restored = Archive.Restore(RootFolder, row.Entry);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _logger.Error(ex, "Restoring {Folder} failed", row.Entry.Folder);
+            ShowMessage($"Не восстановлено: {ex.Message}", isError: true);
+            return;
+        }
+
+        _logger.Information("{Kind} {Name} restored from the archive to {Folder}", row.Entry.Info.Kind, row.Entry.Info.Name, restored);
+        bool session = row.Entry.Info.Kind == ArchivedKind.Session;
+        LoadProjects(select: session ? Path.GetDirectoryName(restored) : restored);
+        if (session && Projects.SelectMany(p => p.Sessions).FirstOrDefault(s => s.Session.Folder == restored) is { } node)
+        {
+            node.Project.IsExpanded = true;
+            node.IsSelected = true;
+            Select(node);
+        }
+
+        RefreshArchive();
+        ShowMessage($"Восстановлено: {row.Title}.", isError: false);
+    }
+
+    public void AskDeleteForever(ArchiveRow row) => row.IsConfirmingDelete = true;
+
+    public void CancelDeleteForever(ArchiveRow row) => row.IsConfirmingDelete = false;
+
+    /// <summary>The user said yes twice: the entry is deleted for good, not to the Recycle Bin.</summary>
+    public void DeleteForever(ArchiveRow row)
+    {
+        try
+        {
+            Archive.DeleteForever(row.Entry);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Error(ex, "Deleting {Folder} for good failed", row.Entry.Folder);
+            ShowMessage($"Не удалено: {ex.Message}", isError: true);
+            return;
+        }
+
+        _logger.Information("{Kind} {Name} deleted from the archive for good", row.Entry.Info.Kind, row.Entry.Info.Name);
+        RefreshArchive();
+    }
+
+    /// <summary>What the archive holds now, newest first, with when each goes for good.</summary>
+    public void RefreshArchive()
+    {
+        ArchiveRows.Clear();
+        IReadOnlyList<ArchiveEntry> entries;
+        try
+        {
+            entries = Archive.List(RootFolder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            _logger.Error(ex, "Reading the archive of {Root} failed", RootFolder);
+            ShowMessage($"Архив не прочитан: {ex.Message}", isError: true);
+            return;
+        }
+
+        DateTimeOffset now = DateTimeOffset.Now;
+        foreach (ArchiveEntry entry in entries)
+        {
+            ArchiveRows.Add(ArchiveRow.For(entry, ArchiveKeep, now));
+        }
+    }
+
+    private TimeSpan? ArchiveKeep => _settings.ArchiveDays > 0 ? TimeSpan.FromDays(_settings.ArchiveDays) : null;
+
+    private string ArchiveNote => _settings.ArchiveDays > 0
+        ? $"Восстановить — «Архив» над проектами; через {_settings.ArchiveDays} дн. удалится насовсем."
+        : "Восстановить — «Архив» над проектами.";
+
+    /// <summary>Deletes for good what has stayed in the archive longer than the settings keep it.</summary>
+    private void PurgeArchive()
+    {
+        try
+        {
+            foreach (ArchiveEntry entry in Archive.Purge(RootFolder, ArchiveKeep, DateTimeOffset.Now))
+            {
+                _logger.Information("{Kind} {Name} deleted for good: archived on {Deleted}", entry.Info.Kind, entry.Info.Name, entry.Info.DeletedAt);
+            }
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            _logger.Error(ex, "Cleaning the archive of {Root} failed", RootFolder);
+        }
     }
 
     /// <summary>Renames a session folder; its transcript, audio and agent cursors move with it.</summary>
@@ -750,7 +878,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void DeleteSession(SessionNode? node) =>
         DeleteRequested?.Invoke(this, new DeleteRequest(
             "Удалить сессию?",
-            $"Сессия «{node!.Name}» — текст, звук и записи агентов — уйдёт в корзину Windows; оттуда её можно восстановить.",
+            $"Сессия «{node!.Name}» — текст, звук и записи агентов — уйдёт в архив mictap. {ArchiveNote}",
             () => DeleteSessionAsync(node)));
 
     [RelayCommand(CanExecute = nameof(CanEditProject))]
@@ -760,10 +888,18 @@ public sealed partial class MainViewModel : ObservableObject
         DeleteRequested?.Invoke(this, new DeleteRequest(
             "Удалить проект?",
             project.Sessions.Count == 0
-                ? $"Проект «{project.Name}» уйдёт в корзину Windows; оттуда его можно восстановить."
+                ? $"Проект «{project.Name}» уйдёт в архив mictap. {ArchiveNote}"
                 : $"Проект «{project.Name}» и все его сессии ({project.Sessions.Count}) — текст, звук и записи агентов — уйдут в "
-                  + "корзину Windows; оттуда их можно восстановить.",
+                  + $"архив mictap. {ArchiveNote}",
             () => DeleteProjectAsync(project)));
+    }
+
+    [RelayCommand]
+    private void OpenArchive()
+    {
+        PurgeArchive();
+        RefreshArchive();
+        ArchiveRequested?.Invoke(this, EventArgs.Empty);
     }
 
     [RelayCommand]
@@ -887,6 +1023,18 @@ public sealed partial class MainViewModel : ObservableObject
         RefreshEngineChoices();
     }
 
+    partial void OnSelectedArchiveChanged(ArchiveOption? value)
+    {
+        if (value is null || value.Days == _settings.ArchiveDays)
+        {
+            return;
+        }
+
+        Save(_settings with { ArchiveDays = value.Days });
+        _logger.Information("Archive keeps {Days}", value.Days == 0 ? "everything" : $"{value.Days} days");
+        PurgeArchive();
+    }
+
     partial void OnSelectedDraftChanged(DraftOption? value)
     {
         if (value is null || value.Seconds == _settings.LiveDraftSeconds)
@@ -916,10 +1064,13 @@ public sealed partial class MainViewModel : ObservableObject
             ProjectInfo saved = Core.Projects.Save(project, settings);
             _logger.Information("Project {Project} phrases now go to {Engine}", saved.Name, value.Model ?? "the local Whisper");
             LoadProjects(select: saved.Folder);
+            bool recordingHere = _recordingNode is { } recording && recording.Project.Project.Folder == saved.Folder;
+            Transcript.EngineSwitched(recordingHere ? _recordingNode!.Session : null, value.Model);
             ShowMessage(
-                value.Model is null
-                    ? $"Проект «{saved.Name}»: фразы распознаёт видеокарта. Действует со следующей записи."
-                    : $"Проект «{saved.Name}»: фразы распознаёт Router AI · {value.Model} ({value.Price}). Действует со следующей записи.",
+                (value.Model is null
+                    ? $"Проект «{saved.Name}»: фразы распознаёт видеокарта."
+                    : $"Проект «{saved.Name}»: фразы распознаёт Router AI · {value.Model} ({value.Price}).")
+                + " Со следующей фразы, и для тех, что ждут в очереди.",
                 isError: false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
@@ -1116,6 +1267,14 @@ public sealed partial class MainViewModel : ObservableObject
             Projects.Add(node);
         }
 
+        // A rebuilt tree while recording: the recording session's new row carries on as the recording one.
+        if (_recordingNode is { } recording
+            && Projects.SelectMany(p => p.Sessions).FirstOrDefault(s => s.Session == recording.Session) is { } again)
+        {
+            again.IsRecording = true;
+            _recordingNode = again;
+        }
+
         ProjectNode? selected = Projects.FirstOrDefault(p => p.Project.Folder == keep) ?? Projects.FirstOrDefault();
         if (selected is not null)
         {
@@ -1280,22 +1439,6 @@ public sealed partial class MainViewModel : ObservableObject
         }
     }
 
-    /// <summary>Sends a folder to the Recycle Bin; false, with <paramref name="failed"/> and the reason shown, when Windows refuses.</summary>
-    private bool Recycle(string folder, string failed)
-    {
-        try
-        {
-            FileSystem.DeleteDirectory(folder, UIOption.OnlyErrorDialogs, RecycleOption.SendToRecycleBin);
-            return true;
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
-        {
-            _logger.Error(ex, "Sending {Folder} to the Recycle Bin failed", folder);
-            ShowMessage($"{failed}: {ex.Message}", isError: true);
-            return false;
-        }
-    }
-
     private void Save(AppSettings settings)
     {
         _settingsStore.Save(settings);
@@ -1363,6 +1506,36 @@ public sealed partial class MainViewModel : ObservableObject
 }
 
 public sealed record LanguageOption(string Code, string Name);
+
+/// <summary>How long the archive keeps a deleted project or session; <paramref name="Days"/> 0 is forever.</summary>
+public sealed record ArchiveOption(int Days, string Name)
+{
+    public override string ToString() => Name;
+}
+
+/// <summary>A line of the archive dialog; <see cref="IsConfirmingDelete"/> asks once more before deleting for good.</summary>
+public sealed partial class ArchiveRow(ArchiveEntry entry, string title, string details) : ObservableObject
+{
+    [ObservableProperty]
+    private bool _isConfirmingDelete;
+
+    public ArchiveEntry Entry { get; } = entry;
+
+    public string Title { get; } = title;
+
+    public string Details { get; } = details;
+
+    public static ArchiveRow For(ArchiveEntry entry, TimeSpan? keep, DateTimeOffset now)
+    {
+        ArchiveInfo info = entry.Info;
+        string title = info.Kind == ArchivedKind.Project ? $"Проект «{info.Name}»" : $"Сессия «{info.Name}» · проект «{info.ProjectName}»";
+        string deleted = $"удалено {info.DeletedAt.ToLocalTime():dd.MM HH:mm}";
+        string expires = entry.ExpiresAt(keep) is { } at
+            ? $" · насовсем через {Math.Max(0, (int)Math.Ceiling((at - now).TotalDays))} дн."
+            : "";
+        return new ArchiveRow(entry, title, deleted + expires);
+    }
+}
 
 /// <summary>How often the draft is recognized; <paramref name="Seconds"/> 0 is off.</summary>
 public sealed record DraftOption(int Seconds, string Name)

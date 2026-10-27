@@ -30,6 +30,7 @@ public partial class MainWindow : Window
             _ = ShowProjectDialogAsync(ProjectEditor.For(project), settings => viewModel.SaveProject(project, settings));
         viewModel.RenameSessionRequested += (_, session) => _ = ShowRenameDialogAsync(session);
         viewModel.DeleteRequested += (_, request) => _ = ConfirmDeleteAsync(request);
+        viewModel.ArchiveRequested += (_, _) => _ = ShowArchiveAsync();
         viewModel.SettingsRequested += (_, _) => _ = ShowSettingsAsync();
         viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
         viewModel.Transcript.PropertyChanged += (_, e) =>
@@ -129,6 +130,23 @@ public partial class MainWindow : Window
             await _viewModel.ApplyRenameAsync(session, editor.Name);
         }
     }
+
+    private async Task ShowArchiveAsync()
+    {
+        var content = (FrameworkElement)FindResource("ArchiveDialog");
+        content.DataContext = _viewModel;
+        await DialogHost.Show(content, "MainDialog");
+    }
+
+    private void OnRestoreArchived(object sender, RoutedEventArgs e) => _viewModel.RestoreArchived(RowOf(sender));
+
+    private void OnAskDeleteForever(object sender, RoutedEventArgs e) => _viewModel.AskDeleteForever(RowOf(sender));
+
+    private void OnCancelDeleteForever(object sender, RoutedEventArgs e) => _viewModel.CancelDeleteForever(RowOf(sender));
+
+    private void OnDeleteForever(object sender, RoutedEventArgs e) => _viewModel.DeleteForever(RowOf(sender));
+
+    private static ArchiveRow RowOf(object sender) => (ArchiveRow)((FrameworkElement)sender).DataContext;
 
     /// <summary>A delete goes ahead only after a yes in the dialog.</summary>
     private async Task ConfirmDeleteAsync(DeleteRequest request)

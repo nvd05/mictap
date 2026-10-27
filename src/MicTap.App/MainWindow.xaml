@@ -99,7 +99,57 @@
             </StackPanel>
         </StackPanel>
 
-        <!-- Before a project or a session goes to the Recycle Bin. -->
+        <!-- Deleted projects and sessions: put back, or delete for good after a second yes. -->
+        <StackPanel x:Key="ArchiveDialog" x:Shared="False" Margin="24" Width="600" d:DataContext="{d:DesignInstance Type=local:MainViewModel}">
+            <TextBlock Text="Архив" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Opacity="0.7" Style="{StaticResource MaterialDesignBodySmallTextBlock}"
+                       Text="Удалённые проекты и сессии — с текстом, звуком и записями агентов. Срок хранения — в «Настройках»." />
+            <TextBlock Margin="0,16,0,0" Text="Архив пуст." Opacity="0.6">
+                <TextBlock.Style>
+                    <Style TargetType="TextBlock" BasedOn="{StaticResource MaterialDesignBodyMediumTextBlock}">
+                        <Setter Property="Visibility" Value="Collapsed" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding ArchiveRows.Count}" Value="0">
+                                <Setter Property="Visibility" Value="Visible" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </TextBlock.Style>
+            </TextBlock>
+            <ScrollViewer Margin="0,12,0,0" MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding ArchiveRows}" AutomationProperties.Name="Архив">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:ArchiveRow}">
+                            <DockPanel Margin="0,4">
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
+                                            Visibility="{Binding IsConfirmingDelete, Converter={StaticResource CollapsedWhenTrue}}">
+                                    <Button Content="Восстановить" Style="{StaticResource MaterialDesignOutlinedButton}" Click="OnRestoreArchived"
+                                            AutomationProperties.Name="{Binding Title, StringFormat=Восстановить {0}}" />
+                                    <Button Margin="8,0,0,0" Content="Удалить насовсем" Style="{StaticResource MaterialDesignFlatButton}"
+                                            Click="OnAskDeleteForever" AutomationProperties.Name="{Binding Title, StringFormat=Удалить насовсем {0}}" />
+                                </StackPanel>
+                                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"
+                                            Visibility="{Binding IsConfirmingDelete, Converter={StaticResource VisibleWhenTrue}}">
+                                    <TextBlock Text="Удалить без возврата?" VerticalAlignment="Center" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                                    <Button Margin="8,0,0,0" Content="Удалить" Foreground="{StaticResource RecordBrush}"
+                                            Style="{StaticResource MaterialDesignFlatButton}" Click="OnDeleteForever"
+                                            AutomationProperties.Name="{Binding Title, StringFormat='Да, удалить насовсем {0}'}" />
+                                    <Button Content="Отмена" Style="{StaticResource MaterialDesignFlatButton}" Click="OnCancelDeleteForever" />
+                                </StackPanel>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                                    <TextBlock Text="{Binding Details}" Opacity="0.6" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                                </StackPanel>
+                            </DockPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <Button Margin="0,16,0,0" HorizontalAlignment="Right" Content="Закрыть" IsCancel="True" IsDefault="True"
+                    Style="{StaticResource MaterialDesignFlatButton}" Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" />
+        </StackPanel>
+
+        <!-- Before a project or a session goes to the archive. -->
         <StackPanel x:Key="DeleteDialog" x:Shared="False" Margin="24" MaxWidth="420" d:DataContext="{d:DesignInstance Type=local:DeleteRequest}">
             <TextBlock Text="{Binding Title}" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
             <TextBlock Margin="0,16,0,0" TextWrapping="Wrap" Opacity="0.8" Text="{Binding Text}"
@@ -169,6 +219,13 @@
                               ItemsSource="{x:Static local:MainViewModel.DraftOptions}" SelectedItem="{Binding SelectedDraft}" />
                     <TextBlock Style="{StaticResource SettingsNote}"
                                Text="Черновик — главная постоянная нагрузка на видеокарту: то, что звучит сейчас, распознаётся заново с каждым обновлением. Готовые фразы распознаются один раз при любой частоте. Реже или выключен — меньше расход батареи." />
+
+                    <TextBlock Text="Архив удалённого хранится" Style="{StaticResource SettingsHeader}" />
+                    <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                              AutomationProperties.Name="Срок хранения архива"
+                              ItemsSource="{x:Static local:MainViewModel.ArchiveOptions}" SelectedItem="{Binding SelectedArchive}" />
+                    <TextBlock Style="{StaticResource SettingsNote}"
+                               Text="Удалённые проекты и сессии лежат в архиве (кнопка над проектами), потом удаляются насовсем." />
 
                     <TextBlock Text="Хоткеи" Style="{StaticResource SettingsHeader}" />
                     <Border CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">
@@ -462,6 +519,11 @@
                                     ToolTip="Новый проект" AutomationProperties.Name="Новый проект" Command="{Binding NewProjectCommand}">
                                 <materialDesign:PackIcon Kind="FolderPlusOutline" Width="18" Height="18" />
                             </Button>
+                            <Button DockPanel.Dock="Right" Style="{StaticResource MaterialDesignIconButton}" Width="32" Height="32"
+                                    ToolTip="Архив: удалённые проекты и сессии, их можно восстановить" AutomationProperties.Name="Архив"
+                                    Command="{Binding OpenArchiveCommand}">
+                                <materialDesign:PackIcon Kind="ArchiveOutline" Width="18" Height="18" />
+                            </Button>
                             <TextBlock Text="Проекты" VerticalAlignment="Center" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
                         </DockPanel>
                         <TreeView x:Name="ProjectTree" ItemsSource="{Binding Projects}" ItemContainerStyle="{StaticResource TreeRow}" BorderThickness="0" Background="Transparent"
@@ -701,11 +763,11 @@
                                               DisplayMemberPath="Name" SelectedValuePath="Code"
                                               ItemsSource="{Binding Languages}" SelectedValue="{Binding Language}" />
                                     <!-- The price is per minute of speech; switched before a recording. -->
-                                    <ComboBox Width="250" Margin="10,0,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                                    <ComboBox Width="300" Margin="10,0,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
                                               materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                                               materialDesign:HintAssist.Hint="Распознавание" AutomationProperties.Name="Распознавание фраз"
-                                              ToolTip="Кто распознаёт фразы этого проекта: видеокарта или модель Router AI (платно). Меняется до записи."
-                                              IsEnabled="{Binding IsIdle}" MaxDropDownHeight="420" Grid.IsSharedSizeScope="True"
+                                              ToolTip="Кто распознаёт фразы этого проекта: видеокарта или модель Router AI (платно). Можно менять и во время записи: со следующей фразы, и для тех, что ждут в очереди."
+                                              MaxDropDownHeight="420" Grid.IsSharedSizeScope="True"
                                               ItemsSource="{Binding EngineChoices}" SelectedItem="{Binding SelectedEngine}">
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate DataType="{x:Type local:EngineChoice}">

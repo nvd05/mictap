@@ -113,7 +113,8 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _detectors = Task.Run(LoadDetectorsAsync);
         _pipeline = new TranscriptionPipeline(
             _host, _detectors, logger,
-            (session, model) => new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read(), spend => OnCloudSpent(session, spend)));
+            (session, model) => new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read(), spend => OnCloudSpent(session, spend)),
+            CurrentModel);
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
         _pipeline.SegmentTranscribed += OnSegmentTranscribed;
@@ -147,6 +148,20 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     {
         _host.Start();
         _pipeline.Start();
+    }
+
+    /// <summary>
+    /// A project's engine was switched: the recording's status says where its phrases go, and a phrase waiting for its
+    /// next cloud try goes again at once, with the new engine.
+    /// </summary>
+    public void EngineSwitched(SessionInfo? recording, string? model)
+    {
+        if (recording is not null && _live && recording == _liveSession)
+        {
+            ShowCloud(model, recording);
+        }
+
+        _pipeline.EngineChanged();
     }
 
     /// <summary>How often the draft is recognized, in seconds; 0 turns it off. Applies to the recording under way too.</summary>
@@ -401,6 +416,20 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
                 StatusText = $"Распознавание упало: {state.Error?.Message}\n"
                     + $"Перезапуск через {state.RetryIn.TotalSeconds:0} с. Запись идёт, фразы ждут в очереди.";
                 break;
+        }
+    }
+
+    /// <summary>Pipeline thread: the engine a session's project uses now; its project.json says, or the recording's own on a bad read.</summary>
+    private string? CurrentModel(SessionInfo session, string? recordingModel)
+    {
+        try
+        {
+            return Projects.Load(Path.GetDirectoryName(session.Folder)!).Settings.CloudModelInUse;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            _logger.Warning(ex, "Project of {Session} not read; its phrases keep {Model}", session.Name, recordingModel ?? "this computer");
+            return recordingModel;
         }
     }
 

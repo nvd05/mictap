@@ -30,4 +30,7 @@ public sealed record HotkeySettings
     public string ToggleLanguage { get; init; } = "Ctrl+Alt+L";
 
     public string ToggleRecording { get; init; } = "Ctrl+Alt+R";
+
+    /// <summary>Sends what has been said to the waiting agents at once, see <see cref="TranscriptionPipeline.Push"/>.</summary>
+    public string ForcePush { get; init; } = "Ctrl+Alt+Enter";
 }

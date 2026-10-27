@@ -9,6 +9,7 @@ public sealed class HotkeyTests
     [InlineData("Control+F5", HotkeyModifiers.Control, 0x74)]
     [InlineData("Alt+F24", HotkeyModifiers.Alt, 0x87)]
     [InlineData("Ctrl+Space", HotkeyModifiers.Control, 0x20)]
+    [InlineData("Ctrl+Alt+Enter", HotkeyModifiers.Control | HotkeyModifiers.Alt, 0x0D)]
     public void Valid_hotkeys_parse_to_modifiers_and_virtual_key(string text, HotkeyModifiers modifiers, int virtualKey)
     {
         Assert.True(Hotkey.TryParse(text, out Hotkey? hotkey, out string error), error);

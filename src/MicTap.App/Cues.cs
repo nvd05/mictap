@@ -4,21 +4,29 @@ using Serilog;
 
 namespace MicTap.App;
 
-/// <summary>A short tone on a language switch — higher for Japanese than for Russian — so it is heard without looking.</summary>
-public static class LanguageCue
+/// <summary>Short tones for what a hotkey did, so it is heard without looking.</summary>
+public static class Cues
 {
-    private static readonly TimeSpan Length = TimeSpan.FromMilliseconds(150);
+    /// <summary>A language switch: higher for Japanese than for Russian.</summary>
+    public static void Language(string language, ILogger logger) =>
+        Play(
+            logger,
+            (language switch
+            {
+                "ru" => 660,
+                "ja" => 1046,
+                _ => 830,
+            }, 150));
 
-    public static void Play(string language, ILogger logger)
+    /// <summary>The text went to the agents: two quick rising tones, unlike any language.</summary>
+    public static void Pushed(ILogger logger) => Play(logger, (784, 80), (1175, 80));
+
+    private static void Play(ILogger logger, params (double Frequency, int Milliseconds)[] notes)
     {
-        double frequency = language switch
-        {
-            "ru" => 660,
-            "ja" => 1046,
-            _ => 830,
-        };
-        ISampleProvider tone = new SignalGenerator(44100, 1) { Type = SignalGeneratorType.Sin, Frequency = frequency, Gain = 0.2 }
-            .Take(Length);
+        ISampleProvider tone = notes
+            .Select(note => new SignalGenerator(44100, 1) { Type = SignalGeneratorType.Sin, Frequency = note.Frequency, Gain = 0.2 }
+                .Take(TimeSpan.FromMilliseconds(note.Milliseconds)))
+            .Aggregate((first, next) => first.FollowedBy(next));
         var output = new WaveOutEvent();
         try
         {
@@ -27,7 +35,7 @@ public static class LanguageCue
         catch (NAudio.MmException ex)
         {
             output.Dispose();
-            logger.Warning(ex, "No sound device for the language cue");
+            logger.Warning(ex, "No sound device for the cue");
             return;
         }
 

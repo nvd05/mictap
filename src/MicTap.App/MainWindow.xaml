@@ -148,6 +148,7 @@
                                 <RowDefinition Height="30" />
                                 <RowDefinition Height="34" />
                                 <RowDefinition Height="34" />
+                                <RowDefinition Height="34" />
                             </Grid.RowDefinitions>
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="Действие" VerticalAlignment="Center" Opacity="0.6"
                                        Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
@@ -164,6 +165,12 @@
                                        Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
                             <Border Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
                                 <TextBlock Text="{Binding Hotkeys.ToggleRecording}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                            </Border>
+                            <Separator Grid.Row="3" Grid.ColumnSpan="2" VerticalAlignment="Top" Margin="0" />
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Отправить агенту сейчас" VerticalAlignment="Center"
+                                       Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                            <Border Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
+                                <TextBlock Text="{Binding Hotkeys.ForcePush}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
                             </Border>
                         </Grid>
                     </Border>
@@ -523,6 +530,14 @@
                                              materialDesign:TransitionAssist.DisableTransitions="True"
                                              Value="{Binding Level, Mode=OneWay}" AutomationProperties.Name="Уровень" />
                             </StackPanel>
+
+                            <!-- Send, as in a chat: the agent gets the text now instead of at its pause or word count. -->
+                            <Button DockPanel.Dock="Right" Width="44" Height="44" Margin="8,0,0,0" VerticalAlignment="Center"
+                                    Style="{StaticResource MaterialDesignIconButton}" Command="{Binding SendToAgentsCommand}"
+                                    ToolTip="{Binding SendToAgentsToolTip}" ToolTipService.ShowOnDisabled="True"
+                                    AutomationProperties.Name="Отправить агенту сейчас">
+                                <materialDesign:PackIcon Kind="Send" Width="24" Height="24" />
+                            </Button>
 
                             <ComboBox DockPanel.Dock="Right" Width="150" Margin="12,0,0,0" VerticalAlignment="Center"
                                       Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"

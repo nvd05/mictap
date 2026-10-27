@@ -54,7 +54,7 @@ public sealed partial class MainViewModel : ObservableObject
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand),
         nameof(RetranscribeCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand),
-        nameof(RenameSessionCommand))]
+        nameof(RenameSessionCommand), nameof(SendToAgentsCommand))]
     private bool _isRecording;
 
     [ObservableProperty]
@@ -215,6 +215,10 @@ public sealed partial class MainViewModel : ObservableObject
     public string IdleDraftText =>
         $"Нажмите запись или {Hotkeys.ToggleRecording} — здесь появится то, что вы говорите. {Hotkeys.ToggleLanguage} — следующий язык.";
 
+    public string SendToAgentsToolTip =>
+        $"Отправить агенту сейчас — {Hotkeys.ForcePush}, во время записи, и из трея. Фраза, которую вы договорили, сразу уходит в текст, " +
+        "а агент получает всё, что ещё не читал, и отвечает, не дожидаясь паузы и нужного числа слов.";
+
     public HotkeySettings Hotkeys => _settings.Hotkeys;
 
     public string SettingsFile => _settingsStore.FilePath;
@@ -303,6 +307,29 @@ public sealed partial class MainViewModel : ObservableObject
         {
             ShowMessage("Запись по хоткею не началась: сначала выберите проект и микрофон.", isError: true);
         }
+    }
+
+    /// <summary>
+    /// Button and hotkey: the thought is finished — the phrase being spoken goes to the text at once, and the agents of
+    /// the recording get everything they have not read, without waiting for their pause or word count.
+    /// </summary>
+    public void SendToAgentsNow()
+    {
+        if (!IsRecording || _recordingNode is null)
+        {
+            ShowMessage("Отправлять агенту нечего: запись не идёт.", isError: true);
+            return;
+        }
+
+        SessionInfo session = _recordingNode.Session;
+        Transcript.Pipeline.Push(session);
+        Cues.Pushed(_logger);
+        int waiting = _agentsState?.AgentsOf(session).Count(a => a.State == AgentState.Waiting) ?? 0;
+        ShowMessage(
+            waiting > 0
+                ? "Отправлено агенту: последняя фраза распознаётся, и он сразу получит весь текст."
+                : "Отправлено: агент сейчас не ждёт, получит текст сразу, как только снова спросит.",
+            isError: false);
     }
 
     public void ShowHotkeyProblems(IReadOnlyList<string> problems)
@@ -612,7 +639,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         // During a recording the switch is a mark: speech from here on is recognized in the new language.
         _recorder.MarkLanguage(value);
-        LanguageCue.Play(value, _logger);
+        Cues.Language(value, _logger);
     }
 
     partial void OnSelectedProjectChanged(ProjectInfo? value)
@@ -716,6 +743,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand(CanExecute = nameof(IsRecording))]
     private Task StopAsync() => _recorder.StopAsync();
+
+    [RelayCommand(CanExecute = nameof(IsRecording))]
+    private void SendToAgents() => SendToAgentsNow();
 
     private bool CanRetranscribe(SessionNode? node) =>
         !IsRecording && !IsStarting && (node?.Session ?? SelectedSession) is { } session && !Transcript.IsRetranscribing

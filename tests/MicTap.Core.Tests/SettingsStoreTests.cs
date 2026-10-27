@@ -83,7 +83,9 @@ public sealed class SettingsStoreTests : IDisposable
 
         AppSettings settings = new SettingsStore(path).Load();
 
-        Assert.Equal(new HotkeySettings { ToggleLanguage = "Ctrl+Alt+J", ToggleRecording = "Ctrl+Alt+R" }, settings.Hotkeys);
+        Assert.Equal(
+            new HotkeySettings { ToggleLanguage = "Ctrl+Alt+J", ToggleRecording = "Ctrl+Alt+R", ForcePush = "Ctrl+Alt+Enter" },
+            settings.Hotkeys);
     }
 
     [Fact]

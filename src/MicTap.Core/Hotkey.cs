@@ -14,10 +14,11 @@ public enum HotkeyModifiers
 /// <summary>A global hotkey parsed from settings.json, such as "Ctrl+Alt+L"; <see cref="VirtualKey"/> is a Win32 VK code.</summary>
 public sealed record Hotkey(HotkeyModifiers Modifiers, int VirtualKey, string Text)
 {
+    private const int VkReturn = 0x0D;
     private const int VkSpace = 0x20;
 
     /// <summary>
-    /// Parses "Ctrl+Alt+L": modifiers Ctrl, Alt, Shift, Win and one key — a letter, a digit or F1..F24.
+    /// Parses "Ctrl+Alt+L": modifiers Ctrl, Alt, Shift, Win and one key — a letter, a digit, Space, Enter or F1..F24.
     /// At least one modifier is required. Keyboard layout switches (Win+Space) are refused.
     /// </summary>
     public static bool TryParse(string text, out Hotkey? hotkey, out string error)
@@ -79,6 +80,11 @@ public sealed record Hotkey(HotkeyModifiers Modifiers, int VirtualKey, string Te
         if (upper == "SPACE")
         {
             return VkSpace;
+        }
+
+        if (upper is "ENTER" or "RETURN")
+        {
+            return VkReturn;
         }
 
         if (upper.Length > 1 && upper[ 0 ] == 'F' && int.TryParse(upper[ 1.. ], out int number) && number is >= 1 and <= 24)

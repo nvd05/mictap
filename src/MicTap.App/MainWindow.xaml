@@ -499,8 +499,7 @@
                     <Run Text="   Записано " Foreground="Gray" /><Run Text="{Binding RecordedText, Mode=OneWay}" />
                     <Run Text="   Язык " Foreground="Gray" /><Run Text="{Binding LanguageText, Mode=OneWay}" />
                     <Run Text="   Хаб " Foreground="Gray" /><Run Text="{Binding HubText, Mode=OneWay}" />
-                    <Run Text="   Распознавание " Foreground="Gray" /><Run Text="{Binding Transcript.RuntimeText, Mode=OneWay}" />
-                    <Run Text="{Binding Transcript.CloudText, Mode=OneWay}" />
+                    <Run Text="   Распознавание " Foreground="Gray" /><Run Text="{Binding Transcript.RecognitionText, Mode=OneWay}" />
                 </TextBlock>
             </Border>
 

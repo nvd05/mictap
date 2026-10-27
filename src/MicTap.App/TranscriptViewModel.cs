@@ -60,6 +60,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private CloudUsage _cloudSpent = CloudUsage.None;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RecognitionText))]
     private string _runtimeText = "—";
 
     [ObservableProperty]
@@ -70,11 +71,8 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     /// <summary>The draft is off in the settings: the recording bar says so instead of «Слушаю…».</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RecognitionText))]
     private bool _isDraftOff;
-
-    /// <summary>The status line's cloud part while a recording's phrases go to Router AI; empty otherwise.</summary>
-    [ObservableProperty]
-    private string _cloudText = "";
 
     [ObservableProperty]
     private bool _isDownloading;
@@ -136,6 +134,27 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     }
 
     public ObservableCollection<TranscriptItem> Items { get; } = [];
+
+    /// <summary>
+    /// The status line's «Распознавание»: who recognizes the phrases and the draft. The graphics card's runtime alone
+    /// when it does both; with Router AI, the phrases' model and what the session spent, and the draft apart.
+    /// </summary>
+    public string RecognitionText
+    {
+        get
+        {
+            string draft = IsDraftOff ? "черновик выключен" : $"черновик — {RuntimeText}";
+            if (_cloudModel is null)
+            {
+                return IsDraftOff ? $"{RuntimeText}, черновик выключен" : RuntimeText;
+            }
+
+            string phrases = _cloudFailing
+                ? "фразы — Router AI: сбой"
+                : $"фразы — Router AI · {_cloudModel} · {_cloudSpent.Rubles:0.00} ₽";
+            return $"{phrases}, {draft}";
+        }
+    }
 
     /// <summary>The session whose text <see cref="Items"/> holds.</summary>
     public SessionInfo? ShownSession => _session;
@@ -450,10 +469,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         ShowCloudText();
     }
 
-    private void ShowCloudText() =>
-        CloudText = _cloudModel is null ? ""
-            : _cloudFailing ? "   Фразы Router AI · сбой"
-            : $"   Фразы Router AI · {_cloudModel} · {_cloudSpent.Rubles:0.00} ₽";
+    private void ShowCloudText() => OnPropertyChanged(nameof(RecognitionText));
 
     /// <summary>Pipeline thread: one cloud answer is paid for; the session's cloud.json adds it up.</summary>
     private void OnCloudSpent(SessionInfo session, CloudSpend spend)

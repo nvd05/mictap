@@ -12,8 +12,6 @@ public sealed record RetranscribeResult(IReadOnlyList<TranscriptLine> Lines, str
 public sealed class SessionRetranscriber(
     TranscriberHost host, Func<SpeechDetector> createDetector, TimeProvider time, ILogger logger, TimeSpan? pause = null)
 {
-    private const int BlockSamples = 16000;
-
     private readonly ILogger _logger = logger.ForContext<SessionRetranscriber>();
 
     /// <param name="languageOfSchema1">Language of sessions recorded before v0.3, whose meta.json has no marks.</param>
@@ -22,13 +20,7 @@ public sealed class SessionRetranscriber(
         SessionInfo session, string languageOfSchema1, IProgress<double> progress, CancellationToken cancellation)
     {
         SessionMeta meta = SessionMeta.Read(session, languageOfSchema1);
-        string[] chunks = Directory.Exists(session.AudioFolder)
-            ? [ .. Directory.EnumerateFiles(session.AudioFolder, "*.wav").OrderBy(ChunkNumber) ]
-            : [];
-        if (chunks.Length == 0)
-        {
-            throw new InvalidOperationException($"В {session.AudioFolder} нет звука — распознавать заново нечего.");
-        }
+        string[] chunks = SessionPhrases.Chunks(session);
 
         string transcript = Path.Combine(session.Folder, JsonlTranscriptSink.FileName);
         string? backup = null;
@@ -40,30 +32,7 @@ public sealed class SessionRetranscriber(
 
         _logger.Information("Recognizing {Session} again from {Chunks} chunks; old transcript kept as {Backup}", session.Name, chunks.Length, backup);
         var sink = new JsonlTranscriptSink(session.Folder);
-        var segmenter = new SpeechSegmenter(createDetector(), meta.LanguageMarks[ 0 ].Lang, pause: pause);
-        foreach (LanguageMark mark in meta.LanguageMarks.Skip(1))
-        {
-            segmenter.Mark(TimeSpan.FromSeconds(mark.At), mark.Lang); // ahead of the audio: applied when it gets there
-        }
-
-        long total = chunks.Sum(c => new FileInfo(c).Length);
-        long done = 0;
-        foreach (string chunk in chunks)
-        {
-            float[] samples = WavSamples.Read(chunk);
-            for (int at = 0; at < samples.Length; at += BlockSamples)
-            {
-                foreach (SpeechSegment segment in segmenter.Add(samples.AsSpan(at, Math.Min(BlockSamples, samples.Length - at))))
-                {
-                    await RecognizeAsync(sink, segment, cancellation);
-                }
-            }
-
-            done += new FileInfo(chunk).Length;
-            progress.Report((double)done / total);
-        }
-
-        foreach (SpeechSegment segment in segmenter.Flush())
+        foreach (SpeechSegment segment in SessionPhrases.Cut(chunks, meta, createDetector(), pause, progress))
         {
             await RecognizeAsync(sink, segment, cancellation);
         }
@@ -71,10 +40,6 @@ public sealed class SessionRetranscriber(
         _logger.Information("{Session} recognized again: {Lines} lines", session.Name, sink.Lines.Count);
         return new RetranscribeResult(sink.Lines, backup);
     }
-
-    /// <summary>Chunks go in numeric order: 999.wav before 1000.wav.</summary>
-    private static int ChunkNumber(string path) =>
-        int.TryParse(Path.GetFileNameWithoutExtension(path), out int number) ? number : int.MaxValue;
 
     private async Task RecognizeAsync(JsonlTranscriptSink sink, SpeechSegment segment, CancellationToken cancellation)
     {

@@ -31,6 +31,7 @@ public partial class MainWindow : Window
         viewModel.RenameSessionRequested += (_, session) => _ = ShowRenameDialogAsync(session);
         viewModel.DeleteRequested += (_, request) => _ = ConfirmDeleteAsync(request);
         viewModel.ArchiveRequested += (_, _) => _ = ShowArchiveAsync();
+        viewModel.CompareRequested += (_, editor) => _ = ShowComparisonAsync(editor);
         viewModel.SettingsRequested += (_, _) => _ = ShowSettingsAsync();
         viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
         viewModel.Transcript.PropertyChanged += (_, e) =>
@@ -128,6 +129,16 @@ public partial class MainWindow : Window
         if (await DialogHost.Show(content, "MainDialog") is true)
         {
             await _viewModel.ApplyRenameAsync(session, editor.Name);
+        }
+    }
+
+    private async Task ShowComparisonAsync(ComparisonEditor editor)
+    {
+        var content = (FrameworkElement)FindResource("CompareDialog");
+        content.DataContext = editor;
+        if (await DialogHost.Show(content, "MainDialog") is true)
+        {
+            await _viewModel.CompareAsync(editor);
         }
     }
 

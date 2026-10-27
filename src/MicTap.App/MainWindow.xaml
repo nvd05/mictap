@@ -99,6 +99,39 @@
             </StackPanel>
         </StackPanel>
 
+        <!-- Which engines hear the session's audio for a comparison, and roughly what the paid ones cost. -->
+        <StackPanel x:Key="CompareDialog" x:Shared="False" Margin="24" Width="520" d:DataContext="{d:DesignInstance Type=local:ComparisonEditor}">
+            <TextBlock Text="Сравнить модели" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+            <TextBlock Margin="0,8,0,0" TextWrapping="Wrap" Opacity="0.7" Style="{StaticResource MaterialDesignBodySmallTextBlock}"
+                       Text="Звук сессии режется на фразы один раз, и каждую фразу распознают все выбранные. Цена — за минуту речи." />
+            <ScrollViewer Margin="0,12,0,0" MaxHeight="380" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Choices}" AutomationProperties.Name="Модели для сравнения" Grid.IsSharedSizeScope="True">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:CompareChoice}">
+                            <CheckBox Margin="0,3" IsChecked="{Binding IsChecked}" AutomationProperties.Name="{Binding Title}">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" SharedSizeGroup="Model" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Title}" />
+                                    <TextBlock Grid.Column="1" Margin="16,0,0,0" Text="{Binding Price}" Opacity="0.6" />
+                                </Grid>
+                            </CheckBox>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <TextBlock Margin="0,12,0,0" TextWrapping="Wrap" Text="{Binding EstimateText}" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+            <StackPanel Margin="0,20,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Отмена" IsCancel="True" Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" />
+                <Button Content="Сравнить" Margin="8,0,0,0" IsDefault="True" Style="{StaticResource MaterialDesignFlatButton}"
+                        IsEnabled="{Binding CanCompare}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" CommandParameter="{StaticResource Confirm}" />
+            </StackPanel>
+        </StackPanel>
+
         <!-- Deleted projects and sessions: put back, or delete for good after a second yes. -->
         <StackPanel x:Key="ArchiveDialog" x:Shared="False" Margin="24" Width="600" d:DataContext="{d:DesignInstance Type=local:MainViewModel}">
             <TextBlock Text="Архив" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
@@ -380,6 +413,10 @@
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       ToolTip="Прогнать звук сессии через VAD и Whisper ещё раз; прежний текст сохранится в transcript.&lt;время&gt;.bak"
                       Icon="{materialDesign:PackIcon Kind=Refresh}" />
+            <MenuItem Header="Сравнить модели…" Command="{Binding CompareModelsCommand}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      ToolTip="Распознать звук сессии несколькими моделями на одних и тех же фразах и сложить рядом в compare\comparison.md"
+                      Icon="{materialDesign:PackIcon Kind=CompareHorizontal}" />
             <Separator />
             <MenuItem Header="Перенести в проект" Tag="Move" Icon="{materialDesign:PackIcon Kind=FolderMoveOutline}" />
             <Separator />
@@ -766,7 +803,8 @@
                                               materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                                               materialDesign:HintAssist.Hint="Распознавание" AutomationProperties.Name="Распознавание фраз"
                                               ToolTip="Кто распознаёт фразы этого проекта: видеокарта или модель Router AI (платно). Можно менять и во время записи: со следующей фразы, и для тех, что ждут в очереди."
-                                              MaxDropDownHeight="420" Grid.IsSharedSizeScope="True"
+                                              MaxDropDownHeight="640" Grid.IsSharedSizeScope="True"
+                                              IsTextSearchEnabled="True" TextSearch.TextPath="Title"
                                               ItemsSource="{Binding EngineChoices}" SelectedItem="{Binding SelectedEngine}">
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate DataType="{x:Type local:EngineChoice}">

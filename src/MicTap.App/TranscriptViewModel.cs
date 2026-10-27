@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using System.IO;
 using System.Net.Http;
 using System.Windows.Threading;
@@ -275,6 +276,59 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         {
             _logger.Error(ex, "Recognizing {Session} again failed", session.Name);
             StatusText = $"Распознать заново не удалось: {ex.Message}";
+        }
+        finally
+        {
+            QueueText = "";
+            IsRetranscribing = false;
+        }
+    }
+
+    /// <summary>
+    /// Recognizes the session's audio with every picked engine on the same phrases, into its compare folder, and opens
+    /// comparison.md. The paid answers count in the session's cloud.json like any other.
+    /// </summary>
+    public async Task CompareAsync(SessionInfo session, string language, TimeSpan phrasePause, IReadOnlyList<string?> models)
+    {
+        IsRetranscribing = true;
+        QueueText = "сравниваю модели…";
+        var spent = new Dictionary<string, double>();
+        try
+        {
+            ComparedEngine[] engines =
+            [
+                .. models.Select(model => model is null
+                    ? new ComparedEngine("Видеокарта · Whisper", new HostTranscriber(_host))
+                    : new ComparedEngine(
+                        model,
+                        new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read(), spend =>
+                        {
+                            lock (spent)
+                            {
+                                spent[ model ] = spent.GetValueOrDefault(model) + (spend.Rubles ?? 0);
+                            }
+
+                            OnCloudSpent(session, spend);
+                        }),
+                        () =>
+                        {
+                            lock (spent)
+                            {
+                                return spent.GetValueOrDefault(model);
+                            }
+                        })),
+            ];
+            var comparison = new SessionComparison(await _detectors, TimeProvider.System, _logger, phrasePause);
+            var progress = new Progress<double>(done => QueueText = $"сравниваю модели: {done:P0}");
+            ComparisonResult result = await Task.Run(() => comparison.RunAsync(session, language, engines, progress, _stop.Token));
+            double rubles = result.Engines.Sum(e => e.Rubles);
+            StatusText = $"Сравнение готово: моделей {result.Engines.Count}, {rubles:0.00} ₽.\n{Path.Combine(result.Folder, "comparison.md")}";
+            Process.Start(new ProcessStartInfo(Path.Combine(result.Folder, "comparison.md")) { UseShellExecute = true });
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or InvalidOperationException)
+        {
+            _logger.Error(ex, "Comparing engines on {Session} failed", session.Name);
+            StatusText = $"Сравнить не удалось: {ex.Message}";
         }
         finally
         {

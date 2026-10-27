@@ -181,6 +181,7 @@ public sealed partial class MainViewModel : ObservableObject
             if (e.PropertyName == nameof(TranscriptViewModel.IsRetranscribing))
             {
                 RetranscribeCommand.NotifyCanExecuteChanged();
+                CompareModelsCommand.NotifyCanExecuteChanged();
                 DeleteSessionCommand.NotifyCanExecuteChanged();
             }
         };
@@ -202,6 +203,9 @@ public sealed partial class MainViewModel : ObservableObject
     public event EventHandler<DeleteRequest>? DeleteRequested;
 
     public event EventHandler? ArchiveRequested;
+
+    /// <summary>The comparison dialog is to be shown; <see cref="CompareAsync"/> runs on its yes.</summary>
+    public event EventHandler<ComparisonEditor>? CompareRequested;
 
     /// <summary>The window shows the settings dialog.</summary>
     public event EventHandler? SettingsRequested;
@@ -1177,6 +1181,25 @@ public sealed partial class MainViewModel : ObservableObject
     private bool CanRetranscribe(SessionNode? node) =>
         !IsRecording && !IsStarting && (node?.Session ?? SelectedSession) is { } session && !Transcript.IsRetranscribing
         && Directory.Exists(session.AudioFolder) && Directory.EnumerateFiles(session.AudioFolder, "*.wav").Any();
+
+    [RelayCommand(CanExecute = nameof(CanRetranscribe))]
+    private void CompareModels(SessionNode? node)
+    {
+        SessionInfo session = node?.Session ?? SelectedSession!;
+        ProjectInfo project = node?.Project.Project ?? SelectedProject!;
+        double minutes = Directory.EnumerateFiles(session.AudioFolder, "*.wav")
+            .Sum(chunk => Math.Max(0, new FileInfo(chunk).Length - WavHeader.Size)) / (double)PcmFormat.Mono16k.ByteRate / 60;
+        CompareRequested?.Invoke(this, new ComparisonEditor(session, minutes, _cloudModels, project.Settings.CloudModelInUse));
+    }
+
+    /// <summary>The comparison dialog said yes: the session's audio goes to every picked engine.</summary>
+    public Task CompareAsync(ComparisonEditor editor)
+    {
+        ProjectInfo project = Projects.FirstOrDefault(p => p.Sessions.Any(s => s.Session == editor.Session))?.Project ?? SelectedProject!;
+        _logger.Information("Comparing {Models} on {Session}", string.Join(", ", editor.Picked.Select(c => c.Model ?? "local")), editor.Session.Name);
+        return Transcript.CompareAsync(
+            editor.Session, project.Settings.DefaultLanguage, project.Settings.PhrasePause, [ .. editor.Picked.Select(c => c.Model) ]);
+    }
 
     [RelayCommand(CanExecute = nameof(CanRetranscribe))]
     private Task RetranscribeAsync(SessionNode? node)

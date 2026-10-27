@@ -169,7 +169,12 @@
                                         <ColumnDefinition Width="Auto" SharedSizeGroup="Model" />
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="{Binding Title}" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Title}" />
+                                        <materialDesign:PackIcon Kind="Heart" Margin="6,0,0,0" Width="14" Height="14" VerticalAlignment="Center"
+                                                                 Foreground="{DynamicResource MaterialDesign.Brush.Primary}" ToolTip="Понравилась в этом проекте"
+                                                                 Visibility="{Binding IsLiked, Converter={StaticResource VisibleWhenTrue}}" />
+                                    </StackPanel>
                                     <TextBlock Grid.Column="1" Margin="16,0,0,0" Text="{Binding Price}" Opacity="0.6" />
                                 </Grid>
                             </CheckBox>
@@ -867,15 +872,33 @@
                                               TextBoxBase.TextChanged="OnEngineSearchChanged" DropDownClosed="OnEngineDropDownClosed"
                                               ItemsSource="{Binding EngineChoicesView}" SelectedItem="{Binding SelectedEngine}">
                                         <ComboBox.ItemTemplate>
+                                            <!-- The heart likes the model for this project without picking it; liked ones go on top. -->
                                             <DataTemplate DataType="{x:Type local:EngineChoice}">
                                                 <Grid>
                                                     <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="Auto" />
                                                         <ColumnDefinition Width="Auto" SharedSizeGroup="Model" />
                                                         <ColumnDefinition Width="Auto" />
                                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Text="{Binding Title}" TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Grid.Column="1" Margin="16,0,0,0" Text="{Binding Price}" Opacity="0.6" />
+                                                    <Button x:Name="Like" Width="26" Height="26" Margin="-6,-4,6,-4" Padding="0" Focusable="False"
+                                                            Style="{StaticResource MaterialDesignToolButton}"
+                                                            AutomationProperties.Name="{Binding Title, StringFormat='Понравилась: {0}'}"
+                                                            ToolTip="Отметить, что модель понравилась в этом проекте: такие — наверху списка"
+                                                            Command="{Binding DataContext.ToggleLikeCommand, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                                                            CommandParameter="{Binding}">
+                                                        <materialDesign:PackIcon x:Name="Heart" Kind="HeartOutline" Width="16" Height="16" Opacity="0.45" />
+                                                    </Button>
+                                                    <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2" Margin="16,0,0,0" Text="{Binding Price}" Opacity="0.6" VerticalAlignment="Center" />
                                                 </Grid>
+                                                <DataTemplate.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLiked}" Value="True">
+                                                        <Setter TargetName="Heart" Property="Kind" Value="Heart" />
+                                                        <Setter TargetName="Heart" Property="Opacity" Value="1" />
+                                                        <Setter TargetName="Heart" Property="Foreground" Value="{DynamicResource MaterialDesign.Brush.Primary}" />
+                                                        <Setter TargetName="Like" Property="ToolTip" Value="Понравилась в этом проекте; нажмите, чтобы снять отметку" />
+                                                    </DataTrigger>
+                                                </DataTemplate.Triggers>
                                             </DataTemplate>
                                         </ComboBox.ItemTemplate>
                                     </ComboBox>

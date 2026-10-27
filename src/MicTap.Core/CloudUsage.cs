@@ -22,12 +22,18 @@ public static class CloudUsageLog
 {
     public const string FileName = "cloud.json";
 
-    /// <summary>Adds one answer to the session's total and returns the new total. One writer at a time: the pipeline.</summary>
+    // Answers come in parallel (a comparison asks many models at once): read, add and write one at a time.
+    private static readonly Lock Gate = new();
+
+    /// <summary>Adds one answer to the session's total and returns the new total. Safe from several threads.</summary>
     public static CloudUsage Add(SessionInfo session, CloudSpend spend)
     {
-        CloudUsage total = Read(session).Add(new CloudUsage(1, spend.Seconds, spend.Rubles ?? 0));
-        JsonFiles.Write(FileOf(session), total);
-        return total;
+        lock (Gate)
+        {
+            CloudUsage total = Read(session).Add(new CloudUsage(1, spend.Seconds, spend.Rubles ?? 0));
+            JsonFiles.Write(FileOf(session), total);
+            return total;
+        }
     }
 
     public static CloudUsage Read(SessionInfo session)

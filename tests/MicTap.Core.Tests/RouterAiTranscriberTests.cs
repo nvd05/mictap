@@ -55,6 +55,17 @@ public sealed class RouterAiTranscriberTests
     }
 
     [Fact]
+    public async Task Answers_arriving_at_once_all_count_in_cloud_json()
+    {
+        using var temp = new TempFolder();
+        var session = new SessionInfo("Пара", temp.Path);
+
+        await Task.WhenAll(Enumerable.Range(0, 40).Select(_ => Task.Run(() => CloudUsageLog.Add(session, new CloudSpend(1, 0.5)))));
+
+        Assert.Equal(new CloudUsage(40, 40, 20), CloudUsageLog.Read(session));
+    }
+
+    [Fact]
     public void Catalog_gives_transcription_models_priced_by_the_second_first_and_cheapest_first()
     {
         const string catalog = """

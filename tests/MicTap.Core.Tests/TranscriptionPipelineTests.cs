@@ -184,6 +184,21 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Recording_transcribed_comes_after_the_last_phrase_of_a_stopped_recording()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "фраза"));
+        var linesAtEnd = new TaskCompletionSource<int>(TaskCreationOptions.RunContinuationsAsynchronously);
+        pipeline.RecordingTranscribed += (_, _) => linesAtEnd.TrySetResult(Lines().Length);
+        _recorder.Start(Options("ru"), _source);
+
+        // The second phrase is still being spoken at the stop: it becomes a segment only then.
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1), FakeSpeech.SpeechPcm(1));
+        await _recorder.StopAsync();
+
+        Assert.Equal(2, await linesAtEnd.Task.WaitAsync(Patience));
+    }
+
+    [Fact]
     public async Task Segment_that_whisper_made_up_is_left_out_of_the_transcript()
     {
         // By length, not by call order: live passes ask Whisper too.

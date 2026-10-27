@@ -46,7 +46,7 @@ public sealed class TranscriptionPipeline : IDisposable
     private readonly Channel<bool> _liveWake = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
-    // Phrases to recognize, in order, and pushes: a push follows the phrases said before it.
+    // Phrases to recognize, in order, with pushes and recording ends after the phrases said before them.
     private readonly Channel<object> _segments = Channel.CreateUnbounded<object>(
         new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
 
@@ -87,6 +87,9 @@ public sealed class TranscriptionPipeline : IDisposable
     /// the recording has ended.
     /// </summary>
     public event EventHandler<SessionInfo>? Pushed;
+
+    /// <summary>A recording has ended and every phrase of it is in the transcript (or was left out as silence or an artifact).</summary>
+    public event EventHandler<SessionInfo>? RecordingTranscribed;
 
     /// <summary>Number of speech segments waiting for recognition.</summary>
     public event EventHandler<int>? QueueChanged;
@@ -222,11 +225,16 @@ public sealed class TranscriptionPipeline : IDisposable
                         Queue(session, segmenter!.Flush(), segmenter, janitor);
                         _segments.Writer.TryWrite(push);
                         break;
-                    case SessionEnd end when end.Session == session:
-                        Queue(session, segmenter!.Flush(), segmenter, janitor);
-                        janitor = null;
-                        session = null;
-                        segmenter = null;
+                    case SessionEnd end:
+                        if (end.Session == session)
+                        {
+                            Queue(session, segmenter!.Flush(), segmenter, janitor);
+                            janitor = null;
+                            session = null;
+                            segmenter = null;
+                        }
+
+                        _segments.Writer.TryWrite(end); // after the last phrases: the end is reported once they are written
                         break;
                 }
             }
@@ -247,10 +255,14 @@ public sealed class TranscriptionPipeline : IDisposable
         {
             await foreach (object item in _segments.Reader.ReadAllAsync(cancellation))
             {
-                if (item is PushRequest push)
+                switch (item)
                 {
-                    Pushed?.Invoke(this, push.Session); // the phrases before it are written by now
-                    continue;
+                    case PushRequest push:
+                        Pushed?.Invoke(this, push.Session); // the phrases before it are written by now
+                        continue;
+                    case SessionEnd end:
+                        RecordingTranscribed?.Invoke(this, end.Session);
+                        continue;
                 }
 
                 var pending = (PendingSegment)item;

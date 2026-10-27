@@ -54,9 +54,10 @@ tests/MicTap.Hub.Tests/
 - Архив: `<rootFolder>\.archive\` (скрытая): удалённые проекты и сессии целиком + `archive.json` {schemaVersion 1,
   kind project|session, name, originalFolder, projectName, projectFolder, deletedAt}.
 - Логи `%APPDATA%\mictap\logs\`, модели `%APPDATA%\mictap\models\`.
-- Проекты: `<rootFolder>\<проект>\project.json` — schemaVersion 3, name, languages, audioRetention,
+- Проекты: `<rootFolder>\<проект>\project.json` — schemaVersion 4, name, languages, audioRetention,
   phrasePauseSeconds (тишина, после которой фраза закончена: 0,5–10 с, по умолчанию 1,2; файл schemaVersion 1
-  читается с 1,2), engine (local | routerAi), cloudModel (по умолчанию openai/whisper-large-v3); файлы 1–2 — local.
+  читается с 1,2), engine (local | routerAi), cloudModel (по умолчанию openai/whisper-large-v3); файлы 1–2 — local;
+  likedModels — понравившиеся модели проекта (id Router AI и `local` для видеокарты); файлы 1–3 — без них.
 - Ключ Router AI — в диспетчере учётных данных Windows (generic credential `mictap/routerai`), не в файлах.
 - Сессия `<rootFolder>\<проект>\<сессия>\`:
   - `audio\000.wav`, … — чанки по chunkSeconds (кроме audioRetention: none)
@@ -310,6 +311,11 @@ JSON и выход; в UI агент «ждёт» → «думает».
   сортирует.
 - Поле «Распознавание» — с поиском: набранный текст фильтрует список моделей; закрыл без выбора — вернулась модель
   проекта. Факт (с v0.9.2): поиск, скрывший модель проекта, не стирает набранное.
+
+### v0.10 — понравившиеся модели
+- Сердечко слева от модели в списке «Распознавание»: «понравилась» в этом проекте (project.json schema 4, likedModels).
+  Клик по сердечку модель не выбирает и список не закрывает; понравившиеся встают в начало списка, когда он закроется.
+- «Сравнить модели»: понравившиеся проекта — в начале списка, с сердечком и отмечены по умолчанию.
 
 ### Позже
 Opus-кодирование, пакетная обработка записей с телефона, веб-UI на телефон поверх хаба.

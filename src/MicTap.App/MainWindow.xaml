@@ -430,7 +430,8 @@
                                                               IsChecked="{Binding IsExpanded}" ToolTip="Свернуть или развернуть сессии"
                                                               AutomationProperties.Name="Свернуть или развернуть сессии" />
                                             </Grid>
-                                            <TextBlock Margin="8,0,8,0" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                            <!-- The line box leaves room below for descenders: 4 px on top puts the letters level with the folder. -->
+                                            <TextBlock Margin="8,4,8,0" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                                                        Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
                                         </DockPanel>
                                     </Border>
@@ -523,9 +524,10 @@
                                              Value="{Binding Level, Mode=OneWay}" AutomationProperties.Name="Уровень" />
                             </StackPanel>
 
-                            <ComboBox DockPanel.Dock="Right" Width="130" Margin="12,0,0,0" VerticalAlignment="Center"
+                            <ComboBox DockPanel.Dock="Right" Width="150" Margin="12,0,0,0" VerticalAlignment="Center"
                                       Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                                      materialDesign:HintAssist.Hint="Язык" AutomationProperties.Name="Язык речи"
+                                      materialDesign:HintAssist.Hint="{Binding LanguageHint}" AutomationProperties.Name="Язык речи"
+                                      ToolTip="{Binding LanguageToolTip}"
                                       DisplayMemberPath="Name" SelectedValuePath="Code"
                                       ItemsSource="{Binding Languages}" SelectedValue="{Binding Language}" />
 
@@ -550,7 +552,8 @@
                                                             <Setter Property="Text" Value="(тишина)" />
                                                         </DataTrigger>
                                                         <DataTrigger Binding="{Binding IsLive}" Value="False">
-                                                            <Setter Property="Text" Value="Нажмите запись или Ctrl+Alt+R — здесь появится то, что вы говорите." />
+                                                            <Setter Property="Text"
+                                                                    Value="{Binding DataContext.IdleDraftText, RelativeSource={RelativeSource AncestorType=Window}}" />
                                                             <Setter Property="FontStyle" Value="Normal" />
                                                         </DataTrigger>
                                                     </Style.Triggers>

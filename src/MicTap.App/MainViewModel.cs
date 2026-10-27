@@ -207,6 +207,14 @@ public sealed partial class MainViewModel : ObservableObject
 
     public string LanguageText => Language.ToUpperInvariant();
 
+    /// <summary>The label of the language box names its hotkey, as the draft names the recording one.</summary>
+    public string LanguageHint => $"Язык · {Hotkeys.ToggleLanguage}";
+
+    public string LanguageToolTip => $"Следующий язык проекта — {Hotkeys.ToggleLanguage}, работает и из трея.";
+
+    public string IdleDraftText =>
+        $"Нажмите запись или {Hotkeys.ToggleRecording} — здесь появится то, что вы говорите. {Hotkeys.ToggleLanguage} — следующий язык.";
+
     public HotkeySettings Hotkeys => _settings.Hotkeys;
 
     public string SettingsFile => _settingsStore.FilePath;

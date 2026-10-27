@@ -32,6 +32,7 @@ public partial class MainWindow : Window
         viewModel.DeleteRequested += (_, request) => _ = ConfirmDeleteAsync(request);
         viewModel.ArchiveRequested += (_, _) => _ = ShowArchiveAsync();
         viewModel.CompareRequested += (_, editor) => _ = ShowComparisonAsync(editor);
+        viewModel.SpendRequested += (_, spend) => _ = ShowSpendAsync(spend);
         viewModel.SettingsRequested += (_, _) => _ = ShowSettingsAsync();
         viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
         viewModel.Transcript.PropertyChanged += (_, e) =>
@@ -131,6 +132,28 @@ public partial class MainWindow : Window
             await _viewModel.ApplyRenameAsync(session, editor.Name);
         }
     }
+
+    private async Task ShowSpendAsync(SessionSpendView spend)
+    {
+        var content = (FrameworkElement)FindResource("SpendDialog");
+        content.DataContext = spend;
+        await DialogHost.Show(content, "MainDialog");
+    }
+
+    /// <summary>Typing into the engine box searches it; the text of the picked engine is not a search.</summary>
+    private void OnEngineSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        var box = (ComboBox)sender;
+        if (box.SelectedItem is EngineChoice chosen && box.Text == chosen.ToString())
+        {
+            return;
+        }
+
+        _viewModel.FilterEngines(box.Text);
+        box.IsDropDownOpen = true;
+    }
+
+    private void OnEngineDropDownClosed(object sender, EventArgs e) => _viewModel.EngineSearchClosed();
 
     private async Task ShowComparisonAsync(ComparisonEditor editor)
     {

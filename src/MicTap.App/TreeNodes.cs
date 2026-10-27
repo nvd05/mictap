@@ -46,7 +46,7 @@ public sealed partial class ProjectNode : ObservableObject
             try
             {
                 CloudUsage total = CloudUsageLog.Total(Project.Folder);
-                return total.Requests == 0 ? "" : $"\nRouter AI: потрачено {total.Rubles:0.00} ₽ за {total.Seconds / 60:0.#} мин звука.";
+                return total.Requests == 0 ? "" : $"\nRouter AI: потрачено {total.Rubles:0.00} ₽ во всех сессиях проекта.";
             }
             catch (System.IO.InvalidDataException ex)
             {

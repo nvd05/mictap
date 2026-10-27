@@ -99,6 +99,60 @@
             </StackPanel>
         </StackPanel>
 
+        <!-- What the session spent in Router AI, model by model: a bar for the rubles, then minutes, answers, words and tokens. -->
+        <StackPanel x:Key="SpendDialog" x:Shared="False" Margin="24" Width="760" d:DataContext="{d:DesignInstance Type=local:SessionSpendView}">
+            <TextBlock Text="Расход Router AI" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+            <TextBlock Margin="0,4,0,0" Text="{Binding Session}" Opacity="0.7" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+            <Grid Margin="0,16,0,6" Visibility="{Binding HasRows, Converter={StaticResource VisibleWhenTrue}}" Opacity="0.6">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="210" />
+                    <ColumnDefinition Width="70" />
+                    <ColumnDefinition Width="50" />
+                    <ColumnDefinition Width="50" />
+                    <ColumnDefinition Width="60" />
+                    <ColumnDefinition Width="90" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Модель" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                <TextBlock Grid.Column="2" Text="₽" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                <TextBlock Grid.Column="3" Text="мин" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                <TextBlock Grid.Column="4" Text="фраз" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                <TextBlock Grid.Column="5" Text="слов" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                <TextBlock Grid.Column="6" Text="токены вх/вых" TextAlignment="Right" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+            </Grid>
+            <ScrollViewer MaxHeight="420" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Rows}" AutomationProperties.Name="Расход по моделям">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type local:SpendRow}">
+                            <Grid Margin="0,3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="210" />
+                                    <ColumnDefinition Width="70" />
+                                    <ColumnDefinition Width="50" />
+                                    <ColumnDefinition Width="50" />
+                                    <ColumnDefinition Width="60" />
+                                    <ColumnDefinition Width="90" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="{Binding Model}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                <Border Grid.Column="1" Height="12" CornerRadius="6" HorizontalAlignment="Left" VerticalAlignment="Center"
+                                        Width="{Binding Bar}" Background="{DynamicResource MaterialDesign.Brush.Primary}" />
+                                <TextBlock Grid.Column="2" Text="{Binding Rubles}" TextAlignment="Right" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="3" Text="{Binding Minutes}" TextAlignment="Right" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="4" Text="{Binding Requests}" TextAlignment="Right" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="5" Text="{Binding Words}" TextAlignment="Right" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="6" Text="{Binding Tokens}" TextAlignment="Right" VerticalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Text="{Binding Total}" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+            <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Text="{Binding Note}" Opacity="0.7" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+            <Button Margin="0,16,0,0" HorizontalAlignment="Right" Content="Закрыть" IsCancel="True" IsDefault="True"
+                    Style="{StaticResource MaterialDesignFlatButton}" Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" />
+        </StackPanel>
+
         <!-- Which engines hear the session's audio for a comparison, and roughly what the paid ones cost. -->
         <StackPanel x:Key="CompareDialog" x:Shared="False" Margin="24" Width="520" d:DataContext="{d:DesignInstance Type=local:ComparisonEditor}">
             <TextBlock Text="Сравнить модели" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
@@ -808,8 +862,9 @@
                                               materialDesign:HintAssist.Hint="Распознавание" AutomationProperties.Name="Распознавание фраз"
                                               ToolTip="Кто распознаёт фразы этого проекта: видеокарта или модель Router AI (платно). Можно менять и во время записи: со следующей фразы, и для тех, что ждут в очереди."
                                               MaxDropDownHeight="640" Grid.IsSharedSizeScope="True"
-                                              IsTextSearchEnabled="True" TextSearch.TextPath="Title"
-                                              ItemsSource="{Binding EngineChoices}" SelectedItem="{Binding SelectedEngine}">
+                                              IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                                              TextBoxBase.TextChanged="OnEngineSearchChanged" DropDownClosed="OnEngineDropDownClosed"
+                                              ItemsSource="{Binding EngineChoicesView}" SelectedItem="{Binding SelectedEngine}">
                                         <ComboBox.ItemTemplate>
                                             <DataTemplate DataType="{x:Type local:EngineChoice}">
                                                 <Grid>
@@ -839,6 +894,12 @@
                                         <materialDesign:PackIcon Kind="ChevronDown" Width="18" Height="18" Margin="6,0,0,0" Opacity="0.6"
                                                                  VerticalAlignment="Center" />
                                     </StackPanel>
+                                </Button>
+                                <Button DockPanel.Dock="Left" Width="36" Height="36" Style="{StaticResource MaterialDesignIconButton}"
+                                        Command="{Binding DataContext.ShowSpendCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                        ToolTip="Расход Router AI в этой сессии по моделям: рубли, минуты, слова, токены"
+                                        AutomationProperties.Name="Расход сессии">
+                                    <materialDesign:PackIcon Kind="ChartBar" Width="20" Height="20" />
                                 </Button>
                                 <ItemsControl Margin="12,0,0,0" VerticalAlignment="Center" AutomationProperties.Name="Агенты"
                                               ItemsSource="{Binding DataContext.Agents, RelativeSource={RelativeSource AncestorType=Window}}">

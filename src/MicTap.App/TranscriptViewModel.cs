@@ -113,7 +113,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _detectors = Task.Run(LoadDetectorsAsync);
         _pipeline = new TranscriptionPipeline(
             _host, _detectors, logger,
-            (session, model) => new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read(), spend => OnCloudSpent(session, spend)),
+            (session, model) => new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read(), spend => OnCloudSpent(session, model, spend)),
             CurrentModel);
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
@@ -149,14 +149,13 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             if (_cloudModel is null)
             {
                 string local = IsDraftOff ? $"{RuntimeText}, черновик выключен" : RuntimeText;
-                return _shownSpent.Requests == 0
-                    ? local
-                    : $"{local} · Router AI в этой сессии: {_shownSpent.Rubles:0.00} ₽ за {_shownSpent.Seconds / 60:0.#} мин речи";
+                return _shownSpent.Requests == 0 ? local : $"{local} · Router AI в этой сессии: {_shownSpent.Rubles:0.00} ₽";
             }
 
+            // The model's own rubles in this session: the session's total also holds other models' answers.
             string phrases = _cloudFailing
                 ? "фразы — Router AI: сбой"
-                : $"фразы — Router AI · {_cloudModel} · {_cloudSpent.Rubles:0.00} ₽";
+                : $"фразы — Router AI · {_cloudModel} · {_cloudSpent.Of(_cloudModel).Rubles:0.00} ₽";
             return $"{phrases}, {draft}";
         }
     }
@@ -313,7 +312,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
                                 spent[ model ] = spent.GetValueOrDefault(model) + (spend.Rubles ?? 0);
                             }
 
-                            OnCloudSpent(session, spend);
+                            OnCloudSpent(session, model, spend);
                         }),
                         () =>
                         {
@@ -547,12 +546,12 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     }
 
     /// <summary>Pipeline thread: one cloud answer is paid for; the session's cloud.json adds it up.</summary>
-    private void OnCloudSpent(SessionInfo session, CloudSpend spend)
+    private void OnCloudSpent(SessionInfo session, string model, CloudSpend spend)
     {
         CloudUsage total;
         try
         {
-            total = CloudUsageLog.Add(session, spend);
+            total = CloudUsageLog.Add(session, model, spend);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
         {

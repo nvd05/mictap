@@ -40,6 +40,8 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _quietLanguage = true; // no tone and no mark while the language follows the selected project
     private bool _quietEngine; // the engine box follows the selected project without saving it back
     private IReadOnlyList<CloudModelInfo> _cloudModels = [];
+    private System.ComponentModel.ICollectionView? _engineChoicesView;
+    private string _engineFilter = "";
     private bool _selecting;
     private AgentsState? _agentsState;
     private SessionNode? _recordingNode;
@@ -137,7 +139,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The session shown in the transcript and recognized again by «Распознать заново».</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SessionHeader), nameof(SessionNote), nameof(EmptyText))]
-    [NotifyCanExecuteChangedFor(nameof(RetranscribeCommand), nameof(CompareModelsCommand), nameof(RenameSessionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RetranscribeCommand), nameof(CompareModelsCommand), nameof(RenameSessionCommand), nameof(ShowSpendCommand))]
     private SessionInfo? _selectedSession;
 
     /// <summary>The tree node of <see cref="SelectedSession"/>, for the session menu above the text.</summary>
@@ -206,6 +208,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     public event EventHandler? ArchiveRequested;
 
+    /// <summary>The shown session's Router AI spending is to be shown, model by model.</summary>
+    public event EventHandler<SessionSpendView>? SpendRequested;
+
     /// <summary>The comparison dialog is to be shown; <see cref="CompareAsync"/> runs on its yes.</summary>
     public event EventHandler<ComparisonEditor>? CompareRequested;
 
@@ -240,6 +245,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>Who recognizes the phrases of the selected project: the graphics card or a Router AI model with its price.</summary>
     public ObservableCollection<EngineChoice> EngineChoices { get; } = [];
+
+    /// <summary><see cref="EngineChoices"/> as the engine box lists them: filtered by what is typed into it.</summary>
+    public System.ComponentModel.ICollectionView EngineChoicesView => _engineChoicesView ??= CreateEngineChoicesView();
 
     /// <summary>Agents of the shown session: waiting, thinking or gone.</summary>
     public ObservableCollection<AgentRow> Agents { get; } = [];
@@ -1183,6 +1191,23 @@ public sealed partial class MainViewModel : ObservableObject
         !IsRecording && !IsStarting && (node?.Session ?? SelectedSession) is { } session && !Transcript.IsRetranscribing
         && Directory.Exists(session.AudioFolder) && Directory.EnumerateFiles(session.AudioFolder, "*.wav").Any();
 
+    private bool CanShowSpend() => SelectedSession is not null;
+
+    [RelayCommand(CanExecute = nameof(CanShowSpend))]
+    private void ShowSpend()
+    {
+        SessionInfo session = SelectedSession!;
+        try
+        {
+            SpendRequested?.Invoke(this, SessionSpendView.For(session, CloudUsageLog.Read(session)));
+        }
+        catch (InvalidDataException ex)
+        {
+            _logger.Error(ex, "Cloud usage of {Session} not read", session.Name);
+            ShowMessage($"Расход не прочитан: {ex.Message}", isError: true);
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(CanRetranscribe))]
     private void CompareModels(SessionNode? node)
     {
@@ -1254,6 +1279,7 @@ public sealed partial class MainViewModel : ObservableObject
     private void RefreshEngineChoices()
     {
         _quietEngine = true;
+        _engineFilter = "";
         EngineChoices.Clear();
         EngineChoices.Add(new EngineChoice(null, "Видеокарта · Whisper", "бесплатно"));
         string? current = SelectedProject?.Settings.CloudModelInUse;
@@ -1272,6 +1298,33 @@ public sealed partial class MainViewModel : ObservableObject
 
         SelectedEngine = EngineChoices.First(choice => choice.Model == current);
         _quietEngine = false;
+    }
+
+    /// <summary>What is typed into the engine box narrows its list: by the model's name, «gpt», «eleven», «mistral»…</summary>
+    public void FilterEngines(string text)
+    {
+        _engineFilter = text.Trim();
+        EngineChoicesView.Refresh();
+    }
+
+    /// <summary>The engine list closed: the search is over, and without a pick the project's engine shows again.</summary>
+    public void EngineSearchClosed()
+    {
+        bool searched = _engineFilter.Length > 0;
+        _engineFilter = "";
+        EngineChoicesView.Refresh();
+        if (searched || SelectedEngine is null)
+        {
+            RefreshEngineChoices();
+        }
+    }
+
+    private System.ComponentModel.ICollectionView CreateEngineChoicesView()
+    {
+        System.ComponentModel.ICollectionView view = System.Windows.Data.CollectionViewSource.GetDefaultView(EngineChoices);
+        view.Filter = item => _engineFilter.Length == 0
+            || (item is EngineChoice choice && choice.Title.Contains(_engineFilter, StringComparison.OrdinalIgnoreCase));
+        return view;
     }
 
     private static string PriceText(double? rublesPerMinute) =>

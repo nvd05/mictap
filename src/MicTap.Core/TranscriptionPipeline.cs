@@ -18,8 +18,9 @@ public sealed record SegmentTranscript(SessionInfo Session, TranscriptLine Line)
 /// Live text: every few seconds, and at once after a phrase gets its final text, the audio after the last finished
 /// phrase is recognized when it holds speech, so the draft never repeats what the transcript already has.
 /// The recorder only enqueues, so recognition never blocks recording. A failed transcriber is reloaded by the
-/// <see cref="TranscriberHost"/> and the segment is retried; segments wait in the queue meanwhile. Any other error
-/// stops the pipeline and is reported through <see cref="Failed"/>.
+/// <see cref="TranscriberHost"/> and the segment is retried; segments wait in the queue meanwhile. A recording with a
+/// cloud model sends its finished phrases to the cloud instead, retried with the same backoff on failure; its live
+/// draft stays local. Any other error stops the pipeline and is reported through <see cref="Failed"/>.
 /// </summary>
 public sealed class TranscriptionPipeline : IDisposable
 {
@@ -34,6 +35,7 @@ public sealed class TranscriptionPipeline : IDisposable
     private readonly Task<Func<SpeechDetector>> _detectors;
     private readonly ILogger _logger;
     private readonly TimeSpan _liveInterval;
+    private readonly Func<string, ITranscriber>? _cloud;
 
     // Every captured block and mark, in order: the segmenter must see all audio.
     private readonly Channel<object> _stream = Channel.CreateUnbounded<object>(new UnboundedChannelOptions { SingleReader = true });
@@ -60,17 +62,22 @@ public sealed class TranscriptionPipeline : IDisposable
     private int _pending;
     private int _failed;
 
-    public TranscriptionPipeline(TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger)
-        : this(host, detectors, logger, DefaultLiveInterval)
+    /// <param name="cloud">Makes the cloud transcriber for a model, for recordings that name one.</param>
+    public TranscriptionPipeline(
+        TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, Func<string, ITranscriber>? cloud = null)
+        : this(host, detectors, logger, DefaultLiveInterval, cloud)
     {
     }
 
-    internal TranscriptionPipeline(TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, TimeSpan liveInterval)
+    internal TranscriptionPipeline(
+        TranscriberHost host, Task<Func<SpeechDetector>> detectors, ILogger logger, TimeSpan liveInterval,
+        Func<string, ITranscriber>? cloud = null)
     {
         _host = host;
         _detectors = detectors;
         _logger = logger.ForContext<TranscriptionPipeline>();
         _liveInterval = liveInterval;
+        _cloud = cloud;
     }
 
     /// <summary>New live text of the speech not yet in the transcript; replaces the previous one.</summary>
@@ -90,6 +97,9 @@ public sealed class TranscriptionPipeline : IDisposable
 
     /// <summary>A recording has ended and every phrase of it is in the transcript (or was left out as silence or an artifact).</summary>
     public event EventHandler<SessionInfo>? RecordingTranscribed;
+
+    /// <summary>The cloud failed on a phrase and tries again later (the reason), or works again (null).</summary>
+    public event EventHandler<string?>? CloudProblem;
 
     /// <summary>Number of speech segments waiting for recognition.</summary>
     public event EventHandler<int>? QueueChanged;
@@ -206,6 +216,7 @@ public sealed class TranscriptionPipeline : IDisposable
             SpeechSegmenter? segmenter = null;
             SessionInfo? session = null;
             ChunkJanitor? janitor = null;
+            ITranscriber? cloud = null;
             await foreach (object item in _stream.Reader.ReadAllAsync(cancellation))
             {
                 switch (item)
@@ -214,22 +225,26 @@ public sealed class TranscriptionPipeline : IDisposable
                         session = started.Session;
                         segmenter = new SpeechSegmenter(detect, started.Language, started.Offset, started.PhrasePause);
                         janitor = _janitors.GetValueOrDefault(session.Folder);
+                        cloud = started.CloudModel is { } model
+                            ? _cloud?.Invoke(model) ?? throw new InvalidOperationException($"No cloud transcriber for {model}")
+                            : null;
                         break;
                     case LanguageMarked marked when marked.Session == session:
-                        Queue(session, segmenter!.Mark(TimeSpan.FromSeconds(marked.Mark.At), marked.Mark.Lang), segmenter, janitor);
+                        Queue(session, segmenter!.Mark(TimeSpan.FromSeconds(marked.Mark.At), marked.Mark.Lang), segmenter, janitor, cloud);
                         break;
                     case CapturedAudio audio when audio.Session == session:
-                        Queue(session, segmenter!.Add(WavSamples.FromPcm16(audio.Pcm.Span)), segmenter, janitor);
+                        Queue(session, segmenter!.Add(WavSamples.FromPcm16(audio.Pcm.Span)), segmenter, janitor, cloud);
                         break;
                     case PushRequest push when push.Session == session:
-                        Queue(session, segmenter!.Flush(), segmenter, janitor);
+                        Queue(session, segmenter!.Flush(), segmenter, janitor, cloud);
                         _segments.Writer.TryWrite(push);
                         break;
                     case SessionEnd end:
                         if (end.Session == session)
                         {
-                            Queue(session, segmenter!.Flush(), segmenter, janitor);
+                            Queue(session, segmenter!.Flush(), segmenter, janitor, cloud);
                             janitor = null;
+                            cloud = null;
                             session = null;
                             segmenter = null;
                         }
@@ -268,19 +283,9 @@ public sealed class TranscriptionPipeline : IDisposable
                 var pending = (PendingSegment)item;
                 SpeechSegment segment = pending.Segment;
                 long started = Stopwatch.GetTimestamp();
-                IReadOnlyList<TranscriptSegment> recognized;
-                while (true)
-                {
-                    try
-                    {
-                        recognized = await _host.TranscribeAsync(segment.Samples, segment.Language, cancellation);
-                        break;
-                    }
-                    catch (TranscriberFailedException)
-                    {
-                        // The host loads a fresh transcriber; the same segment goes again.
-                    }
-                }
+                IReadOnlyList<TranscriptSegment> recognized = pending.Cloud is { } cloud
+                    ? await TranscribeInCloudAsync(cloud, segment, cancellation)
+                    : await TranscribeLocallyAsync(segment, cancellation);
 
                 QueueChanged?.Invoke(this, Interlocked.Decrement(ref _pending));
                 string text = Join(recognized);
@@ -418,6 +423,57 @@ public sealed class TranscriptionPipeline : IDisposable
         }
     }
 
+    private async Task<IReadOnlyList<TranscriptSegment>> TranscribeLocallyAsync(SpeechSegment segment, CancellationToken cancellation)
+    {
+        while (true)
+        {
+            try
+            {
+                return await _host.TranscribeAsync(segment.Samples, segment.Language, cancellation);
+            }
+            catch (TranscriberFailedException)
+            {
+                // The host loads a fresh transcriber; the same segment goes again.
+            }
+        }
+    }
+
+    /// <summary>Sends the phrase to the cloud until it answers: no network, no key or an HTTP error wait and try again.</summary>
+    private async Task<IReadOnlyList<TranscriptSegment>> TranscribeInCloudAsync(
+        ITranscriber cloud, SpeechSegment segment, CancellationToken cancellation)
+    {
+        TimeSpan retry = TranscriberHost.FirstRetry;
+        bool failed = false;
+        while (true)
+        {
+            try
+            {
+                IReadOnlyList<TranscriptSegment> recognized = await cloud.TranscribeAsync(segment.Samples, segment.Language, cancellation);
+                if (failed)
+                {
+                    _logger.Information("{Cloud} answers again", cloud.Runtime);
+                    CloudProblem?.Invoke(this, null);
+                }
+
+                return recognized;
+            }
+            catch (Exception ex) when (
+                ex is HttpRequestException or CloudTranscriptionException
+                || (ex is TaskCanceledException && !cancellation.IsCancellationRequested))
+            {
+                // A timeout comes as TaskCanceledException without our cancellation.
+                string reason = ex is TaskCanceledException ? "Router AI не ответил вовремя" : ex.Message;
+                _logger.Warning(
+                    "{Cloud} failed on segment {Start:0.00}-{End:0.00} s: {Reason}; again in {Retry}",
+                    cloud.Runtime, segment.Start.TotalSeconds, segment.End.TotalSeconds, reason, retry);
+                CloudProblem?.Invoke(this, $"{reason}. Повтор через {retry.TotalSeconds:0} с");
+                failed = true;
+                await Task.Delay(retry, cancellation);
+                retry = TimeSpan.FromTicks(Math.Min(retry.Ticks * 2, TranscriberHost.MaxRetry.Ticks));
+            }
+        }
+    }
+
     /// <summary>Waits for the next live pass: the interval, or less when a phrase has just got its final text.</summary>
     private async Task NextLivePassAsync(CancellationToken cancellation)
     {
@@ -433,12 +489,13 @@ public sealed class TranscriptionPipeline : IDisposable
         }
     }
 
-    private void Queue(SessionInfo session, IReadOnlyList<SpeechSegment> segments, SpeechSegmenter segmenter, ChunkJanitor? janitor)
+    private void Queue(
+        SessionInfo session, IReadOnlyList<SpeechSegment> segments, SpeechSegmenter segmenter, ChunkJanitor? janitor, ITranscriber? cloud)
     {
         janitor?.Segmented(segments, segmenter.Committed);
         foreach (SpeechSegment segment in segments)
         {
-            _segments.Writer.TryWrite(new PendingSegment(session, segment, janitor));
+            _segments.Writer.TryWrite(new PendingSegment(session, segment, janitor, cloud));
             QueueChanged?.Invoke(this, Interlocked.Increment(ref _pending));
         }
     }
@@ -467,7 +524,8 @@ public sealed class TranscriptionPipeline : IDisposable
 
     private sealed record PushRequest(SessionInfo Session);
 
-    private sealed record PendingSegment(SessionInfo Session, SpeechSegment Segment, ChunkJanitor? Janitor);
+    /// <summary>A phrase to recognize; <paramref name="Cloud"/> recognizes it instead of the local host when set.</summary>
+    private sealed record PendingSegment(SessionInfo Session, SpeechSegment Segment, ChunkJanitor? Janitor, ITranscriber? Cloud);
 
     private sealed record LiveLanguage(SessionInfo Session, string Language);
 

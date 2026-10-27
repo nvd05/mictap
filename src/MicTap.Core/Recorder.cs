@@ -6,10 +6,11 @@ namespace MicTap.Core;
 /// <summary>
 /// What to record into: <paramref name="Session"/> is opened by the caller; an existing session gets appended.
 /// <paramref name="PhrasePause"/> is the project's silence that ends a phrase; null is <see cref="SpeechSegmenter.DefaultPause"/>.
+/// <paramref name="CloudModel"/> is the Router AI model for the finished phrases; null recognizes them on this computer.
 /// </summary>
 public sealed record RecordingOptions(
     SessionInfo Session, string DeviceName, int ChunkSeconds, string AppVersion, string Language,
-    AudioRetention Retention = AudioRetention.Keep, TimeSpan? PhrasePause = null);
+    AudioRetention Retention = AudioRetention.Keep, TimeSpan? PhrasePause = null, string? CloudModel = null);
 
 public enum StopReason
 {
@@ -43,7 +44,8 @@ public sealed record LanguageMarked(SessionInfo Session, LanguageMark Mark);
 
 /// <summary>A recording into <paramref name="Session"/> began; its audio starts at <paramref name="Offset"/> of session time.</summary>
 public sealed record RecordingStarted(
-    SessionInfo Session, TimeSpan Offset, string Language, AudioRetention Retention, TimeSpan? PhrasePause = null);
+    SessionInfo Session, TimeSpan Offset, string Language, AudioRetention Retention, TimeSpan? PhrasePause = null,
+    string? CloudModel = null);
 
 /// <summary>A closed chunk holding session time <paramref name="Start"/> to <paramref name="End"/>.</summary>
 public sealed record ChunkCompleted(SessionInfo Session, ChunkInfo Chunk, TimeSpan Start, TimeSpan End);
@@ -158,7 +160,8 @@ public sealed class Recorder
             throw;
         }
 
-        Started?.Invoke(this, new RecordingStarted(session.Info, session.Offset, options.Language, options.Retention, options.PhrasePause));
+        Started?.Invoke(this, new RecordingStarted(
+            session.Info, session.Offset, options.Language, options.Retention, options.PhrasePause, options.CloudModel));
         source.DataAvailable += OnData;
         source.Stopped += OnSourceStopped;
         session.Timer = _time.CreateTimer(_ => Tick(), null, WatchdogInterval, WatchdogInterval);

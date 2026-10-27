@@ -199,6 +199,48 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Recording_with_a_cloud_model_sends_its_phrases_there_and_keeps_the_draft_local()
+    {
+        var cloudModels = new ConcurrentQueue<string>();
+        var cloud = FakeTranscriber.Saying((_, language) => $"облако {language}");
+        var local = FakeTranscriber.Saying((_, _) => "локально");
+        using TranscriptionPipeline pipeline = Run(local, model =>
+        {
+            cloudModels.Enqueue(model);
+            return cloud;
+        });
+        _recorder.Start(Options("ru") with { CloudModel = "openai/whisper-large-v3" }, _source);
+
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        Assert.Equal("облако ru", Lines()[ 0 ].Text);
+        Assert.Equal([ "openai/whisper-large-v3" ], cloudModels);
+        Assert.Equal(1, cloud.Calls);
+    }
+
+    [Fact]
+    public async Task Cloud_failure_is_retried_and_reported_until_the_phrase_gets_its_text()
+    {
+        int attempts = 0;
+        var problems = new ConcurrentQueue<string?>();
+        var cloud = new FakeTranscriber((_, _, _) => Interlocked.Increment(ref attempts) == 1
+            ? throw new CloudTranscriptionException("Router AI ответил 502: bad gateway")
+            : Task.FromResult("со второго раза"));
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "локально"), _ => cloud);
+        pipeline.CloudProblem += (_, problem) => problems.Enqueue(problem);
+        _recorder.Start(Options("ru") with { CloudModel = "m/x" }, _source);
+
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 1);
+
+        Assert.Equal("со второго раза", Lines()[ 0 ].Text);
+        Assert.Collection(problems, first => Assert.Contains("502", first), recovered => Assert.Null(recovered));
+    }
+
+    [Fact]
     public async Task Segment_that_whisper_made_up_is_left_out_of_the_transcript()
     {
         // By length, not by call order: live passes ask Whisper too.
@@ -281,13 +323,14 @@ public sealed class TranscriptionPipelineTests : IDisposable
         Assert.Equal(3, Directory.EnumerateFiles(session.AudioFolder).Count());
     }
 
-    private TranscriptionPipeline Run(FakeTranscriber transcriber) => Run(_ => Task.FromResult<ITranscriber>(transcriber));
+    private TranscriptionPipeline Run(FakeTranscriber transcriber, Func<string, ITranscriber>? cloud = null) =>
+        Run(_ => Task.FromResult<ITranscriber>(transcriber), cloud);
 
-    private TranscriptionPipeline Run(Func<CancellationToken, Task<ITranscriber>> load)
+    private TranscriptionPipeline Run(Func<CancellationToken, Task<ITranscriber>> load, Func<string, ITranscriber>? cloud = null)
     {
         _host = new TranscriberHost(load, Logger.None, TimeProvider.System, TimeSpan.FromMilliseconds(10), TimeSpan.FromMilliseconds(80));
         var pipeline = new TranscriptionPipeline(
-            _host, Task.FromResult<Func<SpeechDetector>>(() => FakeSpeech.Detect), Logger.None, TimeSpan.FromMilliseconds(50));
+            _host, Task.FromResult<Func<SpeechDetector>>(() => FakeSpeech.Detect), Logger.None, TimeSpan.FromMilliseconds(50), cloud);
         pipeline.SegmentTranscribed += (_, line) => { lock (_lines) _lines.Add(line); };
         pipeline.Attach(_recorder);
         _host.Start();

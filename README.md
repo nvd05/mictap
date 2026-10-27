@@ -16,6 +16,14 @@ dotnet test MicTap.slnx
 dotnet run --project src/MicTap.App
 ```
 
+Для каждодневной работы — установить и запускать ярлыком «mictap» с рабочего стола или из «Пуска»:
+
+```
+powershell -ExecutionPolicy Bypass -File tools\install-app.ps1    # mictap в %LOCALAPPDATA%\mictap\app, ярлыки
+```
+
+После обновления кода — закрыть mictap (значок в трее → «Выход») и запустить скрипт снова.
+
 Иконки (`src/MicTap.App/Assets/*.svg`, `*.ico`) генерирует `tools/make-icons.ps1`.
 
 ## Как пользоваться

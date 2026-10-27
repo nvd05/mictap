@@ -213,8 +213,19 @@ public partial class MainWindow : Window
     {
         var content = (FrameworkElement)FindResource("SettingsDialog");
         content.DataContext = _viewModel;
+        _viewModel.ShowRouterAiKey();
         await DialogHost.Show(content, "MainDialog");
     }
+
+    /// <summary>The key goes from the password box straight to the Credential Manager; the box is cleared at once.</summary>
+    private void OnSaveRouterAiKey(object sender, RoutedEventArgs e)
+    {
+        PasswordBox box = ((Panel)((FrameworkElement)sender).Parent).Children.OfType<PasswordBox>().Single();
+        _viewModel.SaveRouterAiKey(box.Password);
+        box.Clear();
+    }
+
+    private void OnDeleteRouterAiKey(object sender, RoutedEventArgs e) => _viewModel.DeleteRouterAiKey();
 
     /// <summary>New lines scroll the transcript to its end unless the user scrolled up to read.</summary>
     private void FollowTranscript()

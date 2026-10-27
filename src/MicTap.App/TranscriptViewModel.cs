@@ -45,6 +45,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private readonly ILogger _logger;
     private readonly Dispatcher _dispatcher = Dispatcher.CurrentDispatcher;
     private readonly HttpClient _http = new();
+    private readonly HttpClient _cloudHttp = new() { Timeout = TimeSpan.FromSeconds(90) };
     private readonly CancellationTokenSource _stop = new();
     private readonly TranscriberHost _host;
     private readonly TranscriptionPipeline _pipeline;
@@ -54,6 +55,8 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private SessionInfo? _liveSession;
     private bool _live;
     private DateTime _endedAt;
+    private string? _cloudModel;
+    private bool _cloudFailing;
 
     [ObservableProperty]
     private string _runtimeText = "—";
@@ -63,6 +66,10 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _statusText = "";
+
+    /// <summary>The status line's cloud part while a recording's phrases go to Router AI; empty otherwise.</summary>
+    [ObservableProperty]
+    private string _cloudText = "";
 
     [ObservableProperty]
     private bool _isDownloading;
@@ -99,7 +106,8 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _host = new TranscriberHost(LoadTranscriberAsync, logger, TimeProvider.System);
         _host.StateChanged += (_, state) => _dispatcher.InvokeAsync(() => ShowState(state));
         _detectors = Task.Run(LoadDetectorsAsync);
-        _pipeline = new TranscriptionPipeline(_host, _detectors, logger);
+        _pipeline = new TranscriptionPipeline(
+            _host, _detectors, logger, model => new RouterAiTranscriber(_cloudHttp, model, () => CloudKeys.Read()));
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
         _pipeline.SegmentTranscribed += OnSegmentTranscribed;
@@ -109,6 +117,14 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             _dispatcher.InvokeAsync(() => QueueText = count > 0 ? $"ждут распознавания: {count}" : "");
         };
         _pipeline.Failed += OnFailed;
+        _pipeline.CloudProblem += (_, problem) => _dispatcher.InvokeAsync(() => ShowCloudProblem(problem));
+        _pipeline.RecordingTranscribed += (_, session) => _dispatcher.InvokeAsync(() =>
+        {
+            if (session == _liveSession && !_live)
+            {
+                ShowCloud(null); // its last phrases are in: nothing goes to the cloud any more
+            }
+        });
         _pipeline.Attach(recorder);
     }
 
@@ -151,9 +167,13 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>A recording into <paramref name="session"/> began: its earlier text stays, new lines follow, live text runs.</summary>
-    public void BeginSession(SessionInfo session)
+    /// <summary>
+    /// A recording into <paramref name="session"/> began: its earlier text stays, new lines follow, live text runs.
+    /// <paramref name="cloudModel"/> names the Router AI model its phrases go to, if any.
+    /// </summary>
+    public void BeginSession(SessionInfo session, string? cloudModel)
     {
+        ShowCloud(cloudModel);
         ShowSession(session);
         _liveSession = session;
         _live = true;
@@ -272,6 +292,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _host.Dispose();
         _vad?.Dispose();
         _http.Dispose();
+        _cloudHttp.Dispose();
     }
 
     private async Task<Func<SpeechDetector>> LoadDetectorsAsync()
@@ -361,6 +382,34 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
                 StatusText = $"Распознавание упало: {state.Error?.Message}\n"
                     + $"Перезапуск через {state.RetryIn.TotalSeconds:0} с. Запись идёт, фразы ждут в очереди.";
                 break;
+        }
+    }
+
+    private void ShowCloud(string? model)
+    {
+        _cloudModel = model;
+        _cloudFailing = false;
+        CloudText = model is null ? "" : $"   Фразы Router AI · {model}";
+    }
+
+    private void ShowCloudProblem(string? problem)
+    {
+        if (_cloudModel is null)
+        {
+            return;
+        }
+
+        if (problem is not null)
+        {
+            _cloudFailing = true;
+            CloudText = "   Фразы Router AI · сбой";
+            StatusText = $"Router AI: {problem}. Фразы ждут в очереди, запись идёт.";
+        }
+        else if (_cloudFailing)
+        {
+            _cloudFailing = false;
+            CloudText = $"   Фразы Router AI · {_cloudModel}";
+            StatusText = "";
         }
     }
 

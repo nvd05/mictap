@@ -69,6 +69,10 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private double _level;
 
+    /// <summary>Whether a Router AI key is saved, as the settings dialog says it.</summary>
+    [ObservableProperty]
+    private string _routerAiKeyText = "";
+
     [ObservableProperty]
     private string _sessionText = "—";
 
@@ -569,6 +573,66 @@ public sealed partial class MainViewModel : ObservableObject
         ShowMessage($"Сессия переименована: {before.Name} → {name}.", isError: false);
     }
 
+    /// <summary>
+    /// The user pasted a Router AI key in the settings dialog: it goes to the Windows Credential Manager, never to a
+    /// file or the log. Projects with Router AI use it from their next phrase on.
+    /// </summary>
+    public void SaveRouterAiKey(string key)
+    {
+        string trimmed = key.Trim();
+        if (trimmed.Length == 0)
+        {
+            RouterAiKeyText = "Ключ пустой — вставьте его в поле.";
+            return;
+        }
+
+        try
+        {
+            CloudKeys.Save(trimmed);
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            _logger.Error(ex, "Saving the Router AI key failed");
+            RouterAiKeyText = $"Ключ не сохранён: {ex.Message}";
+            return;
+        }
+
+        _logger.Information("Router AI key saved to the Credential Manager");
+        ShowRouterAiKey();
+    }
+
+    public void DeleteRouterAiKey()
+    {
+        try
+        {
+            CloudKeys.Delete();
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            _logger.Error(ex, "Deleting the Router AI key failed");
+            RouterAiKeyText = $"Ключ не удалён: {ex.Message}";
+            return;
+        }
+
+        _logger.Information("Router AI key deleted from the Credential Manager");
+        ShowRouterAiKey();
+    }
+
+    /// <summary>Reads whether a key is saved, for the settings dialog; the key itself is not shown.</summary>
+    public void ShowRouterAiKey()
+    {
+        try
+        {
+            RouterAiKeyText = CloudKeys.Read() is { Length: > 0 }
+                ? "Ключ сохранён в диспетчере учётных данных Windows."
+                : "Ключа нет: проекты с Router AI ждут его, фразы копятся в очереди.";
+        }
+        catch (System.ComponentModel.Win32Exception ex)
+        {
+            RouterAiKeyText = $"Ключ не прочитан: {ex.Message}";
+        }
+    }
+
     public void DismissMessage()
     {
         Message = "";
@@ -771,7 +835,8 @@ public sealed partial class MainViewModel : ObservableObject
         {
             session = SessionFolders.Open(project.Folder, name);
             var options = new RecordingOptions(
-                session, device, _settings.ChunkSeconds, _appVersion, Language, project.Settings.AudioRetention, project.Settings.PhrasePause);
+                session, device, _settings.ChunkSeconds, _appVersion, Language, project.Settings.AudioRetention, project.Settings.PhrasePause,
+                project.Settings.CloudModelInUse);
 
             // Opening a capture device can take seconds; the window stays responsive meanwhile.
             session = await Task.Run(() => _recorder.Start(options, WaveInAudioSource.Open(device)));
@@ -807,7 +872,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         _recordingNode = node;
         node.IsRecording = true;
-        Transcript.BeginSession(session);
+        Transcript.BeginSession(session, project.Settings.CloudModelInUse);
         IsRecording = true;
         SessionText = session.Name;
         SessionName = session.Name;

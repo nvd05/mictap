@@ -9,6 +9,11 @@ public sealed record RetentionOption(AudioRetention Value, string Name)
     public override string ToString() => Name;
 }
 
+public sealed record EngineOption(TranscriptionEngine Value, string Name)
+{
+    public override string ToString() => Name;
+}
+
 /// <summary>The project dialog: a new project, or the settings of an existing one (its name stays).</summary>
 public sealed partial class ProjectEditor : ObservableObject
 {
@@ -26,6 +31,13 @@ public sealed partial class ProjectEditor : ObservableObject
     private double _phrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsCloud))]
+    private TranscriptionEngine _engine = TranscriptionEngine.Local;
+
+    [ObservableProperty]
+    private string _cloudModel = RouterAiTranscriber.DefaultModel;
+
+    [ObservableProperty]
     private string _error = "";
 
     private ProjectEditor(bool isNew) => IsNew = isNew;
@@ -37,7 +49,15 @@ public sealed partial class ProjectEditor : ObservableObject
         new(AudioRetention.None, "Не сохранять (распознать заново будет нельзя)"),
     ];
 
+    public static IReadOnlyList<EngineOption> EngineOptions { get; } =
+    [
+        new(TranscriptionEngine.Local, "На этом компьютере (Whisper)"),
+        new(TranscriptionEngine.RouterAi, "Router AI — облако, платно"),
+    ];
+
     public bool IsNew { get; }
+
+    public bool IsCloud => Engine == TranscriptionEngine.RouterAi;
 
     public string Title => IsNew ? "Новый проект" : "Настройки проекта";
 
@@ -51,13 +71,15 @@ public sealed partial class ProjectEditor : ObservableObject
         LanguagesText = string.Join(", ", project.Settings.Languages),
         Retention = project.Settings.AudioRetention,
         PhrasePauseSeconds = project.Settings.PhrasePauseSeconds,
+        Engine = project.Settings.Engine,
+        CloudModel = project.Settings.CloudModel,
     };
 
     /// <summary>The settings typed in; on a mistake <see cref="Error"/> says what is wrong and the result is null.</summary>
     public ProjectSettings? Build()
     {
         var settings = new ProjectSettings(
-            Name.Trim(), Projects.ParseLanguages(LanguagesText), Retention, Math.Round(PhrasePauseSeconds, 1));
+            Name.Trim(), Projects.ParseLanguages(LanguagesText), Retention, Math.Round(PhrasePauseSeconds, 1), Engine, CloudModel.Trim());
         try
         {
             Projects.Validate(settings);

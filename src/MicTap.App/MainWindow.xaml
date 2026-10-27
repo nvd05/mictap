@@ -53,7 +53,18 @@
                       materialDesign:HintAssist.Hint="Звук после распознавания" AutomationProperties.Name="Звук после распознавания"
                       ItemsSource="{x:Static local:ProjectEditor.RetentionOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
                       SelectedValue="{Binding Retention}" />
-            <TextBlock Margin="0,18,0,0" Text="Фраза заканчивается после паузы" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+            <ComboBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                      materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                      materialDesign:HintAssist.Hint="Кто распознаёт фразы" AutomationProperties.Name="Кто распознаёт фразы"
+                      ItemsSource="{x:Static local:ProjectEditor.EngineOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
+                      SelectedValue="{Binding Engine}" />
+            <TextBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                     materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                     materialDesign:HintAssist.Hint="Модель Router AI" AutomationProperties.Name="Модель Router AI"
+                     materialDesign:HintAssist.HelperText="Например openai/gpt-4o-transcribe или elevenlabs/scribe-v2. Черновик всё равно на этом компьютере."
+                     Visibility="{Binding IsCloud, Converter={StaticResource VisibleWhenTrue}}"
+                     Text="{Binding CloudModel, UpdateSourceTrigger=PropertyChanged}" />
+            <TextBlock Margin="0,26,0,0" Text="Фраза заканчивается после паузы" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
             <DockPanel Margin="0,4,0,0">
                 <TextBlock DockPanel.Dock="Right" Width="52" TextAlignment="Right" VerticalAlignment="Center"
                            Text="{Binding PhrasePauseText}" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
@@ -199,6 +210,21 @@
                              materialDesign:TextFieldAssist.DecorationVisibility="Hidden" BorderThickness="0"
                              Style="{StaticResource MaterialDesignTextBox}" />
                     <TextBlock Style="{StaticResource SettingsNote}" Text="Изменения в файле действуют после перезапуска mictap." />
+
+                    <TextBlock Text="Router AI" Style="{StaticResource SettingsHeader}" />
+                    <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}" TextWrapping="Wrap" Text="{Binding RouterAiKeyText}"
+                               AutomationProperties.Name="Состояние ключа Router AI" />
+                    <DockPanel Margin="0,8,0,0">
+                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Удалить" Style="{StaticResource MaterialDesignFlatButton}"
+                                Click="OnDeleteRouterAiKey" AutomationProperties.Name="Удалить ключ Router AI" />
+                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Сохранить" Style="{StaticResource MaterialDesignOutlinedButton}"
+                                Click="OnSaveRouterAiKey" AutomationProperties.Name="Сохранить ключ Router AI" />
+                        <PasswordBox Style="{StaticResource MaterialDesignOutlinedPasswordBox}"
+                                     materialDesign:TextFieldAssist.TextFieldCornerRadius="12" materialDesign:HintAssist.Hint="Ключ Router AI (sk-…)"
+                                     AutomationProperties.Name="Ключ Router AI" />
+                    </DockPanel>
+                    <TextBlock Style="{StaticResource SettingsNote}"
+                               Text="Ключ хранится в диспетчере учётных данных Windows, не в файле настроек. Облако выбирается в настройках проекта: его фразы уходят в Router AI, черновик — на этом компьютере." />
                 </StackPanel>
             </ScrollViewer>
             <Button Margin="0,12,12,0" HorizontalAlignment="Right" Content="Закрыть" IsCancel="True" IsDefault="True"
@@ -399,6 +425,7 @@
                     <Run Text="   Язык " Foreground="Gray" /><Run Text="{Binding LanguageText, Mode=OneWay}" />
                     <Run Text="   Хаб " Foreground="Gray" /><Run Text="{Binding HubText, Mode=OneWay}" />
                     <Run Text="   Распознавание " Foreground="Gray" /><Run Text="{Binding Transcript.RuntimeText, Mode=OneWay}" />
+                    <Run Text="{Binding Transcript.CloudText, Mode=OneWay}" />
                 </TextBlock>
             </Border>
 

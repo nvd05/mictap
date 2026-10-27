@@ -5,8 +5,8 @@ using MicTap.Core;
 
 namespace MicTap.App;
 
-/// <summary>An engine to tick in the comparison dialog; <paramref name="Model"/> null is the local Whisper.</summary>
-public sealed partial class CompareChoice(string? model, string title, string price, double? rublesPerMinute, bool isChecked) : ObservableObject
+/// <summary>An engine to tick in the comparison dialog; <paramref name="model"/> null is the local Whisper.</summary>
+public sealed partial class CompareChoice(string? model, string title, string price, double? rublesPerMinute, bool isChecked, bool isLiked) : ObservableObject
 {
     [ObservableProperty]
     private bool _isChecked = isChecked;
@@ -18,12 +18,18 @@ public sealed partial class CompareChoice(string? model, string title, string pr
     public string Price { get; } = price;
 
     public double? RublesPerMinute { get; } = rublesPerMinute;
+
+    /// <summary>Liked for the project in the engine list.</summary>
+    public bool IsLiked { get; } = isLiked;
 }
 
 /// <summary>The comparison dialog: which engines hear the session's audio, and roughly what the paid ones cost.</summary>
 public sealed partial class ComparisonEditor : ObservableObject
 {
-    /// <summary>Picked at the start: the graphics card and the models the benchmarks and the user rate highest.</summary>
+    /// <summary>
+    /// Picked at the start: the graphics card, these models the benchmarks and the user rate highest, the project's model
+    /// and the models liked for the project (those go on top).
+    /// </summary>
     private static readonly string[] Suggested =
     [
         "x-ai/grok-stt-1.0",
@@ -34,21 +40,23 @@ public sealed partial class ComparisonEditor : ObservableObject
 
     private readonly double _minutes;
 
-    public ComparisonEditor(SessionInfo session, double minutes, IReadOnlyList<CloudModelInfo> models, string? projectModel)
+    public ComparisonEditor(SessionInfo session, double minutes, IReadOnlyList<CloudModelInfo> models, ProjectSettings project)
     {
         Session = session;
         _minutes = minutes;
-        Choices.Add(new CompareChoice(null, "Видеокарта · Whisper", "бесплатно", 0, isChecked: true));
+        List<CompareChoice> choices = [ new CompareChoice(null, "Видеокарта · Whisper", "бесплатно", 0, isChecked: true, project.Likes(null)) ];
         foreach (CloudModelInfo model in models)
         {
-            Choices.Add(new CompareChoice(
+            bool liked = project.Likes(model.Id);
+            choices.Add(new CompareChoice(
                 model.Id, model.Id, model.RublesPerMinute is { } price ? $"{price:0.###} ₽/мин" : "по токенам", model.RublesPerMinute,
-                Suggested.Contains(model.Id) || model.Id == projectModel));
+                liked || Suggested.Contains(model.Id) || model.Id == project.CloudModelInUse, liked));
         }
 
-        foreach (CompareChoice choice in Choices)
+        foreach (CompareChoice choice in choices.Where(c => c.IsLiked).Concat(choices.Where(c => !c.IsLiked)))
         {
             choice.PropertyChanged += OnChoiceChanged;
+            Choices.Add(choice);
         }
     }
 

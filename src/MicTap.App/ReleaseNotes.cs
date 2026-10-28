@@ -1,29 +1,63 @@
+using System.Globalization;
 using System.IO;
 
 namespace MicTap.App;
 
-/// <summary>A part of a release: «Добавлено», «Изменено», «Исправлено» or «Удалено», and its lines.</summary>
-public sealed record ReleaseSection(string Title, IReadOnlyList<string> Items)
+/// <summary>A line of a release: its bold lead («Боковое меню.») and the rest; either may be empty.</summary>
+public sealed record ReleaseItem(string Lead, string Text)
 {
-    /// <summary>A PackIcon kind for the title, as GitHub releases mark their parts.</summary>
+    /// <summary>«**Lead.** text» → the lead in bold and the text after it; a line without ** is all text.</summary>
+    public static ReleaseItem Parse(string line)
+    {
+        if (line.StartsWith("**", StringComparison.Ordinal) && line.IndexOf("**", 2, StringComparison.Ordinal) is > 2 and int end)
+        {
+            return new ReleaseItem(line[ 2..end ], line[ (end + 2).. ]);
+        }
+
+        return new ReleaseItem("", line);
+    }
+}
+
+/// <summary>A part of a release: «Добавлено», «Изменено», «Исправлено» or «Удалено», and its lines.</summary>
+public sealed record ReleaseSection(string Title, IReadOnlyList<ReleaseItem> Items)
+{
+    /// <summary>A PackIcon kind for the title, as release pages mark their parts.</summary>
     public string Icon => Title switch
     {
-        "Добавлено" => "PlusCircleOutline",
-        "Исправлено" => "WrenchOutline",
-        "Удалено" => "MinusCircleOutline",
-        _ => "PencilCircleOutline",
+        "Добавлено" => "Creation",
+        "Исправлено" => "BugCheckOutline",
+        "Удалено" => "DeleteOutline",
+        _ => "WrenchOutline",
+    };
+
+    /// <summary>The icon's colour: amber for new things, green for fixes, red for removals, grey for changes.</summary>
+    public string Color => Title switch
+    {
+        "Добавлено" => "#FFF5A623",
+        "Исправлено" => "#FF2E7D32",
+        "Удалено" => "#FFC62828",
+        _ => "#FF8A8A8A",
     };
 }
 
-/// <summary>A version in «Что нового».</summary>
-public sealed record Release(string Version, string Date, IReadOnlyList<ReleaseSection> Sections)
+/// <summary>A version in «Что нового»; <paramref name="Date"/> is yyyy-MM-dd as CHANGELOG.md writes it.</summary>
+public sealed record Release(string Version, string Date, IReadOnlyList<ReleaseSection> Sections, bool IsCurrent)
 {
-    public override string ToString() => Version;
+    private static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru-RU");
+
+    public string Title => $"Версия {Version}";
+
+    /// <summary>«28 октября 2026».</summary>
+    public string DateText => DateOnly.TryParseExact(Date, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly day)
+        ? day.ToString("d MMMM yyyy", Russian)
+        : Date;
+
+    public override string ToString() => Title;
 }
 
 /// <summary>
 /// CHANGELOG.md of the repository, built into the app: «## 0.11.0 — 2026-10-28» starts a release, «### Добавлено» a
-/// part of it, «- …» a line. Only this much of Markdown is used there, so only this much is read.
+/// part of it, «- **Lead.** text» a line. Only this much of Markdown is used there, so only this much is read.
 /// </summary>
 public static class ReleaseNotes
 {
@@ -44,7 +78,7 @@ public static class ReleaseNotes
         string date = "";
         List<ReleaseSection> sections = [];
         string? section = null;
-        List<string> items = [];
+        List<ReleaseItem> items = [];
 
         void EndSection()
         {
@@ -62,7 +96,7 @@ public static class ReleaseNotes
             EndSection();
             if (version is not null)
             {
-                releases.Add(new Release(version, date, [ .. sections ]));
+                releases.Add(new Release(version, date, [ .. sections ], IsCurrent: releases.Count == 0));
             }
 
             version = null;
@@ -86,7 +120,7 @@ public static class ReleaseNotes
             }
             else if (line.StartsWith("- ", StringComparison.Ordinal) && section is not null)
             {
-                items.Add(line[ 2.. ].Trim());
+                items.Add(ReleaseItem.Parse(line[ 2.. ].Trim()));
             }
         }
 

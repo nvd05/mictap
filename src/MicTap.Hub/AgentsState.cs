@@ -218,10 +218,12 @@ public sealed class AgentsState
             s.Name, File.GetLastWriteTime(s.MetaFile), _readLines(s).Count)),
     ];
 
-    public IReadOnlyList<SegmentDto> Tail(TailRequest request)
+    public TailReply Tail(TailRequest request)
     {
-        (_, SessionInfo session) = Resolve(request.Project, request.Session);
-        return [ .. _readLines(session).Where(l => l.Seq >= request.FromSeq).Select(ToDto) ];
+        (ProjectInfo project, SessionInfo session) = Resolve(request.Project, request.Session);
+        SessionMeta? meta = MetaOf(session);
+        return new TailReply(
+            project.Name, session.Name, meta?.Started, [ .. _readLines(session).Where(l => l.Seq >= request.FromSeq).Select(l => ToDto(l, meta)) ]);
     }
 
     /// <summary>
@@ -302,7 +304,9 @@ public sealed class AgentsState
             }
 
             Answered(request.Agent, toSeq);
-            return new WaitReply(project.Name, session.Name, reason, cursor + 1, toSeq, LanguageNow(session), [ .. unread.Select(ToDto) ]);
+            SessionMeta? meta = MetaOf(session);
+            return new WaitReply(
+                project.Name, session.Name, meta?.Started, reason, cursor + 1, toSeq, LanguageNow(session), [ .. unread.Select(l => ToDto(l, meta)) ]);
         }
         finally
         {
@@ -587,7 +591,11 @@ public sealed class AgentsState
         _ => "none",
     };
 
-    private static SegmentDto ToDto(TranscriptLine line) => new(line.Seq, line.Start, line.End, line.Lang, line.Text);
+    private static SegmentDto ToDto(TranscriptLine line, SessionMeta? meta) =>
+        new(line.Seq, line.Start, line.End, meta?.At(line.Start), meta?.At(line.End), line.Lang, line.Text);
+
+    /// <summary>The session's meta.json, for the clock times of its phrases; null for a session without one.</summary>
+    private static SessionMeta? MetaOf(SessionInfo session) => File.Exists(session.MetaFile) ? SessionMeta.Read(session, "ru") : null;
 
     private sealed record Recording(SessionInfo Session, string Project, string Language);
 

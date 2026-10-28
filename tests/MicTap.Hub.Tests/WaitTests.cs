@@ -46,6 +46,24 @@ public sealed class WaitTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Segments_say_on_the_clock_when_they_were_spoken_with_the_time_zone()
+    {
+        _hub.Say("今日は");
+
+        CliResult result = await _hub.RunAsync("wait");
+
+        string started = result.Json.GetProperty("session_started").GetString()!;
+        JsonElement segment = result.Json.GetProperty("segments")[ 0 ];
+        Assert.Matches(@"[+-]\d\d:\d\d$", started);
+        Assert.Equal(
+            DateTimeOffset.Parse(started) + TimeSpan.FromSeconds(segment.GetProperty("start").GetDouble()),
+            segment.GetProperty("start_at").GetDateTimeOffset());
+        Assert.Equal(
+            DateTimeOffset.Parse(started) + TimeSpan.FromSeconds(segment.GetProperty("end").GetDouble()),
+            segment.GetProperty("end_at").GetDateTimeOffset());
+    }
+
+    [Fact]
     public async Task Without_flags_it_holds_until_the_first_new_segment()
     {
         Task<CliResult> waiting = _hub.RunAsync("wait", "--agent", "codex");
@@ -350,7 +368,8 @@ public sealed class WaitTests : IAsyncLifetime
         Assert.Equal("Японский", projects.Json[ 0 ].GetProperty("name").GetString());
         Assert.Equal(1, projects.Json[ 0 ].GetProperty("sessions").GetInt32());
         Assert.Equal(2, sessions.Json[ 0 ].GetProperty("lines").GetInt32());
-        Assert.Equal([ 2 ], tail.Json.EnumerateArray().Select(s => s.GetProperty("seq").GetInt32()));
+        Assert.Equal([ 2 ], tail.Json.GetProperty("segments").EnumerateArray().Select(s => s.GetProperty("seq").GetInt32()));
+        Assert.Equal("Пара 1", tail.Json.GetProperty("session").GetString());
     }
 
     [Fact]

@@ -39,10 +39,19 @@ public sealed record WaitRequest(string? Project, string? Session, string Agent,
 
 public sealed record TailRequest(string? Project, string Session, int FromSeq);
 
-public sealed record SegmentDto(int Seq, double Start, double End, string Lang, string Text);
+/// <summary>
+/// A phrase: <paramref name="Start"/> and <paramref name="End"/> are seconds from the session's start,
+/// <paramref name="StartAt"/> and <paramref name="EndAt"/> the same moments on the clock, with the time zone.
+/// </summary>
+public sealed record SegmentDto(int Seq, double Start, double End, DateTimeOffset? StartAt, DateTimeOffset? EndAt, string Lang, string Text);
 
+/// <param name="SessionStarted">When the session's first recording began, with the time zone.</param>
 public sealed record WaitReply(
-    string Project, string Session, string Reason, int FromSeq, int ToSeq, string? LangNow, IReadOnlyList<SegmentDto> Segments);
+    string Project, string Session, DateTimeOffset? SessionStarted, string Reason, int FromSeq, int ToSeq, string? LangNow,
+    IReadOnlyList<SegmentDto> Segments);
+
+/// <param name="SessionStarted">When the session's first recording began, with the time zone.</param>
+public sealed record TailReply(string Project, string Session, DateTimeOffset? SessionStarted, IReadOnlyList<SegmentDto> Segments);
 
 public sealed record RecordingDto(string Project, string Session, string LangNow);
 

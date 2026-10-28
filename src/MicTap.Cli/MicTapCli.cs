@@ -34,8 +34,10 @@ public static class MicTapCli
         "running: the older exits with code 5 and leaves the cursor alone. Behind a tool call with a time limit keep " +
         "--max-wait well below it — 45 or less through Claude Desktop, which gives up on a call after 60 s: a wait that " +
         "outlives the call and ends before your next one moves the cursor past segments you never saw. " +
-        "Output: {project, session, reason, from_seq, to_seq, lang_now, segments:[{seq,start,end,lang,text}]}; " +
-        "reason is first_event, min_words, max_wait, session_stopped or force_push; start/end are seconds from the session start.";
+        "Output: {project, session, session_started, reason, from_seq, to_seq, lang_now, " +
+        "segments:[{seq,start,end,start_at,end_at,lang,text}]}; reason is first_event, min_words, max_wait, session_stopped " +
+        "or force_push; start/end are seconds from the session start, session_started/start_at/end_at the clock time in " +
+        "ISO 8601 with the time zone (which day and hour it was said).";
 
     private const string ExitCodes =
         "Exit codes: 0 ok, 2 no such project or session (or nothing recording), 3 mictap is not running, 4 bad arguments, " +
@@ -112,12 +114,16 @@ public static class MicTapCli
 
         var sessionRequired = new Option<string>("--session") { Description = "Session name.", Required = true };
         var seq = new Option<int>("--seq") { Description = "First seq to print.", DefaultValueFactory = _ => 1 };
-        var tail = new Command("tail", "Segments of a session from --seq on, without moving any cursor.")
+        var tail = new Command(
+            "tail",
+            "Segments of a session from --seq on, without moving any cursor. Output: {project, session, session_started, "
+            + "segments:[{seq,start,end,start_at,end_at,lang,text}]}; start/end are seconds from the session start, "
+            + "session_started/start_at/end_at the clock time in ISO 8601 with the time zone.")
         {
             sessionRequired, project, seq, agent,
         };
         tail.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
-            await hub.InvokeAsync<IReadOnlyList<SegmentDto>>(
+            await hub.InvokeAsync<TailReply>(
                 AgentHub.Tail, new TailRequest(parse.GetValue(project), parse.GetValue(sessionRequired)!, parse.GetValue(seq)), token)));
 
         var root = new RootCommand(

@@ -15,7 +15,7 @@ internal sealed class AgentsHub(AgentsState state) : Microsoft.AspNetCore.Signal
 
     public IReadOnlyList<SessionDto> Sessions(string project) => state.ListSessions(project);
 
-    public IReadOnlyList<SegmentDto> Tail(TailRequest request) => state.Tail(request);
+    public TailReply Tail(TailRequest request) => state.Tail(request);
 
     public Task<WaitReply> Wait(WaitRequest request) =>
         state.WaitAsync(request with { Agent = Agent }, Context.ConnectionId, Context.ConnectionAborted);

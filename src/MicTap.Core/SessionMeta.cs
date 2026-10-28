@@ -39,6 +39,20 @@ public sealed record SessionMeta(
 
     public void WriteTo(SessionInfo session) => JsonFiles.Write(session.MetaFile, this);
 
+    /// <summary>When the session began: its first recording's start.</summary>
+    [JsonIgnore]
+    public DateTimeOffset? Started => Starts.Count > 0 ? Starts[ 0 ].Time : null;
+
+    /// <summary>
+    /// The wall-clock moment of <paramref name="seconds"/> of session audio: within the recording that holds them (a
+    /// session may be appended to on another day), with the offset of that recording's start.
+    /// </summary>
+    public DateTimeOffset? At(double seconds)
+    {
+        SessionStart? start = Starts.LastOrDefault(s => s.Offset <= seconds) ?? Starts.FirstOrDefault();
+        return start is null ? null : start.Time + TimeSpan.FromSeconds(seconds - start.Offset);
+    }
+
     /// <summary>
     /// Reads meta.json of schema 2, or of schema 1 (before v0.3: one start, no language marks; the session is then
     /// taken as spoken in <paramref name="languageOfSchema1"/>).

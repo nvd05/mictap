@@ -44,7 +44,6 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     private bool _selecting;
     private AgentsState? _agentsState;
     private SessionNode? _recordingNode;
-    private long _sessionOffsetTicks; // where the recording starts in its session: the timer shows session time
 
     [ObservableProperty]
     private string _rootFolder = Core.Projects.DefaultRoot;
@@ -198,7 +197,6 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         recorder.LevelChanged += OnLevelChanged;
         recorder.ProgressChanged += OnProgressChanged;
         recorder.Stopped += OnRecordingStopped;
-        recorder.Started += (_, started) => Interlocked.Exchange(ref _sessionOffsetTicks, started.Offset.Ticks);
         transcript.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName == nameof(TranscriptViewModel.IsRetranscribing))
@@ -1761,11 +1759,11 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         }
     }
 
-    /// <summary>«Записано» counts this recording; the timer shows session time, as the phrases do.</summary>
+    /// <summary>The timer and «Записано» count this recording from 0, whatever the session held before.</summary>
     private void ShowRecorded(TimeSpan recorded)
     {
         RecordedText = FormatMinutes(recorded);
-        ElapsedText = FormatElapsed(TimeSpan.FromTicks(Interlocked.Read(ref _sessionOffsetTicks)) + recorded);
+        ElapsedText = FormatElapsed(recorded);
     }
 
     private static string LastSeen(AgentPresence agent, DateTimeOffset now)

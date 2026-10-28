@@ -280,6 +280,9 @@ public sealed partial class MainViewModel : ObservableObject
 
     public bool IsWhatsNewPage => PageIndex == (int)AppPage.WhatsNew;
 
+    /// <summary>This version, at the bottom of the side menu.</summary>
+    public string VersionText => _appVersion;
+
     /// <summary>«Что нового»: the versions of CHANGELOG.md, newest first.</summary>
     public IReadOnlyList<Release> Releases { get; } = ReleaseNotes.Load();
 
@@ -962,6 +965,13 @@ public sealed partial class MainViewModel : ObservableObject
 
     [RelayCommand]
     private void OpenSettings() => PageIndex = (int)AppPage.Settings;
+
+    [RelayCommand]
+    private void OpenWhatsNew()
+    {
+        SelectedRelease = Releases.FirstOrDefault();
+        PageIndex = (int)AppPage.WhatsNew;
+    }
 
     partial void OnPageIndexChanged(int value)
     {

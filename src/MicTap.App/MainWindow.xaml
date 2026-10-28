@@ -482,6 +482,36 @@
                       Icon="{materialDesign:PackIcon Kind=DeleteOutline}" />
         </ContextMenu>
 
+        <!-- A version in «Что нового»: a rounded row, tinted when chosen. -->
+        <Style x:Key="ReleaseRow" TargetType="ListBoxItem">
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ListBoxItem">
+                        <Border x:Name="Row" CornerRadius="12" Padding="12,9" Background="Transparent">
+                            <ContentPresenter />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="#0F000000" />
+                            </Trigger>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="Row" Property="Background" Value="{StaticResource InfoContainerBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="ReleaseChip" TargetType="Border">
+            <Setter Property="CornerRadius" Value="8" />
+            <Setter Property="Padding" Value="8,2" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        </Style>
+
         <Style x:Key="SideMenuItem" TargetType="ListBoxItem" BasedOn="{StaticResource MaterialDesign3.NavigationRailListBoxItem}">
             <Setter Property="Background" Value="{StaticResource InfoContainerBrush}" />
             <Setter Property="Width" Value="76" />
@@ -609,7 +639,15 @@
             </Border>
 
             <!-- The side menu at 9 o'clock: records, agents, settings, what's new. -->
-            <Border DockPanel.Dock="Left" Padding="4,12,0,12">
+            <DockPanel DockPanel.Dock="Left" Margin="4,12,0,12">
+                <Button DockPanel.Dock="Bottom" Width="76" Height="44" Padding="0" Style="{StaticResource MaterialDesignFlatButton}"
+                        materialDesign:ButtonAssist.CornerRadius="12" Foreground="{DynamicResource MaterialDesign.Brush.Foreground}"
+                        Command="{Binding OpenWhatsNewCommand}" ToolTip="Что нового в этой версии" AutomationProperties.Name="Версия mictap">
+                    <StackPanel>
+                        <TextBlock HorizontalAlignment="Center" Text="версия" Opacity="0.55" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                        <TextBlock HorizontalAlignment="Center" Text="{Binding VersionText}" Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                    </StackPanel>
+                </Button>
                 <ListBox x:Name="SideMenu" SelectedIndex="{Binding PageIndex}" AutomationProperties.Name="Разделы"
                          ItemContainerStyle="{StaticResource SideMenuItem}">
                     <ListBoxItem Content="Записи" AutomationProperties.Name="Записи" ToolTip="Проекты, сессии и запись"
@@ -626,7 +664,7 @@
                                  materialDesign:NavigationRailAssist.SelectedIcon="Gift"
                                  materialDesign:NavigationRailAssist.UnselectedIcon="GiftOutline" />
                 </ListBox>
-            </Border>
+            </DockPanel>
 
             <Grid>
             <Grid Margin="12" Visibility="{Binding IsRecordsPage, Converter={StaticResource VisibleWhenTrue}}">
@@ -1111,74 +1149,100 @@
             </materialDesign:Card>
 
             <!-- Settings: a page instead of the old dialog. -->
-            <materialDesign:Card Margin="12" Padding="20,16,8,16" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}"
+            <materialDesign:Card Margin="12" Padding="28,20,12,16" MaxWidth="860" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}"
                                  Visibility="{Binding IsSettingsPage, Converter={StaticResource VisibleWhenTrue}}">
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Настройки" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
                     <ScrollViewer Margin="0,4,0,0" VerticalScrollBarVisibility="Auto">
-                        <ContentControl MaxWidth="720" HorizontalAlignment="Left" Content="{StaticResource SettingsBody}" Focusable="False" />
+                        <ContentControl Content="{StaticResource SettingsBody}" Focusable="False" />
                     </ScrollViewer>
                 </DockPanel>
             </materialDesign:Card>
 
-            <!-- What's new, as GitHub releases: the versions at 9 o'clock, the chosen one's changes at 3 o'clock. -->
-            <Grid Margin="12" Visibility="{Binding IsWhatsNewPage, Converter={StaticResource VisibleWhenTrue}}">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="200" />
-                    <ColumnDefinition Width="12" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <materialDesign:Card Padding="8" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}">
+            <!-- What's new, as a release page: all versions at 9 o'clock, the chosen one's changes on a wide card at 3 o'clock. -->
+            <DockPanel Margin="24,16,24,12" MaxWidth="1180" Visibility="{Binding IsWhatsNewPage, Converter={StaticResource VisibleWhenTrue}}">
+                <TextBlock DockPanel.Dock="Top" Margin="12,4,0,14" Opacity="0.7" Style="{StaticResource MaterialDesignBodyLargeTextBlock}"
+                           Text="Что менялось в mictap — от новой версии к старой" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="230" />
+                        <ColumnDefinition Width="20" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
                     <DockPanel>
-                        <TextBlock DockPanel.Dock="Top" Margin="10,6,0,6" Text="Версии" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
-                        <ListBox ItemsSource="{Binding Releases}" SelectedItem="{Binding SelectedRelease}" AutomationProperties.Name="Версии">
+                        <TextBlock DockPanel.Dock="Top" Margin="12,0,0,8" Text="ВСЕ ВЕРСИИ" Opacity="0.55"
+                                   Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                        <ListBox ItemsSource="{Binding Releases}" SelectedItem="{Binding SelectedRelease}" AutomationProperties.Name="Версии"
+                                 ItemContainerStyle="{StaticResource ReleaseRow}" Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                             <ListBox.ItemTemplate>
                                 <DataTemplate DataType="{x:Type local:Release}">
-                                    <StackPanel Margin="2,2">
-                                        <TextBlock Text="{Binding Version}" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
-                                        <TextBlock Text="{Binding Date}" Opacity="0.6" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock x:Name="Name" Text="{Binding Title}" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                                            <Border Margin="8,0,0,0" Style="{StaticResource ReleaseChip}"
+                                                    Visibility="{Binding IsCurrent, Converter={StaticResource VisibleWhenTrue}}">
+                                                <TextBlock Text="текущая" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Margin="0,2,0,0" Text="{Binding DateText}" Opacity="0.55" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
                                     </StackPanel>
+                                    <DataTemplate.Triggers>
+                                        <DataTrigger Binding="{Binding IsSelected, RelativeSource={RelativeSource AncestorType=ListBoxItem}}" Value="True">
+                                            <Setter TargetName="Name" Property="Foreground" Value="{DynamicResource MaterialDesign.Brush.Primary}" />
+                                        </DataTrigger>
+                                    </DataTemplate.Triggers>
                                 </DataTemplate>
                             </ListBox.ItemTemplate>
                         </ListBox>
                     </DockPanel>
-                </materialDesign:Card>
-                <materialDesign:Card Grid.Column="2" Padding="28,20" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}">
-                    <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding SelectedRelease}">
-                        <StackPanel MaxWidth="760" HorizontalAlignment="Left">
-                            <TextBlock Style="{StaticResource MaterialDesignHeadlineMediumTextBlock}">
-                                <Run Text="mictap" /><Run Text="{Binding Version, Mode=OneWay, StringFormat=' {0}'}" />
-                            </TextBlock>
-                            <TextBlock Margin="0,4,0,8" Text="{Binding Date}" Opacity="0.6" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
-                            <ItemsControl ItemsSource="{Binding Sections}" AutomationProperties.Name="Изменения версии">
-                                <ItemsControl.ItemTemplate>
-                                    <DataTemplate DataType="{x:Type local:ReleaseSection}">
-                                        <StackPanel Margin="0,12,0,0">
-                                            <StackPanel Orientation="Horizontal">
-                                                <materialDesign:PackIcon Kind="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center"
-                                                                         Foreground="{DynamicResource MaterialDesign.Brush.Primary}" />
-                                                <TextBlock Margin="8,0,0,0" Text="{Binding Title}" VerticalAlignment="Center"
-                                                           Style="{StaticResource MaterialDesignTitleMediumTextBlock}" />
+                    <materialDesign:Card Grid.Column="2" Padding="36,28,24,24" UniformCornerRadius="16" Style="{StaticResource MaterialDesignOutlinedCard}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding SelectedRelease}" AutomationProperties.Name="Изменения версии">
+                            <StackPanel Margin="0,0,12,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+                                    <Border Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource ReleaseChip}"
+                                            Visibility="{Binding IsCurrent, Converter={StaticResource VisibleWhenTrue}}">
+                                        <TextBlock Text="Текущая" Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Margin="0,10,0,0" Orientation="Horizontal" Opacity="0.65">
+                                    <materialDesign:PackIcon Kind="CalendarBlankOutline" Width="16" Height="16" VerticalAlignment="Center" />
+                                    <TextBlock Margin="6,0,0,0" VerticalAlignment="Center" Style="{StaticResource MaterialDesignBodyMediumTextBlock}"
+                                               Text="{Binding DateText, StringFormat='Обновление от {0}'}" />
+                                </StackPanel>
+                                <Separator Margin="0,18,0,4" />
+                                <ItemsControl ItemsSource="{Binding Sections}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type local:ReleaseSection}">
+                                            <StackPanel Margin="0,16,0,0">
+                                                <StackPanel Orientation="Horizontal">
+                                                    <materialDesign:PackIcon Kind="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center" Foreground="{Binding Color}" />
+                                                    <TextBlock Margin="8,0,0,0" VerticalAlignment="Center" Text="{Binding Title}" FontWeight="SemiBold"
+                                                               Style="{StaticResource MaterialDesignTitleMediumTextBlock}" />
+                                                </StackPanel>
+                                                <ItemsControl Margin="4,8,0,0" ItemsSource="{Binding Items}">
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate DataType="{x:Type local:ReleaseItem}">
+                                                            <DockPanel Margin="0,4">
+                                                                <Ellipse DockPanel.Dock="Left" Width="5" Height="5" Margin="0,10,14,0" VerticalAlignment="Top"
+                                                                         Fill="{DynamicResource MaterialDesign.Brush.Foreground}" Opacity="0.45" />
+                                                                <TextBlock TextWrapping="Wrap" LineHeight="24" Style="{StaticResource MaterialDesignBodyLargeTextBlock}">
+                                                                    <Run Text="{Binding Lead, Mode=OneWay}" FontWeight="SemiBold" /><Run Text="{Binding Text, Mode=OneWay}" />
+                                                                </TextBlock>
+                                                            </DockPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
                                             </StackPanel>
-                                            <ItemsControl Margin="28,6,0,0" ItemsSource="{Binding Items}">
-                                                <ItemsControl.ItemTemplate>
-                                                    <DataTemplate>
-                                                        <DockPanel Margin="0,3">
-                                                            <Ellipse DockPanel.Dock="Left" Width="5" Height="5" Margin="0,9,12,0" VerticalAlignment="Top"
-                                                                     Fill="{DynamicResource MaterialDesign.Brush.Foreground}" Opacity="0.6" />
-                                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
-                                                        </DockPanel>
-                                                    </DataTemplate>
-                                                </ItemsControl.ItemTemplate>
-                                            </ItemsControl>
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ItemsControl.ItemTemplate>
-                            </ItemsControl>
-                        </StackPanel>
-                    </ScrollViewer>
-                </materialDesign:Card>
-            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </materialDesign:Card>
+                </Grid>
+            </DockPanel>
             </Grid>
         </DockPanel>
     </materialDesign:DialogHost>

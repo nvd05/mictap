@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Windows.Threading;
@@ -9,14 +10,44 @@ using Serilog;
 
 namespace MicTap.App;
 
-/// <summary>A segment's draft text; an edit is saved to transcript.jsonl when the text box loses focus.</summary>
-public sealed class TranscriptItem(TranscriptLine line, Action<TranscriptItem> edited) : ObservableObject
+/// <summary>
+/// A segment's text, editable: an edit is saved to transcript.jsonl when the text box loses focus. <paramref name="at"/>
+/// is when it was said on the clock (null without meta.json); <paramref name="startsDay"/> puts the day above it.
+/// </summary>
+public sealed class TranscriptItem(TranscriptLine line, DateTimeOffset? at, bool startsDay, Action<TranscriptItem> edited) : ObservableObject
 {
+    private static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru-RU");
+
     private string _text = line.Text;
 
     public TranscriptLine Line { get; private set; } = line;
 
-    public string TimeText => TimeSpan.FromSeconds(Line.Start).ToString(@"hh\:mm\:ss");
+    public DateTimeOffset? At { get; } = at;
+
+    /// <summary>When it was said, «21:39»; the session time without meta.json.</summary>
+    public string ClockText => At is { } at ? at.ToLocalTime().ToString("HH:mm", Russian) : OffsetText;
+
+    /// <summary>Where it is in the session, «25:13» or «1:02:40»: in grey under the clock time.</summary>
+    public string OffsetText
+    {
+        get
+        {
+            var offset = TimeSpan.FromSeconds(Line.Start);
+            return offset.TotalHours >= 1 ? offset.ToString(@"h\:mm\:ss") : offset.ToString(@"mm\:ss");
+        }
+    }
+
+    public bool HasClock => At is not null;
+
+    public DateOnly? Day => At is { } at ? DateOnly.FromDateTime(at.ToLocalTime().DateTime) : null;
+
+    /// <summary>The first phrase of its day: the day goes above it, as in a messenger.</summary>
+    public bool StartsDay { get; } = startsDay;
+
+    /// <summary>«Сегодня», «Вчера», «28 октября», «28 октября 2025».</summary>
+    public string DayText => DayName(Day);
+
+    public string TimeText => ClockText;
 
     public string LanguageText => Line.Lang.ToUpperInvariant();
 
@@ -33,6 +64,19 @@ public sealed class TranscriptItem(TranscriptLine line, Action<TranscriptItem> e
     }
 
     internal void Saved(TranscriptLine line) => Line = line;
+
+    public static string DayName(DateOnly? day)
+    {
+        if (day is not { } d)
+        {
+            return "";
+        }
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        return d == today ? "Сегодня"
+            : d == today.AddDays(-1) ? "Вчера"
+            : d.ToString(d.Year == today.Year ? "d MMMM" : "d MMMM yyyy", Russian);
+    }
 }
 
 /// <summary>
@@ -53,6 +97,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private readonly Task<Func<SpeechDetector>> _detectors;
     private VoiceActivityModel? _vad;
     private SessionInfo? _session;
+    private SessionMeta? _meta; // of _session: the clock times of its phrases
     private SessionInfo? _liveSession;
     private bool _live;
     private DateTime _endedAt;
@@ -204,6 +249,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     public void ShowSession(SessionInfo? session)
     {
         _session = session;
+        _meta = MetaOf(session);
         Items.Clear();
         ShowSpent(session);
         if (session is null || !File.Exists(Path.Combine(session.Folder, JsonlTranscriptSink.FileName)))
@@ -215,7 +261,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         {
             foreach (TranscriptLine line in _pipeline.SinkFor(session).Lines)
             {
-                Items.Add(new TranscriptItem(line, item => SaveEdit(session, item)));
+                AddItem(session, line);
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
@@ -259,6 +305,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     {
         IsRetranscribing = true;
         _session = session;
+        _meta = MetaOf(session);
         Items.Clear();
         QueueText = "распознаю заново…";
         try
@@ -269,7 +316,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             _pipeline.ForgetSink(session);
             foreach (TranscriptLine line in result.Lines)
             {
-                Items.Add(new TranscriptItem(line, item => SaveEdit(session, item)));
+                AddItem(session, line);
             }
 
             StatusText = result.Backup is null
@@ -606,12 +653,40 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             }
         });
 
+    /// <summary>A phrase of the shown session, with its clock time; a new day gets its separator.</summary>
+    private void AddItem(SessionInfo session, TranscriptLine line)
+    {
+        DateTimeOffset? at = _meta?.At(line.Start);
+        DateOnly? day = at is { } t ? DateOnly.FromDateTime(t.ToLocalTime().DateTime) : null;
+        bool startsDay = day is not null && (Items.Count == 0 || Items[ ^1 ].Day != day);
+        Items.Add(new TranscriptItem(line, at, startsDay, item => SaveEdit(session, item)));
+    }
+
+    /// <summary>The session's meta.json, for the clock times of its phrases; null when it has none or it cannot be read.</summary>
+    private SessionMeta? MetaOf(SessionInfo? session)
+    {
+        if (session is null || !File.Exists(session.MetaFile))
+        {
+            return null;
+        }
+
+        try
+        {
+            return SessionMeta.Read(session, "ru");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            _logger.Warning(ex, "meta.json of {Session} not read: its phrases show session time only", session.Name);
+            return null;
+        }
+    }
+
     private void OnSegmentTranscribed(object? sender, SegmentTranscript segment) =>
         _dispatcher.InvokeAsync(() =>
         {
             if (segment.Session == _session)
             {
-                Items.Add(new TranscriptItem(segment.Line, item => SaveEdit(segment.Session, item)));
+                AddItem(segment.Session, segment.Line);
             }
 
             if (_live && segment.Session == _liveSession)

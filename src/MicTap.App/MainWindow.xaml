@@ -539,6 +539,14 @@
             <Setter Property="materialDesign:NavigationRailAssist.CornerRadius" Value="12" />
         </Style>
 
+        <!-- A day in the session's text: between days, and at the top while scrolling. -->
+        <Style x:Key="DayChip" TargetType="Border">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Padding" Value="12,3" />
+            <Setter Property="CornerRadius" Value="11" />
+            <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        </Style>
+
         <Style x:Key="TreeRowBorder" TargetType="Border">
             <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Padding" Value="8,6" />
@@ -1086,32 +1094,54 @@
                             <Separator DockPanel.Dock="Top" Margin="8,8,0,6" />
 
                             <Grid Margin="8,0,0,0">
-                                <ScrollViewer x:Name="TranscriptScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-                                    <ItemsControl Margin="0,0,8,0" ItemsSource="{Binding Items}" AutomationProperties.Name="Записано">
+                                <ScrollViewer x:Name="TranscriptScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                              ScrollChanged="OnTranscriptScrolled">
+                                    <ItemsControl x:Name="TranscriptItems" Margin="0,0,8,0" ItemsSource="{Binding Items}" AutomationProperties.Name="Записано">
                                         <ItemsControl.ItemTemplate>
-                                            <!-- Time and language sit on the first line of the phrase. -->
+                                            <!-- The day above its first phrase, as in a messenger; the clock time and, in grey under it, the session
+                                                 time sit with the language on the first line of the phrase. -->
                                             <DataTemplate DataType="{x:Type local:TranscriptItem}">
-                                                <Grid Margin="0,0,0,6">
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="62" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="*" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" Margin="0,8,0,0" VerticalAlignment="Top" Opacity="0.55"
-                                                               Text="{Binding TimeText}" Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
-                                                    <Border Grid.Column="1" Height="18" Margin="0,7,10,0" Padding="6,0" CornerRadius="6"
-                                                            VerticalAlignment="Top" Background="{StaticResource InfoContainerBrush}">
-                                                        <TextBlock Text="{Binding LanguageText}" VerticalAlignment="Center"
-                                                                   Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                                                <StackPanel>
+                                                    <Border Style="{StaticResource DayChip}" Margin="0,6,0,10"
+                                                            Visibility="{Binding StartsDay, Converter={StaticResource VisibleWhenTrue}}">
+                                                        <TextBlock Text="{Binding DayText}" Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
                                                     </Border>
-                                                    <TextBox Grid.Column="2" Text="{Binding Text}" TextWrapping="Wrap" AutomationProperties.Name="{Binding TimeText}"
-                                                             FontSize="15" VerticalAlignment="Top" materialDesign:TextFieldAssist.DecorationVisibility="Hidden"
-                                                             BorderThickness="0" ToolTip="Щёлкните, чтобы исправить; правка сохранится в transcript.jsonl" />
-                                                </Grid>
+                                                    <Grid Margin="0,0,0,6">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="62" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <StackPanel Grid.Column="0" Margin="0,7,0,0" VerticalAlignment="Top">
+                                                            <TextBlock Text="{Binding ClockText}" Opacity="0.75" Style="{StaticResource MaterialDesignLabelMediumTextBlock}"
+                                                                       ToolTip="Когда сказано" />
+                                                            <TextBlock Text="{Binding OffsetText}" Opacity="0.45" Style="{StaticResource MaterialDesignLabelSmallTextBlock}"
+                                                                       ToolTip="Время от начала сессии"
+                                                                       Visibility="{Binding HasClock, Converter={StaticResource VisibleWhenTrue}}" />
+                                                        </StackPanel>
+                                                        <Border Grid.Column="1" Height="18" Margin="0,7,10,0" Padding="6,0" CornerRadius="6"
+                                                                VerticalAlignment="Top" Background="{StaticResource InfoContainerBrush}">
+                                                            <TextBlock Text="{Binding LanguageText}" VerticalAlignment="Center"
+                                                                       Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                                                        </Border>
+                                                        <TextBox Grid.Column="2" Text="{Binding Text}" TextWrapping="Wrap" AutomationProperties.Name="{Binding TimeText}"
+                                                                 FontSize="15" VerticalAlignment="Top" materialDesign:TextFieldAssist.DecorationVisibility="Hidden"
+                                                                 BorderThickness="0" ToolTip="Щёлкните, чтобы исправить; правка сохранится в transcript.jsonl" />
+                                                    </Grid>
+                                                </StackPanel>
                                             </DataTemplate>
                                         </ItemsControl.ItemTemplate>
                                     </ItemsControl>
                                 </ScrollViewer>
+
+                                <!-- The day of the phrases at the top, while the text is scrolled away from its start. -->
+                                <Border x:Name="StickyDay" Style="{StaticResource DayChip}" Margin="0,4,8,0" VerticalAlignment="Top" Visibility="Collapsed"
+                                        IsHitTestVisible="False">
+                                    <Border.Effect>
+                                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.18" />
+                                    </Border.Effect>
+                                    <TextBlock x:Name="StickyDayText" Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                                </Border>
 
                                 <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" Opacity="0.45"
                                            Text="{Binding DataContext.EmptyText, RelativeSource={RelativeSource AncestorType=Window}}">

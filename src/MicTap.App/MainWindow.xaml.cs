@@ -306,6 +306,28 @@ public partial class MainWindow : Window
     private void OnRouterAiKeyChanged(object sender, RoutedEventArgs e) =>
         _viewModel.CanSaveRouterAiKey = ((PasswordBox)sender).Password.Trim().Length > 0;
 
+    /// <summary>The day of the topmost phrase in view sticks to the top while the text is scrolled away from its start.</summary>
+    private void OnTranscriptScrolled(object sender, ScrollChangedEventArgs e)
+    {
+        TranscriptItem? first = null;
+        for (int i = 0; i < TranscriptItems.Items.Count; i++)
+        {
+            if (TranscriptItems.ItemContainerGenerator.ContainerFromIndex(i) is FrameworkElement row && row.IsVisible
+                && row.TransformToAncestor(TranscriptScroll).Transform(new Point(0, row.ActualHeight)).Y > 0)
+            {
+                first = (TranscriptItem)row.DataContext;
+                break;
+            }
+        }
+
+        bool show = first is { Day: not null } && TranscriptScroll.VerticalOffset > 1;
+        StickyDay.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        if (show)
+        {
+            StickyDayText.Text = first!.DayText;
+        }
+    }
+
     /// <summary>New lines scroll the transcript to its end unless the user scrolled up to read.</summary>
     private void FollowTranscript()
     {

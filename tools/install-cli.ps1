@@ -3,6 +3,9 @@
 $ErrorActionPreference = 'Stop'
 
 $bin = Join-Path $env:LOCALAPPDATA 'mictap\bin'
+. (Join-Path $PSScriptRoot 'outside-check.ps1')
+Assert-WritesLandForReal $bin
+
 dotnet publish (Join-Path $PSScriptRoot '..\src\MicTap.Cli') -c Release -o $bin
 if ($LASTEXITCODE -ne 0) { throw "dotnet publish failed with exit code $LASTEXITCODE" }
 

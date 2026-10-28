@@ -18,8 +18,18 @@ public partial class App : Application
     {
         base.OnStartup(e);
 
-        // Two instances would record over each other's sessions and settings.
-        _singleInstance = new Mutex(initiallyOwned: true, @"Local\mictap", out bool createdNew);
+        // --profile <folder>: a test copy with its own settings and logs, next to the user's mictap.
+        int profileArg = Array.IndexOf(e.Args, "--profile");
+        if (profileArg >= 0 && profileArg + 1 < e.Args.Length)
+        {
+            AppPaths.UseProfile(e.Args[ profileArg + 1 ]);
+        }
+
+        // Two instances would record over each other's sessions and settings; a profile is a separate one.
+        string instance = AppPaths.Profile is null
+            ? @"Local\mictap"
+            : $@"Local\mictap-profile-{Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(AppPaths.Profile.ToUpperInvariant())))[ ..16 ]}";
+        _singleInstance = new Mutex(initiallyOwned: true, instance, out bool createdNew);
         if (!createdNew)
         {
             _singleInstance.Dispose();
@@ -37,7 +47,7 @@ public partial class App : Application
         TaskScheduler.UnobservedTaskException += (_, args) => Log.Error(args.Exception, "Unobserved task exception");
 
         string version = typeof(App).Assembly.GetName().Version!.ToString(3);
-        Log.Information("mictap {Version} started", version);
+        Log.Information("mictap {Version} started{Profile}", version, AppPaths.Profile is null ? "" : $" with the profile {AppPaths.Profile}");
 
         var settingsStore = new SettingsStore(AppPaths.SettingsFile);
         AppSettings settings = settingsStore.Load();
@@ -47,6 +57,11 @@ public partial class App : Application
             recorder, Log.Logger);
         var viewModel = new MainViewModel(settingsStore, settings, recorder, _transcript, version, Log.Logger);
         MainWindow = new MainWindow(viewModel);
+        if (AppPaths.Profile is not null)
+        {
+            MainWindow.Title = $"mictap — тест ({Path.GetFileName(AppPaths.Profile)})";
+        }
+
         MainWindow.Show();
         viewModel.Initialize();
         _transcript.Start();
@@ -56,6 +71,11 @@ public partial class App : Application
         agents.Attach(recorder, pipeline);
         viewModel.UseHub(agents);
         _ = StartHubAsync(settings.HubPort, agents, viewModel);
+
+        if (AppPaths.Profile is not null)
+        {
+            return; // the global hotkeys stay with the user's mictap
+        }
 
         _hotkeys = new GlobalHotkeys();
         HotkeySettings keys = viewModel.Hotkeys;

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using MicTap.Core;
 
@@ -27,7 +28,24 @@ public sealed partial class ProjectNode : ObservableObject
     [ObservableProperty]
     private int _agentCount;
 
+    /// <summary>Not listed unless the hidden projects are shown; see <see cref="AppSettings.HiddenProjects"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HideText))]
+    private bool _isHidden;
+
+    /// <summary>Listed first; see <see cref="AppSettings.PinnedProjects"/>.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PinText))]
+    private bool _isPinned;
+
     public string Name => Project.Name;
+
+    /// <summary>The project's folder under the root: what settings.json keeps for hidden and pinned projects.</summary>
+    public string FolderName => Path.GetFileName(Project.Folder);
+
+    public string PinText => IsPinned ? "Открепить" : "Закрепить наверху";
+
+    public string HideText => IsHidden ? "Показать проект" : "Скрыть проект";
 
     public string RetentionText => Project.Settings.AudioRetention switch
     {

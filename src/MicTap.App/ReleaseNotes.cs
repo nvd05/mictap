@@ -19,29 +19,10 @@ public sealed record ReleaseItem(string Lead, string Text)
 }
 
 /// <summary>A part of a release: «Добавлено», «Изменено», «Исправлено» or «Удалено», and its lines.</summary>
-public sealed record ReleaseSection(string Title, IReadOnlyList<ReleaseItem> Items)
-{
-    /// <summary>A PackIcon kind for the title, as release pages mark their parts.</summary>
-    public string Icon => Title switch
-    {
-        "Добавлено" => "Creation",
-        "Исправлено" => "BugCheckOutline",
-        "Удалено" => "DeleteOutline",
-        _ => "WrenchOutline",
-    };
-
-    /// <summary>The icon's colour: amber for new things, green for fixes, red for removals, grey for changes.</summary>
-    public string Color => Title switch
-    {
-        "Добавлено" => "#FFF5A623",
-        "Исправлено" => "#FF2E7D32",
-        "Удалено" => "#FFC62828",
-        _ => "#FF8A8A8A",
-    };
-}
+public sealed record ReleaseSection(string Title, IReadOnlyList<ReleaseItem> Items);
 
 /// <summary>A version in «Что нового»; <paramref name="Date"/> is yyyy-MM-dd as CHANGELOG.md writes it.</summary>
-public sealed record Release(string Version, string Date, IReadOnlyList<ReleaseSection> Sections, bool IsCurrent)
+public sealed record Release(string Version, string Date, IReadOnlyList<ReleaseSection> Sections)
 {
     private static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru-RU");
 
@@ -96,7 +77,7 @@ public static class ReleaseNotes
             EndSection();
             if (version is not null)
             {
-                releases.Add(new Release(version, date, [ .. sections ], IsCurrent: releases.Count == 0));
+                releases.Add(new Release(version, date, [ .. sections ]));
             }
 
             version = null;

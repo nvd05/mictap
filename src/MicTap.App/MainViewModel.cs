@@ -92,6 +92,13 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private Release? _selectedRelease;
 
+    /// <summary>Hidden projects are listed too, dimmed; not kept between starts, so they are hidden again after a restart.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowHiddenToolTip))]
+    private bool _showHiddenProjects;
+
+    private System.ComponentModel.ICollectionView? _projectsView;
+
     /// <summary>How often the draft is recognized, from the settings slider: 0 is off.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DraftText))]
@@ -263,6 +270,17 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>Agents of the shown session: waiting, thinking or gone.</summary>
     public ObservableCollection<AgentRow> Agents { get; } = [];
+
+    /// <summary>The tree's projects: pinned first, then by name; hidden ones only while <see cref="ShowHiddenProjects"/>.</summary>
+    public System.ComponentModel.ICollectionView ProjectsView => _projectsView ??= CreateProjectsView();
+
+    public int HiddenCount => Projects.Count(p => p.IsHidden);
+
+    public bool HasHiddenProjects => HiddenCount > 0;
+
+    public string ShowHiddenToolTip => ShowHiddenProjects
+        ? "Спрятать скрытые проекты"
+        : $"Показать скрытые проекты: {HiddenCount}";
 
     /// <summary>Every agent of every session, for «Агенты»: waiting first, then thinking, then gone, latest first.</summary>
     public ObservableCollection<AgentListRow> AllAgents { get; } = [];
@@ -1464,7 +1482,13 @@ public sealed partial class MainViewModel : ObservableObject
         Projects.Clear();
         foreach (ProjectInfo project in projects)
         {
-            var node = new ProjectNode(project) { IsExpanded = unfolded.Contains(project.Folder) };
+            string folderName = Path.GetFileName(project.Folder);
+            var node = new ProjectNode(project)
+            {
+                IsExpanded = unfolded.Contains(project.Folder),
+                IsHidden = _settings.HiddenProjects.Contains(folderName),
+                IsPinned = _settings.PinnedProjects.Contains(folderName),
+            };
             foreach (SessionInfo session in SessionFolders.List(project.Folder))
             {
                 node.Sessions.Add(new SessionNode(session, node));
@@ -1481,7 +1505,9 @@ public sealed partial class MainViewModel : ObservableObject
             _recordingNode = again;
         }
 
-        ProjectNode? selected = Projects.FirstOrDefault(p => p.Project.Folder == keep) ?? Projects.FirstOrDefault();
+        ProjectsView.Refresh();
+        OnHiddenChanged();
+        ProjectNode? selected = ListedProjects.FirstOrDefault(p => p.Project.Folder == keep) ?? ListedProjects.FirstOrDefault();
         if (selected is not null)
         {
             selected.IsExpanded = true;
@@ -1489,6 +1515,86 @@ public sealed partial class MainViewModel : ObservableObject
             Select(selected);
         }
     }
+
+    /// <summary>The projects the tree lists now, in its order.</summary>
+    private IEnumerable<ProjectNode> ListedProjects => ProjectsView.Cast<ProjectNode>();
+
+    private System.ComponentModel.ICollectionView CreateProjectsView()
+    {
+        var view = new System.Windows.Data.ListCollectionView(Projects)
+        {
+            Filter = item => item is ProjectNode node && (!node.IsHidden || ShowHiddenProjects),
+            CustomSort = Comparer<ProjectNode>.Create((a, b) =>
+                a.IsPinned != b.IsPinned ? (a.IsPinned ? -1 : 1) : StringComparer.CurrentCultureIgnoreCase.Compare(a.Name, b.Name)),
+        };
+        return view;
+    }
+
+    [RelayCommand]
+    private void TogglePinProject(ProjectNode? node)
+    {
+        if (node is null)
+        {
+            return;
+        }
+
+        node.IsPinned = !node.IsPinned;
+        SaveProjectsView();
+        ProjectsView.Refresh();
+    }
+
+    [RelayCommand]
+    private void ToggleHideProject(ProjectNode? node)
+    {
+        if (node is null)
+        {
+            return;
+        }
+
+        node.IsHidden = !node.IsHidden;
+        SaveProjectsView();
+        ProjectsView.Refresh();
+        OnHiddenChanged();
+        RefreshAgents();
+        if (node.IsHidden && !ShowHiddenProjects)
+        {
+            ShowMessage($"Проект «{node.Name}» скрыт. Показать скрытые — кнопка с глазом над проектами.", isError: false);
+            if (node.IsSelected && ListedProjects.FirstOrDefault() is { } other)
+            {
+                other.IsSelected = true;
+                Select(other);
+            }
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleShowHidden() => ShowHiddenProjects = !ShowHiddenProjects;
+
+    partial void OnShowHiddenProjectsChanged(bool value)
+    {
+        ProjectsView.Refresh();
+        RefreshAgents();
+        if (!value && SelectedProject is { } shown && Projects.FirstOrDefault(p => p.Project.Folder == shown.Folder) is { IsHidden: true } hidden
+            && ListedProjects.FirstOrDefault() is { } other)
+        {
+            hidden.IsSelected = false;
+            other.IsSelected = true;
+            Select(other);
+        }
+    }
+
+    private void OnHiddenChanged()
+    {
+        OnPropertyChanged(nameof(HiddenCount));
+        OnPropertyChanged(nameof(HasHiddenProjects));
+        OnPropertyChanged(nameof(ShowHiddenToolTip));
+    }
+
+    private void SaveProjectsView() => Save(_settings with
+    {
+        HiddenProjects = [ .. Projects.Where(p => p.IsHidden).Select(p => p.FolderName) ],
+        PinnedProjects = [ .. Projects.Where(p => p.IsPinned).Select(p => p.FolderName) ],
+    });
 
     private void RepairProjects()
     {
@@ -1547,7 +1653,11 @@ public sealed partial class MainViewModel : ObservableObject
             foreach (SessionNode session in project.Sessions)
             {
                 IReadOnlyList<AgentPresence> agents = _agentsState.AgentsOf(session.Session);
-                everyone.AddRange(agents.Select(a => (a, project.Project.Name, session.Session.Name)));
+                if (!project.IsHidden || ShowHiddenProjects)
+                {
+                    everyone.AddRange(agents.Select(a => (a, project.Project.Name, session.Session.Name)));
+                }
+
                 AgentPresence[] present = [ .. agents.Where(a => a.State != AgentState.Gone) ];
                 session.AgentCount = present.Length;
                 session.AgentsText = string.Join("\n", present.Select(a => $"{a.Name} · {Describe(a, now)}"));

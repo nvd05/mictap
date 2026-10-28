@@ -19,12 +19,14 @@ return await MicTapCli.RunAsync(args, HubPort(), Console.Out, Console.Error, can
 // The app's settings.json says where its hub listens; the default otherwise.
 static int HubPort()
 {
-    string settings = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mictap", "settings.json");
-    if (!File.Exists(settings))
+    var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mictap", "settings.json");
+
+    if (!File.Exists(settingsPath))
     {
         return AgentHub.DefaultPort;
     }
 
-    using JsonDocument json = JsonDocument.Parse(File.ReadAllText(settings));
+    using var settings = File.OpenRead(settingsPath);
+    using var json = JsonDocument.Parse(settings);
     return json.RootElement.TryGetProperty("hubPort", out JsonElement port) && port.TryGetInt32(out int value) ? value : AgentHub.DefaultPort;
 }

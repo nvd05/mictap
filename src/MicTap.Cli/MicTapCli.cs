@@ -41,7 +41,7 @@ public static class MicTapCli
         "Exit codes: 0 ok, 2 no such project or session (or nothing recording), 3 mictap is not running, 4 bad arguments, " +
         "5 a newer wait of the same agent took over.";
 
-    private static readonly JsonSerializerOptions Json = new()
+    private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
@@ -159,7 +159,7 @@ public static class MicTapCli
         try
         {
             T reply = await call(hub);
-            await output.WriteLineAsync(JsonSerializer.Serialize(reply, Json));
+            await output.WriteLineAsync(JsonSerializer.Serialize(reply, JsonOptions));
             return Ok;
         }
         catch (HubException ex) when (ex.Message.Contains(AgentHub.NotFound, StringComparison.Ordinal))

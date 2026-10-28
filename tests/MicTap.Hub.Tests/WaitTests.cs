@@ -64,6 +64,26 @@ public sealed class WaitTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Skip_backlog_takes_an_unread_stopped_session_as_read_and_the_recording_one_from_its_start()
+    {
+        SessionInfo old = SessionFolders.Open(_hub.Project.Folder, "Пара 0");
+        new SessionMeta(
+            [ new SessionStart(DateTimeOffset.Now.AddDays(-1), 0, 60) ], "Mic", MetaFormat.From(PcmFormat.Mono16k), 60, "test",
+            [ new LanguageMark(0, "ja") ]).WriteTo(old);
+        var oldTranscript = new JsonlTranscriptSink(old.Folder);
+        oldTranscript.Append(0, 1, "ja", "昨日");
+        oldTranscript.Append(1, 2, "ja", "の話");
+        _hub.Say("今日は");
+
+        CliResult stopped = await _hub.RunAsync("wait", "--project", "Японский", "--session", "Пара 0", "--skip-backlog");
+        CliResult recording = await _hub.RunAsync("wait", "--project", "Японский", "--session", "Пара 1", "--skip-backlog");
+
+        Assert.Equal(("session_stopped", (int[])[]), (stopped.Reason, stopped.Seqs));
+        Assert.Equal(2, stopped.Json.GetProperty("to_seq").GetInt32());
+        Assert.Equal([ 1 ], recording.Seqs);
+    }
+
+    [Fact]
     public async Task Without_flags_it_holds_until_the_first_new_segment()
     {
         Task<CliResult> waiting = _hub.RunAsync("wait", "--agent", "codex");

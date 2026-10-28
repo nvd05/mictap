@@ -5,13 +5,15 @@ using Microsoft.AspNetCore.SignalR;
 namespace MicTap.Hub;
 
 /// <summary>
-/// Where an agent is: in a wait (waiting), out of it for a while (thinking), or gone for longer than
+/// Where an agent is: in a wait (waiting); out of it for up to <see cref="AgentsState.ThinkingFor"/> (thinking over what
+/// it got, about to wait again); then away — it may come back, but nothing says it is still working; gone after
 /// <see cref="AgentsState.GoneAfter"/>. Other calls, such as status, do not count as waiting.
 /// </summary>
 public enum AgentState
 {
     Waiting,
     Thinking,
+    Away,
     Gone,
 }
 
@@ -25,6 +27,12 @@ public sealed record AgentPresence(string Name, AgentState State, DateTimeOffset
 public sealed class AgentsState
 {
     public static readonly TimeSpan GoneAfter = TimeSpan.FromMinutes(10);
+
+    /// <summary>
+    /// How long an agent out of a wait is called thinking. Up to <see cref="GoneAfter"/> it still counts as present (it
+    /// may be writing a long answer: nothing tells), but is shown as away: 10 minutes of «думает» outlived a closed chat.
+    /// </summary>
+    public static readonly TimeSpan ThinkingFor = TimeSpan.FromMinutes(2);
 
     private readonly Func<SessionInfo, IReadOnlyList<TranscriptLine>> _readLines;
     private readonly TimeProvider _time;
@@ -240,7 +248,8 @@ public sealed class AgentsState
         using var waiter = new Waiter(request.Agent);
         try
         {
-            int cursor = Enter(session, waiter, request.FromStart);
+            int? backlogEnd = request.SkipBacklog ? BacklogEnd(session) : null;
+            int cursor = Enter(session, waiter, request.FromStart, backlogEnd);
             Joined(request.Agent, connectionId, project, session, cursor);
             DateTimeOffset? deadline = request.MaxWaitSeconds is { } seconds ? _time.GetUtcNow().AddSeconds(seconds) : null;
             bool unconditional = request.MinWords is null && request.MaxWaitSeconds is null;
@@ -315,7 +324,7 @@ public sealed class AgentsState
         }
     }
 
-    /// <summary>Agents of a session: those in a wait are waiting, the others think until <see cref="GoneAfter"/>, then are gone.</summary>
+    /// <summary>Agents of a session: waiting, thinking, away or gone; see <see cref="AgentState"/>.</summary>
     public IReadOnlyList<AgentPresence> AgentsOf(SessionInfo session)
     {
         var agents = new Dictionary<string, AgentPresence>(StringComparer.OrdinalIgnoreCase);
@@ -349,10 +358,14 @@ public sealed class AgentsState
         }
     }
 
-    private AgentState StateAt(bool waiting, DateTimeOffset lastSeen) =>
-        waiting ? AgentState.Waiting
-        : _time.GetUtcNow() - lastSeen > GoneAfter ? AgentState.Gone
-        : AgentState.Thinking;
+    private AgentState StateAt(bool waiting, DateTimeOffset lastSeen)
+    {
+        TimeSpan since = _time.GetUtcNow() - lastSeen;
+        return waiting ? AgentState.Waiting
+            : since <= ThinkingFor ? AgentState.Thinking
+            : since <= GoneAfter ? AgentState.Away
+            : AgentState.Gone;
+    }
 
     private void Joined(string agent, string connectionId, ProjectInfo project, SessionInfo session, int cursor)
     {
@@ -409,13 +422,24 @@ public sealed class AgentsState
     /// Registers a wait and reads its cursor: an older wait of the same agent on the session is taken over before it
     /// could write its cursor, and a push made while nobody waited goes to this one.
     /// </summary>
-    private int Enter(SessionInfo session, Waiter waiter, bool fromStart)
+    /// <summary>
+    /// For --skip-backlog: the last phrase said before the session's recording now going on began — what is said in it
+    /// still comes, however late the listener joins; all of them when the session is not recording.
+    /// </summary>
+    private int BacklogEnd(SessionInfo session)
+    {
+        double before = IsGoingOn(session) && MetaOf(session) is { Starts.Count: > 0 } meta ? meta.Starts[ ^1 ].Offset : double.MaxValue;
+        return _readLines(session).Where(l => l.Start < before).Select(l => l.Seq).DefaultIfEmpty(0).Max();
+    }
+
+    /// <param name="backlogEnd">With --skip-backlog: where the cursor of an agent new to the session starts.</param>
+    private int Enter(SessionInfo session, Waiter waiter, bool fromStart, int? backlogEnd)
     {
         Waiter? older;
         int cursor;
         lock (_gate)
         {
-            cursor = fromStart ? 0 : AgentCursors.Read(session, waiter.Agent)?.Cursor ?? 0;
+            cursor = fromStart ? 0 : AgentCursors.Read(session, waiter.Agent)?.Cursor ?? backlogEnd ?? 0;
             if (!_waiters.TryGetValue(session.Folder, out List<Waiter>? waiters))
             {
                 waiters = [];

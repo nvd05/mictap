@@ -76,6 +76,11 @@ public static class MicTapCli
             },
         };
         var fromStart = new Option<bool>("--from-start") { Description = "Forget the cursor and read the session from its first segment." };
+        var skipBacklog = new Option<bool>("--skip-backlog")
+        {
+            Description = "A session this agent has never read counts as read up to now: only what is said from here on comes. "
+                + "For a listener that follows a project and should not get its old sessions all at once.",
+        };
         minWords.Validators.Add(result =>
         {
             if (result.GetValueOrDefault<int?>() is <= 0)
@@ -91,12 +96,12 @@ public static class MicTapCli
             }
         });
 
-        var wait = new Command("wait", WaitHelp + " " + ExitCodes) { project, session, agent, minWords, maxWait, fromStart };
+        var wait = new Command("wait", WaitHelp + " " + ExitCodes) { project, session, agent, minWords, maxWait, fromStart, skipBacklog };
         wait.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
             await hub.InvokeAsync<WaitReply>(
                 AgentHub.Wait,
                 new WaitRequest(parse.GetValue(project), parse.GetValue(session), parse.GetValue(agent)!,
-                    parse.GetValue(minWords), parse.GetValue(maxWait), parse.GetValue(fromStart)),
+                    parse.GetValue(minWords), parse.GetValue(maxWait), parse.GetValue(fromStart), parse.GetValue(skipBacklog)),
                 token)));
 
         var status = new Command("status", "The running recording (project, session, language now) and the agents.") { agent };

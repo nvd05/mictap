@@ -34,8 +34,12 @@ public static class WaitReasons
     public const string ForcePush = "force_push";
 }
 
-/// <summary>Without a project and session the active recording is meant; with a project alone, its active recording.</summary>
-public sealed record WaitRequest(string? Project, string? Session, string Agent, int? MinWords, double? MaxWaitSeconds, bool FromStart);
+/// <summary>
+/// Without a project and session the active recording is meant; with a project alone, its active recording.
+/// <paramref name="SkipBacklog"/>: a session the agent has never read counts as read up to now.
+/// </summary>
+public sealed record WaitRequest(
+    string? Project, string? Session, string Agent, int? MinWords, double? MaxWaitSeconds, bool FromStart, bool SkipBacklog = false);
 
 public sealed record TailRequest(string? Project, string Session, int FromSeq);
 

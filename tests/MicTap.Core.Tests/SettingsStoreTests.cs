@@ -17,6 +17,8 @@ public sealed class SettingsStoreTests : IDisposable
             RootFolder = @"D:\Записи",
             DeviceName = "Микрофон (Realtek(R) Audio)",
             ChunkSeconds = 90,
+            HiddenProjects = [ "Отношения" ],
+            PinnedProjects = [ "mictap", "Японский" ],
         };
 
         store.Save(settings);

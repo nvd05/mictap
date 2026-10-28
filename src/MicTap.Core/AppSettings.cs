@@ -39,6 +39,31 @@ public sealed record AppSettings
 
     /// <summary>Days a deleted project or session stays in the archive before it is deleted for good; 0 keeps it forever.</summary>
     public int ArchiveDays { get; init; } = DefaultArchiveDays;
+
+    /// <summary>
+    /// Projects (their folder names under the root) the window does not list until asked to: for eyes over the shoulder.
+    /// Agents still see them.
+    /// </summary>
+    public IReadOnlyList<string> HiddenProjects { get; init; } = [];
+
+    /// <summary>Projects (their folder names under the root) listed first.</summary>
+    public IReadOnlyList<string> PinnedProjects { get; init; } = [];
+
+    // The lists compare by their items: a record compares them by reference.
+    public bool Equals(AppSettings? other) =>
+        other is not null
+        && RootFolder == other.RootFolder
+        && DeviceName == other.DeviceName
+        && ChunkSeconds == other.ChunkSeconds
+        && Hotkeys == other.Hotkeys
+        && HubPort == other.HubPort
+        && LiveDraftSeconds == other.LiveDraftSeconds
+        && ArchiveDays == other.ArchiveDays
+        && HiddenProjects.SequenceEqual(other.HiddenProjects)
+        && PinnedProjects.SequenceEqual(other.PinnedProjects);
+
+    public override int GetHashCode() =>
+        HashCode.Combine(RootFolder, DeviceName, ChunkSeconds, Hotkeys, HubPort, LiveDraftSeconds, ArchiveDays, HiddenProjects.Count);
 }
 
 /// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>

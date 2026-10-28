@@ -26,9 +26,9 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         viewModel.RecordingFailed += OnRecordingFailed;
-        viewModel.NewProjectRequested += (_, _) => _ = ShowProjectDialogAsync(ProjectEditor.ForNew(), viewModel.CreateProject);
+        viewModel.NewProjectRequested += (_, _) => _ = ShowProjectDialogAsync(viewModel.NewProjectEditor(), viewModel.CreateProject);
         viewModel.EditProjectRequested += (_, project) =>
-            _ = ShowProjectDialogAsync(ProjectEditor.For(project), settings => viewModel.SaveProject(project, settings));
+            _ = ShowProjectDialogAsync(viewModel.ProjectEditorFor(project), settings => viewModel.SaveProject(project, settings));
         viewModel.RenameSessionRequested += (_, session) => _ = ShowRenameDialogAsync(session);
         viewModel.DeleteRequested += (_, request) => _ = ConfirmDeleteAsync(request);
         viewModel.ArchiveRequested += (_, _) => _ = ShowArchiveAsync();
@@ -141,13 +141,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Typing into the engine box searches it. Only typing: the text the box gets from a pick, from the project or
-    /// while the list is rebuilt is not a search — reacting to it reopened the list in a loop.
+    /// Typing into an engine box (above the session's text, in the project dialog) searches it. Only typing: the text the
+    /// box gets from a pick, from the project or while the list is rebuilt is not a search — reacting to it reopened the
+    /// list in a loop.
     /// </summary>
     private void OnEngineSearchChanged(object sender, TextChangedEventArgs e)
     {
         var box = (ComboBox)sender;
-        if (_searchingEngines || _viewModel.IsUpdatingEngines || !box.IsKeyboardFocusWithin
+        var search = (IEngineSearch)box.DataContext;
+        if (_searchingEngines || search.IsUpdatingEngines || !box.IsKeyboardFocusWithin
             || (box.SelectedItem is EngineChoice chosen && box.Text == chosen.ToString()))
         {
             return;
@@ -160,7 +162,7 @@ public partial class MainWindow : Window
         _searchingEngines = true;
         try
         {
-            _viewModel.FilterEngines(typed);
+            search.Engines.Search(typed);
             if (editor.Text != typed)
             {
                 editor.Text = typed;
@@ -175,7 +177,7 @@ public partial class MainWindow : Window
         box.IsDropDownOpen = true;
     }
 
-    private void OnEngineDropDownClosed(object sender, EventArgs e) => _viewModel.EngineSearchClosed();
+    private void OnEngineDropDownClosed(object sender, EventArgs e) => ((IEngineSearch)((ComboBox)sender).DataContext).EngineSearchClosed();
 
     private async Task ShowComparisonAsync(ComparisonEditor editor)
     {

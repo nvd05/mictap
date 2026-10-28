@@ -1,4 +1,5 @@
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using MicTap.Core;
 
 namespace MicTap.App;
@@ -9,14 +10,23 @@ public sealed record RetentionOption(AudioRetention Value, string Name)
     public override string ToString() => Name;
 }
 
-public sealed record EngineOption(TranscriptionEngine Value, string Name)
+/// <summary>
+/// The project dialog: a new project, or the settings of an existing one (its name stays). Who recognizes the phrases is
+/// picked from the same list as the engine box above the session's text: the graphics card or a Router AI model, with
+/// search and the liked ones first.
+/// </summary>
+public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
 {
-    public override string ToString() => Name;
-}
+    private readonly IReadOnlyList<CloudModelInfo> _catalog;
+    private readonly Func<AppSettings> _settings;
+    private readonly Action<string?, bool> _setLike;
 
-/// <summary>The project dialog: a new project, or the settings of an existing one (its name stays).</summary>
-public sealed partial class ProjectEditor : ObservableObject
-{
+    // The Router AI model of the project, kept when the graphics card is picked, so that switching back finds it.
+    private readonly string _cloudModel;
+
+    // The engine picked last; a search that ends without a pick shows it again.
+    private string? _picked;
+
     [ObservableProperty]
     private string _name = "";
 
@@ -31,19 +41,23 @@ public sealed partial class ProjectEditor : ObservableObject
     private double _phrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsCloud))]
-    private TranscriptionEngine _engine = TranscriptionEngine.Local;
-
-    [ObservableProperty]
-    private string _cloudModel = RouterAiTranscriber.DefaultModel;
+    private EngineChoice? _selectedEngine;
 
     [ObservableProperty]
     private string _error = "";
 
-    // Liked models are set in the engine box, not here: an edit keeps them.
-    private IReadOnlyList<string>? _likedModels;
-
-    private ProjectEditor(bool isNew) => IsNew = isNew;
+    private ProjectEditor(
+        bool isNew, string? engine, string cloudModel, IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings,
+        Action<string?, bool> setLike)
+    {
+        IsNew = isNew;
+        _catalog = catalog;
+        _settings = settings;
+        _setLike = setLike;
+        _cloudModel = cloudModel;
+        _picked = engine;
+        ShowPicked();
+    }
 
     public static IReadOnlyList<RetentionOption> RetentionOptions { get; } =
     [
@@ -52,39 +66,44 @@ public sealed partial class ProjectEditor : ObservableObject
         new(AudioRetention.None, "Не сохранять (распознать заново будет нельзя)"),
     ];
 
-    public static IReadOnlyList<EngineOption> EngineOptions { get; } =
-    [
-        new(TranscriptionEngine.Local, "На этом компьютере (Whisper)"),
-        new(TranscriptionEngine.RouterAi, "Router AI — облако, платно"),
-    ];
-
     public bool IsNew { get; }
-
-    public bool IsCloud => Engine == TranscriptionEngine.RouterAi;
 
     public string Title => IsNew ? "Новый проект" : "Настройки проекта";
 
     public string PhrasePauseText => $"{PhrasePauseSeconds:0.0} с";
 
-    public static ProjectEditor ForNew() => new(isNew: true);
+    public EngineList Engines { get; } = new();
 
-    public static ProjectEditor For(ProjectInfo project) => new(isNew: false)
+    public bool IsUpdatingEngines => Engines.IsRebuilding;
+
+    /// <param name="setLike">Likes a model for every project (settings.json and the engine box of the window).</param>
+    public static ProjectEditor ForNew(IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings, Action<string?, bool> setLike) =>
+        new(isNew: true, engine: null, RouterAiTranscriber.DefaultModel, catalog, settings, setLike);
+
+    /// <inheritdoc cref="ForNew"/>
+    public static ProjectEditor For(ProjectInfo project, IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings, Action<string?, bool> setLike) =>
+        new(isNew: false, project.Settings.CloudModelInUse, project.Settings.CloudModel, catalog, settings, setLike)
+        {
+            Name = project.Name,
+            LanguagesText = string.Join(", ", project.Settings.Languages),
+            Retention = project.Settings.AudioRetention,
+            PhrasePauseSeconds = project.Settings.PhrasePauseSeconds,
+        };
+
+    public void EngineSearchClosed()
     {
-        Name = project.Name,
-        LanguagesText = string.Join(", ", project.Settings.Languages),
-        Retention = project.Settings.AudioRetention,
-        PhrasePauseSeconds = project.Settings.PhrasePauseSeconds,
-        Engine = project.Settings.Engine,
-        CloudModel = project.Settings.CloudModel,
-        _likedModels = project.Settings.LikedModels,
-    };
+        if (Engines.IsSearching || SelectedEngine is null)
+        {
+            ShowPicked();
+        }
+    }
 
     /// <summary>The settings typed in; on a mistake <see cref="Error"/> says what is wrong and the result is null.</summary>
     public ProjectSettings? Build()
     {
         var settings = new ProjectSettings(
-            Name.Trim(), Projects.ParseLanguages(LanguagesText), Retention, Math.Round(PhrasePauseSeconds, 1), Engine, CloudModel.Trim(),
-            _likedModels);
+            Name.Trim(), Projects.ParseLanguages(LanguagesText), Retention, Math.Round(PhrasePauseSeconds, 1),
+            _picked is null ? TranscriptionEngine.Local : TranscriptionEngine.RouterAi, _picked ?? _cloudModel);
         try
         {
             Projects.Validate(settings);
@@ -97,5 +116,32 @@ public sealed partial class ProjectEditor : ObservableObject
 
         Error = "";
         return settings;
+    }
+
+    partial void OnSelectedEngineChanged(EngineChoice? value)
+    {
+        if (value is not null && !Engines.IsRebuilding)
+        {
+            _picked = value.Model;
+        }
+    }
+
+    /// <summary>The heart of a model in the list: liked for every project, as in the window's engine box.</summary>
+    [RelayCommand]
+    private void ToggleLike(EngineChoice? choice)
+    {
+        if (choice is null)
+        {
+            return;
+        }
+
+        choice.IsLiked = !choice.IsLiked;
+        _setLike(choice.Model, choice.IsLiked);
+    }
+
+    private void ShowPicked()
+    {
+        Engines.Rebuild(_catalog, _settings(), [ _picked, _cloudModel ]);
+        SelectedEngine = Engines.Find(_picked);
     }
 }

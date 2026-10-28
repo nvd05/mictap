@@ -28,7 +28,7 @@ public sealed partial class ComparisonEditor : ObservableObject
 {
     /// <summary>
     /// Picked at the start: the graphics card, these models the benchmarks and the user rate highest, the project's model
-    /// and the models liked for the project (those go on top).
+    /// and the liked models (those go on top).
     /// </summary>
     private static readonly string[] Suggested =
     [
@@ -40,14 +40,14 @@ public sealed partial class ComparisonEditor : ObservableObject
 
     private readonly double _minutes;
 
-    public ComparisonEditor(SessionInfo session, double minutes, IReadOnlyList<CloudModelInfo> models, ProjectSettings project)
+    public ComparisonEditor(SessionInfo session, double minutes, IReadOnlyList<CloudModelInfo> models, ProjectSettings project, AppSettings settings)
     {
         Session = session;
         _minutes = minutes;
-        List<CompareChoice> choices = [ new CompareChoice(null, "Видеокарта · Whisper", "бесплатно", 0, isChecked: true, project.Likes(null)) ];
+        List<CompareChoice> choices = [ new CompareChoice(null, "Видеокарта · Whisper", "бесплатно", 0, isChecked: true, settings.Likes(null)) ];
         foreach (CloudModelInfo model in models)
         {
-            bool liked = project.Likes(model.Id);
+            bool liked = settings.Likes(model.Id);
             choices.Add(new CompareChoice(
                 model.Id, model.Id, model.RublesPerMinute is { } price ? $"{price:0.###} ₽/мин" : "по токенам", model.RublesPerMinute,
                 liked || Suggested.Contains(model.Id) || model.Id == project.CloudModelInUse, liked));

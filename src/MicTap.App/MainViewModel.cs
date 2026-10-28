@@ -11,7 +11,7 @@ using Serilog;
 
 namespace MicTap.App;
 
-public sealed partial class MainViewModel : ObservableObject
+public sealed partial class MainViewModel : ObservableObject, IEngineSearch
 {
     private static readonly TimeSpan InfoShownFor = TimeSpan.FromSeconds(8);
 
@@ -39,11 +39,8 @@ public sealed partial class MainViewModel : ObservableObject
     private bool _refreshingDevices;
     private bool _quietLanguage = true; // no tone and no mark while the language follows the selected project
     private bool _quietEngine; // the engine box follows the selected project without saving it back
-    private bool _keepEngineList; // a heart was clicked: the open list stays as it is under the mouse
-    private bool _likesChanged; // … and gets the liked models on top when it closes
+    private bool _likesChanged; // a heart was clicked: the open list gets the liked models on top when it closes
     private IReadOnlyList<CloudModelInfo> _cloudModels = [];
-    private System.ComponentModel.ICollectionView? _engineChoicesView;
-    private string _engineFilter = "";
     private bool _selecting;
     private AgentsState? _agentsState;
     private SessionNode? _recordingNode;
@@ -263,10 +260,7 @@ public sealed partial class MainViewModel : ObservableObject
     public bool ShowRouterAiKeyActions => HasRouterAiKey && !IsReplacingRouterAiKey;
 
     /// <summary>Who recognizes the phrases of the selected project: the graphics card or a Router AI model with its price.</summary>
-    public ObservableCollection<EngineChoice> EngineChoices { get; } = [];
-
-    /// <summary><see cref="EngineChoices"/> as the engine box lists them: filtered by what is typed into it.</summary>
-    public System.ComponentModel.ICollectionView EngineChoicesView => _engineChoicesView ??= CreateEngineChoicesView();
+    public EngineList Engines { get; } = new();
 
     /// <summary>Agents of the shown session: waiting, thinking or gone.</summary>
     public ObservableCollection<AgentRow> Agents { get; } = [];
@@ -377,6 +371,7 @@ public sealed partial class MainViewModel : ObservableObject
     public void Initialize()
     {
         RefreshDevices();
+        TakeLegacyLikes();
         LoadProjects();
         RepairProjects();
         _ = LoadCloudModelsAsync();
@@ -1105,10 +1100,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         Language = value?.Settings.DefaultLanguage ?? "ru";
         _quietLanguage = false;
-        if (!_keepEngineList)
-        {
-            RefreshEngineChoices();
-        }
+        RefreshEngineChoices();
     }
 
     partial void OnSelectedArchiveChanged(ArchiveOption? value)
@@ -1290,7 +1282,7 @@ public sealed partial class MainViewModel : ObservableObject
         ProjectInfo project = node?.Project.Project ?? SelectedProject!;
         double minutes = Directory.EnumerateFiles(session.AudioFolder, "*.wav")
             .Sum(chunk => Math.Max(0, new FileInfo(chunk).Length - WavHeader.Size)) / (double)PcmFormat.Mono16k.ByteRate / 60;
-        CompareRequested?.Invoke(this, new ComparisonEditor(session, minutes, _cloudModels, project.Settings));
+        CompareRequested?.Invoke(this, new ComparisonEditor(session, minutes, _cloudModels, project.Settings, _settings));
     }
 
     /// <summary>The comparison dialog said yes: the session's audio goes to every picked engine.</summary>
@@ -1350,86 +1342,48 @@ public sealed partial class MainViewModel : ObservableObject
         RefreshEngineChoices();
     }
 
-    /// <summary>
-    /// The engine box for the selected project: the graphics card, the catalog's models, the project's own model and the
-    /// models liked for it. The liked ones go on top.
-    /// </summary>
+    /// <summary>The engine box for the selected project: its engine chosen, the liked models on top.</summary>
     private void RefreshEngineChoices()
     {
         _quietEngine = true;
-        _engineFilter = "";
         _likesChanged = false;
-        EngineChoicesView.Refresh();
-        EngineChoices.Clear();
         ProjectSettings? settings = SelectedProject?.Settings;
         string? current = settings?.CloudModelInUse;
-        List<EngineChoice> choices = [ new EngineChoice(null, "Видеокарта · Whisper", "бесплатно", settings?.Likes(null) == true) ];
-        foreach (CloudModelInfo model in _cloudModels)
-        {
-            choices.Add(new EngineChoice(model.Id, model.Id, PriceText(model.RublesPerMinute), settings?.Likes(model.Id) == true));
-        }
-
-        string[] known = [ .. new[] { current, settings?.CloudModel, RouterAiTranscriber.DefaultModel }.OfType<string>(), .. settings?.LikedModels ?? [] ];
-        foreach (string model in known.Where(m => m != ProjectSettings.LocalModel).Distinct())
-        {
-            if (choices.All(choice => choice.Model != model))
-            {
-                choices.Insert(1, new EngineChoice(model, model, "цена неизвестна", settings?.Likes(model) == true));
-            }
-        }
-
-        foreach (EngineChoice choice in choices.Where(c => c.IsLiked).Concat(choices.Where(c => !c.IsLiked)))
-        {
-            EngineChoices.Add(choice);
-        }
-
-        SelectedEngine = EngineChoices.First(choice => choice.Model == current);
+        Engines.Rebuild(_cloudModels, _settings, [ current, settings?.CloudModel, RouterAiTranscriber.DefaultModel ]);
+        SelectedEngine = Engines.Find(current);
         _quietEngine = false;
     }
 
     /// <summary>
-    /// The heart of a model in the engine list: liked for this project, or not any more. The open list keeps its order
+    /// The heart of a model in the engine list: liked for every project, or not any more. The open list keeps its order
     /// under the mouse; the liked models move to the top when it closes.
     /// </summary>
     [RelayCommand]
     private void ToggleLike(EngineChoice? choice)
     {
-        if (choice is null || SelectedProject is not { } project)
+        if (choice is not null)
         {
-            return;
-        }
-
-        bool liked = !project.Settings.Likes(choice.Model);
-        try
-        {
-            ProjectInfo saved = Core.Projects.Save(project, project.Settings.WithLike(choice.Model, liked));
-            _keepEngineList = true;
-            UpdateProjectInPlace(saved);
-            choice.IsLiked = liked;
-            _likesChanged = true;
-            _logger.Information(
-                "Project {Project}: {Model} {Liked}", saved.Name, choice.Model ?? ProjectSettings.LocalModel, liked ? "liked" : "unliked");
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
-        {
-            _logger.Error(ex, "Liking {Model} in {Project} failed", choice.Model, project.Name);
-            ShowMessage($"Отметка «понравилась» не сохранена: {ex.Message}", isError: true);
-        }
-        finally
-        {
-            _keepEngineList = false;
+            SetLike(choice.Model, !choice.IsLiked);
         }
     }
 
-    /// <summary>What is typed into the engine box narrows its list: by the model's name, «gpt», «eleven», «mistral»…</summary>
-    public void FilterEngines(string text)
+    /// <summary>Likes <paramref name="model"/> (null — the graphics card) for every project, or not any more.</summary>
+    public void SetLike(string? model, bool liked)
     {
-        _engineFilter = text.Trim();
-        EngineChoicesView.Refresh();
+        Save(_settings.WithLike(model, liked));
+        Engines.SetLiked(model, liked);
+        _likesChanged = true;
+        _logger.Information("{Model} {Liked}", model ?? AppSettings.LocalModel, liked ? "liked" : "unliked");
     }
+
+    /// <summary>The project dialog for a new project; its engine list is the engine box's, with the same hearts.</summary>
+    public ProjectEditor NewProjectEditor() => ProjectEditor.ForNew(_cloudModels, () => _settings, SetLike);
+
+    /// <inheritdoc cref="NewProjectEditor"/>
+    public ProjectEditor ProjectEditorFor(ProjectInfo project) => ProjectEditor.For(project, _cloudModels, () => _settings, SetLike);
 
     /// <summary>The engine list is being rebuilt or set from the project: its text changes are not the user's typing.</summary>
-    public bool IsUpdatingEngines => _quietEngine;
+    public bool IsUpdatingEngines => _quietEngine || Engines.IsRebuilding;
 
     /// <summary>
     /// The engine list closed: a search is over, and without a pick the project's engine shows again; models liked
@@ -1437,7 +1391,7 @@ public sealed partial class MainViewModel : ObservableObject
     /// </summary>
     public void EngineSearchClosed()
     {
-        if (_engineFilter.Length == 0 && SelectedEngine is not null && !_likesChanged)
+        if (!Engines.IsSearching && SelectedEngine is not null && !_likesChanged)
         {
             return; // no search, no hearts: nothing to redo
         }
@@ -1445,16 +1399,29 @@ public sealed partial class MainViewModel : ObservableObject
         RefreshEngineChoices();
     }
 
-    private System.ComponentModel.ICollectionView CreateEngineChoicesView()
+    /// <summary>
+    /// Likes that schema 4 project.json files kept per project join the one list in settings.json, once; the files lose them.
+    /// </summary>
+    private void TakeLegacyLikes()
     {
-        System.ComponentModel.ICollectionView view = System.Windows.Data.CollectionViewSource.GetDefaultView(EngineChoices);
-        view.Filter = item => _engineFilter.Length == 0
-            || (item is EngineChoice choice && choice.Title.Contains(_engineFilter, StringComparison.OrdinalIgnoreCase));
-        return view;
-    }
+        IReadOnlyList<string> legacy;
+        try
+        {
+            legacy = Core.Projects.TakeLegacyLikes(RootFolder);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or InvalidDataException or System.Text.Json.JsonException)
+        {
+            _logger.Error(ex, "Moving the liked models of the projects in {Root} to the settings failed", RootFolder);
+            ShowMessage($"Понравившиеся модели проектов не перенесены в общий список: {ex.Message}", isError: true);
+            return;
+        }
 
-    private static string PriceText(double? rublesPerMinute) =>
-        rublesPerMinute is { } price ? $"{price:0.###} ₽/мин" : "по токенам";
+        if (legacy.Count > 0)
+        {
+            Save(_settings with { LikedModels = [ .. _settings.LikedModels.Concat(legacy).Distinct() ] });
+            _logger.Information("Liked models of the projects are one list now: {Models}", string.Join(", ", legacy));
+        }
+    }
 
     /// <summary>Reads the projects of the root; an empty root gets a first project so recording works at once.</summary>
     private void LoadProjects(string? select = null)
@@ -1893,21 +1860,6 @@ public sealed partial class ArchiveRow(ArchiveEntry entry, string title, string 
             : "";
         return new ArchiveRow(entry, title, deleted + expires);
     }
-}
-
-/// <summary>An item of the engine box: <paramref name="model"/> null is the local Whisper on the graphics card.</summary>
-public sealed partial class EngineChoice(string? model, string title, string price, bool isLiked) : ObservableObject
-{
-    [ObservableProperty]
-    private bool _isLiked = isLiked;
-
-    public string? Model { get; } = model;
-
-    public string Title { get; } = title;
-
-    public string Price { get; } = price;
-
-    public override string ToString() => $"{Title} — {Price}";
 }
 
 /// <summary>An agent of the shown session and what it is doing, in words.</summary>

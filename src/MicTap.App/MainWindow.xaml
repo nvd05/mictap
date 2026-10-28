@@ -38,7 +38,36 @@
             </StackPanel>
         </StackPanel>
 
-        <StackPanel x:Key="ProjectDialog" x:Shared="False" Margin="24" Width="400" d:DataContext="{d:DesignInstance Type=local:ProjectEditor}">
+        <!-- An engine in a list with search: the heart likes the model for every project without picking it; liked ones go on top. -->
+        <DataTemplate x:Key="EngineRow" DataType="{x:Type local:EngineChoice}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Model" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="Like" Width="26" Height="26" Margin="-6,-4,6,-4" Padding="0" Focusable="False"
+                        Style="{StaticResource MaterialDesignToolButton}"
+                        AutomationProperties.Name="{Binding Title, StringFormat='Понравилась: {0}'}"
+                        ToolTip="Отметить, что модель понравилась: такие — наверху списка во всех проектах"
+                        Command="{Binding DataContext.ToggleLikeCommand, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                        CommandParameter="{Binding}">
+                    <materialDesign:PackIcon x:Name="Heart" Kind="HeartOutline" Width="16" Height="16" Opacity="0.45" />
+                </Button>
+                <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Margin="16,0,0,0" Text="{Binding Price}" Opacity="0.6" VerticalAlignment="Center" />
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsLiked}" Value="True">
+                    <Setter TargetName="Heart" Property="Kind" Value="Heart" />
+                    <Setter TargetName="Heart" Property="Opacity" Value="1" />
+                    <Setter TargetName="Heart" Property="Foreground" Value="{DynamicResource MaterialDesign.Brush.Primary}" />
+                    <Setter TargetName="Like" Property="ToolTip" Value="Понравилась; нажмите, чтобы снять отметку" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <StackPanel x:Key="ProjectDialog" x:Shared="False" Margin="24" Width="460" d:DataContext="{d:DesignInstance Type=local:ProjectEditor}">
             <TextBlock Text="{Binding Title}" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
             <TextBox Margin="0,20,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:HintAssist.Hint="Название"
                      materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
@@ -53,18 +82,17 @@
                       materialDesign:HintAssist.Hint="Звук после распознавания" AutomationProperties.Name="Звук после распознавания"
                       ItemsSource="{x:Static local:ProjectEditor.RetentionOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
                       SelectedValue="{Binding Retention}" />
+            <!-- As the engine box above the session's text: type to search, hearts for every project. -->
             <ComboBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
                       materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                       materialDesign:HintAssist.Hint="Кто распознаёт фразы" AutomationProperties.Name="Кто распознаёт фразы"
-                      ItemsSource="{x:Static local:ProjectEditor.EngineOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
-                      SelectedValue="{Binding Engine}" />
-            <TextBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}"
-                     materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                     materialDesign:HintAssist.Hint="Модель Router AI" AutomationProperties.Name="Модель Router AI"
-                     materialDesign:HintAssist.HelperText="Например openai/gpt-4o-transcribe или elevenlabs/scribe-v2. Черновик всё равно на этом компьютере."
-                     Visibility="{Binding IsCloud, Converter={StaticResource VisibleWhenTrue}}"
-                     Text="{Binding CloudModel, UpdateSourceTrigger=PropertyChanged}" />
-            <TextBlock Margin="0,26,0,0" Text="Фраза заканчивается после паузы" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                      materialDesign:HintAssist.HelperText="Видеокарта — бесплатно, Router AI — платно. Можно искать по имени."
+                      MaxDropDownHeight="420" Grid.IsSharedSizeScope="True"
+                      IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                      TextBoxBase.TextChanged="OnEngineSearchChanged" DropDownClosed="OnEngineDropDownClosed"
+                      ItemTemplate="{StaticResource EngineRow}"
+                      ItemsSource="{Binding Engines.View}" SelectedItem="{Binding SelectedEngine}" />
+            <TextBlock Margin="0,34,0,0" Text="Фраза заканчивается после паузы" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
             <DockPanel Margin="0,4,0,0">
                 <TextBlock DockPanel.Dock="Right" Width="52" TextAlignment="Right" VerticalAlignment="Center"
                            Text="{Binding PhrasePauseText}" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
@@ -963,37 +991,8 @@
                                               MaxDropDownHeight="640" Grid.IsSharedSizeScope="True"
                                               IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
                                               TextBoxBase.TextChanged="OnEngineSearchChanged" DropDownClosed="OnEngineDropDownClosed"
-                                              ItemsSource="{Binding EngineChoicesView}" SelectedItem="{Binding SelectedEngine}">
-                                        <ComboBox.ItemTemplate>
-                                            <!-- The heart likes the model for this project without picking it; liked ones go on top. -->
-                                            <DataTemplate DataType="{x:Type local:EngineChoice}">
-                                                <Grid>
-                                                    <Grid.ColumnDefinitions>
-                                                        <ColumnDefinition Width="Auto" />
-                                                        <ColumnDefinition Width="Auto" SharedSizeGroup="Model" />
-                                                        <ColumnDefinition Width="Auto" />
-                                                    </Grid.ColumnDefinitions>
-                                                    <Button x:Name="Like" Width="26" Height="26" Margin="-6,-4,6,-4" Padding="0" Focusable="False"
-                                                            Style="{StaticResource MaterialDesignToolButton}"
-                                                            AutomationProperties.Name="{Binding Title, StringFormat='Понравилась: {0}'}"
-                                                            ToolTip="Отметить, что модель понравилась в этом проекте: такие — наверху списка"
-                                                            Command="{Binding DataContext.ToggleLikeCommand, RelativeSource={RelativeSource AncestorType=ComboBox}}"
-                                                            CommandParameter="{Binding}">
-                                                        <materialDesign:PackIcon x:Name="Heart" Kind="HeartOutline" Width="16" Height="16" Opacity="0.45" />
-                                                    </Button>
-                                                    <TextBlock Grid.Column="1" Text="{Binding Title}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="2" Margin="16,0,0,0" Text="{Binding Price}" Opacity="0.6" VerticalAlignment="Center" />
-                                                </Grid>
-                                                <DataTemplate.Triggers>
-                                                    <DataTrigger Binding="{Binding IsLiked}" Value="True">
-                                                        <Setter TargetName="Heart" Property="Kind" Value="Heart" />
-                                                        <Setter TargetName="Heart" Property="Opacity" Value="1" />
-                                                        <Setter TargetName="Heart" Property="Foreground" Value="{DynamicResource MaterialDesign.Brush.Primary}" />
-                                                        <Setter TargetName="Like" Property="ToolTip" Value="Понравилась в этом проекте; нажмите, чтобы снять отметку" />
-                                                    </DataTrigger>
-                                                </DataTemplate.Triggers>
-                                            </DataTemplate>
-                                        </ComboBox.ItemTemplate>
+                                              ItemTemplate="{StaticResource EngineRow}"
+                                              ItemsSource="{Binding Engines.View}" SelectedItem="{Binding SelectedEngine}">
                                     </ComboBox>
                                 </StackPanel>
                                 <Button x:Name="SessionMenuButton" DockPanel.Dock="Left" Height="36" Padding="8,0"

@@ -1799,6 +1799,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     {
         AgentState.Waiting => "ждёт",
         AgentState.Thinking => $"думает · {(int)(now - agent.LastSeen).TotalSeconds} с",
+        AgentState.Away => $"не на связи · {(int)(now - agent.LastSeen).TotalMinutes} мин",
         _ => "ушёл",
     };
 

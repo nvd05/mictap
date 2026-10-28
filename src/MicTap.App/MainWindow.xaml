@@ -1106,6 +1106,19 @@
                                                             Visibility="{Binding StartsDay, Converter={StaticResource VisibleWhenTrue}}">
                                                         <TextBlock Text="{Binding DayText}" Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
                                                     </Border>
+                                                    <!-- A recording: when it ran and how long, a thin line across. -->
+                                                    <Grid Margin="0,2,0,8" Opacity="0.6"
+                                                          Visibility="{Binding StartsRun, Converter={StaticResource VisibleWhenTrue}}">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Separator Grid.Column="0" VerticalAlignment="Center" Margin="0" />
+                                                        <TextBlock Grid.Column="1" Margin="10,0" Text="{Binding Run.Text}"
+                                                                   Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                                                        <Separator Grid.Column="2" VerticalAlignment="Center" Margin="0" />
+                                                    </Grid>
                                                     <Grid Margin="0,0,0,6">
                                                         <Grid.ColumnDefinitions>
                                                             <ColumnDefinition Width="62" />
@@ -1115,8 +1128,8 @@
                                                         <StackPanel Grid.Column="0" Margin="0,7,0,0" VerticalAlignment="Top">
                                                             <TextBlock Text="{Binding ClockText}" Opacity="0.75" Style="{StaticResource MaterialDesignLabelMediumTextBlock}"
                                                                        ToolTip="Когда сказано" />
-                                                            <TextBlock Text="{Binding OffsetText}" Opacity="0.45" Style="{StaticResource MaterialDesignLabelSmallTextBlock}"
-                                                                       ToolTip="Время от начала сессии"
+                                                            <TextBlock Text="{Binding SinceRunText}" Opacity="0.45" Style="{StaticResource MaterialDesignLabelSmallTextBlock}"
+                                                                       ToolTip="Сколько прошло от начала этой записи"
                                                                        Visibility="{Binding HasClock, Converter={StaticResource VisibleWhenTrue}}" />
                                                         </StackPanel>
                                                         <Border Grid.Column="1" Height="18" Margin="0,7,10,0" Padding="6,0" CornerRadius="6"
@@ -1168,7 +1181,7 @@
                 <DockPanel>
                     <TextBlock DockPanel.Dock="Top" Text="Агенты" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
                     <TextBlock DockPanel.Dock="Top" Margin="0,4,0,12" TextWrapping="Wrap" Opacity="0.7" Style="{StaticResource MaterialDesignBodyMediumTextBlock}"
-                               Text="Кто читает ваши сессии через mictap: «ждёт» — ждёт новых фраз, «думает» — отвечает на прочитанное, «ушёл» — не появлялся больше 10 минут." />
+                               Text="Кто читает ваши сессии через mictap: «ждёт» — ждёт новых фраз; «думает» — получил фразы меньше 2 минут назад и отвечает; «не на связи» — дольше не обращался, может вернуться; «ушёл» — больше 10 минут." />
                     <Grid>
                         <DataGrid ItemsSource="{Binding AllAgents}" AutomationProperties.Name="Список агентов"
                                   Visibility="{Binding HasAgents, Converter={StaticResource VisibleWhenTrue}}"

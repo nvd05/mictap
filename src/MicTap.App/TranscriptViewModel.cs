@@ -10,11 +10,43 @@ using Serilog;
 
 namespace MicTap.App;
 
+/// <summary>One recording into a session: when it began and, once it stopped, how long it ran.</summary>
+public sealed partial class RecordingRun(DateTimeOffset started, double offset, double? duration) : ObservableObject
+{
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Text))]
+    private double? _duration = duration;
+
+    public DateTimeOffset Started { get; } = started;
+
+    /// <summary>Where it begins in the session's audio, in seconds.</summary>
+    public double Offset { get; } = offset;
+
+    /// <summary>«Запись 22:43–22:51 · 8 мин»; «Запись с 23:20» while it goes on.</summary>
+    public string Text
+    {
+        get
+        {
+            DateTimeOffset start = Started.ToLocalTime();
+            return Duration is { } seconds
+                ? $"Запись {start:HH:mm}–{start.AddSeconds(seconds):HH:mm} · {Length(seconds)}"
+                : $"Запись с {start:HH:mm}";
+        }
+    }
+
+    private static string Length(double seconds) =>
+        seconds < 60 ? $"{seconds:0} с"
+        : seconds < 3600 ? $"{seconds / 60:0} мин"
+        : $"{(int)(seconds / 3600)} ч {(int)(seconds % 3600 / 60)} мин";
+}
+
 /// <summary>
 /// A segment's text, editable: an edit is saved to transcript.jsonl when the text box loses focus. <paramref name="at"/>
-/// is when it was said on the clock (null without meta.json); <paramref name="startsDay"/> puts the day above it.
+/// is when it was said on the clock (null without meta.json); <paramref name="startsDay"/> puts the day above it,
+/// <paramref name="startsRun"/> the line of its recording.
 /// </summary>
-public sealed class TranscriptItem(TranscriptLine line, DateTimeOffset? at, bool startsDay, Action<TranscriptItem> edited) : ObservableObject
+public sealed class TranscriptItem(
+    TranscriptLine line, DateTimeOffset? at, bool startsDay, RecordingRun? run, bool startsRun, Action<TranscriptItem> edited) : ObservableObject
 {
     private static readonly CultureInfo Russian = CultureInfo.GetCultureInfo("ru-RU");
 
@@ -27,17 +59,18 @@ public sealed class TranscriptItem(TranscriptLine line, DateTimeOffset? at, bool
     /// <summary>When it was said, «21:39»; the session time without meta.json.</summary>
     public string ClockText => At is { } at ? at.ToLocalTime().ToString("HH:mm", Russian) : OffsetText;
 
-    /// <summary>Where it is in the session, «25:13» or «1:02:40»: in grey under the clock time.</summary>
-    public string OffsetText
-    {
-        get
-        {
-            var offset = TimeSpan.FromSeconds(Line.Start);
-            return offset.TotalHours >= 1 ? offset.ToString(@"h\:mm\:ss") : offset.ToString(@"mm\:ss");
-        }
-    }
+    /// <summary>Where it is in the session, «25:13» or «1:02:40».</summary>
+    public string OffsetText => Since(Line.Start);
+
+    /// <summary>How far into its recording it was said, «+0:12»: in grey under the clock time; each recording starts at 0.</summary>
+    public string SinceRunText => Run is null ? "" : "+" + Since(Line.Start - Run.Offset);
 
     public bool HasClock => At is not null;
+
+    public RecordingRun? Run { get; } = run;
+
+    /// <summary>The first phrase of its recording: the recording's line goes above it.</summary>
+    public bool StartsRun { get; } = startsRun;
 
     public DateOnly? Day => At is { } at ? DateOnly.FromDateTime(at.ToLocalTime().DateTime) : null;
 
@@ -64,6 +97,12 @@ public sealed class TranscriptItem(TranscriptLine line, DateTimeOffset? at, bool
     }
 
     internal void Saved(TranscriptLine line) => Line = line;
+
+    private static string Since(double seconds)
+    {
+        var since = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        return since.TotalHours >= 1 ? since.ToString(@"h\:mm\:ss") : since.ToString(@"m\:ss");
+    }
 
     public static string DayName(DateOnly? day)
     {
@@ -98,6 +137,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private VoiceActivityModel? _vad;
     private SessionInfo? _session;
     private SessionMeta? _meta; // of _session: the clock times of its phrases
+    private List<RecordingRun> _runs = []; // of _session, from _meta
     private SessionInfo? _liveSession;
     private bool _live;
     private DateTime _endedAt;
@@ -249,7 +289,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     public void ShowSession(SessionInfo? session)
     {
         _session = session;
-        _meta = MetaOf(session);
+        ReadRuns(session);
         Items.Clear();
         ShowSpent(session);
         if (session is null || !File.Exists(Path.Combine(session.Folder, JsonlTranscriptSink.FileName)))
@@ -288,6 +328,11 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     public void EndSession()
     {
+        if (_liveSession is { } ended)
+        {
+            RefreshRuns(ended);
+        }
+
         _endedAt = DateTime.UtcNow;
         _live = false;
         IsLive = false;
@@ -305,7 +350,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     {
         IsRetranscribing = true;
         _session = session;
-        _meta = MetaOf(session);
+        ReadRuns(session);
         Items.Clear();
         QueueText = "распознаю заново…";
         try
@@ -653,13 +698,37 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
             }
         });
 
-    /// <summary>A phrase of the shown session, with its clock time; a new day gets its separator.</summary>
+    /// <summary>A phrase of the shown session, with its clock time; a new day and a new recording get their lines.</summary>
     private void AddItem(SessionInfo session, TranscriptLine line)
     {
         DateTimeOffset? at = _meta?.At(line.Start);
         DateOnly? day = at is { } t ? DateOnly.FromDateTime(t.ToLocalTime().DateTime) : null;
         bool startsDay = day is not null && (Items.Count == 0 || Items[ ^1 ].Day != day);
-        Items.Add(new TranscriptItem(line, at, startsDay, item => SaveEdit(session, item)));
+        RecordingRun? run = _runs.LastOrDefault(r => r.Offset <= line.Start) ?? _runs.FirstOrDefault();
+        bool startsRun = run is not null && (Items.Count == 0 || Items[ ^1 ].Run != run);
+        Items.Add(new TranscriptItem(line, at, startsDay, run, startsRun, item => SaveEdit(session, item)));
+    }
+
+    /// <summary>The recordings of the shown session from its meta.json.</summary>
+    private void ReadRuns(SessionInfo? session)
+    {
+        _meta = MetaOf(session);
+        _runs = [ .. (_meta?.Starts ?? []).Select(s => new RecordingRun(s.Time, s.Offset, s.Duration)) ];
+    }
+
+    /// <summary>A recording stopped: its line gets its end and length.</summary>
+    private void RefreshRuns(SessionInfo session)
+    {
+        if (session != _session || MetaOf(session) is not { } meta)
+        {
+            return;
+        }
+
+        _meta = meta;
+        for (int i = 0; i < Math.Min(_runs.Count, meta.Starts.Count); i++)
+        {
+            _runs[ i ].Duration = meta.Starts[ i ].Duration;
+        }
     }
 
     /// <summary>The session's meta.json, for the clock times of its phrases; null when it has none or it cannot be read.</summary>

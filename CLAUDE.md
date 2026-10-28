@@ -55,14 +55,16 @@ tests/MicTap.Hub.Tests/
   Ручные проверки — в таком профиле с hubPort ≠ 47310 и своей папкой проектов.
 - Настройки: `%APPDATA%\mictap\settings.json` — rootFolder, deviceName, chunkSeconds (60), hotkeys
   {toggleLanguage, toggleRecording, forcePush}, hubPort (47310), liveDraftSeconds (3; 0 — черновик выключен),
-  archiveDays (30; 0 — хранить всегда).
+  archiveDays (30; 0 — хранить всегда), hiddenProjects и pinnedProjects (имена папок проектов), likedModels
+  (понравившиеся модели для всех проектов: id Router AI и `local` для видеокарты).
 - Архив: `<rootFolder>\.archive\` (скрытая): удалённые проекты и сессии целиком + `archive.json` {schemaVersion 1,
   kind project|session, name, originalFolder, projectName, projectFolder, deletedAt}.
 - Логи `%APPDATA%\mictap\logs\`, модели `%APPDATA%\mictap\models\`.
 - Проекты: `<rootFolder>\<проект>\project.json` — schemaVersion 4, name, languages, audioRetention,
   phrasePauseSeconds (тишина, после которой фраза закончена: 0,5–10 с, по умолчанию 1,2; файл schemaVersion 1
-  читается с 1,2), engine (local | routerAi), cloudModel (по умолчанию openai/whisper-large-v3); файлы 1–2 — local;
-  likedModels — понравившиеся модели проекта (id Router AI и `local` для видеокарты); файлы 1–3 — без них.
+  читается с 1,2), engine (local | routerAi), cloudModel (по умолчанию openai/whisper-large-v3); файлы 1–2 — local.
+  Сейчас schemaVersion 5; в 4 были likedModels проекта — при запуске они переезжают в settings.json, файл
+  переписывается без них.
 - Ключ Router AI — в диспетчере учётных данных Windows (generic credential `mictap/routerai`), не в файлах.
 - Сессия `<rootFolder>\<проект>\<сессия>\`:
   - `audio\000.wav`, … — чанки по chunkSeconds (кроме audioRetention: none)
@@ -328,6 +330,8 @@ JSON и выход; в UI агент «ждёт» → «думает».
   «Что нового» (docs/CHANGELOG.md, встроен в приложение: версии слева, изменения выбранной справа).
 - docs/CHANGELOG.md — по версиям, разделы «Добавлено / Изменено / Исправлено / Удалено», у пункта жирное начало
   («- **Что.** пояснение»); пополняется с каждой версией.
+- Контекстные меню — свой стиль на основе шаблона MaterialDesign (Themes/Menus.xaml): скругление 12, пункты со
+  скруглённой подсветкой, тонкая обводка и тень.
 
 ### v0.12 — скрытые и закреплённые проекты, репозиторий
 - settings.json: hiddenProjects и pinnedProjects — имена папок проектов. «Скрыть проект» / «Закрепить наверху» в меню
@@ -335,8 +339,17 @@ JSON и выход; в UI агент «ждёт» → «думает».
   перезапуска снова спрятаны. Закреплённые — первыми, с булавкой. Хаб и CLI видят все проекты.
 - «Что нового» — в виде «Записей»: версии как строки дерева, изменения обычным текстом.
 - README и CHANGELOG — в docs/, в README снимки окна из демо-профиля с выдуманными данными (репозиторий публичный).
-- Контекстные меню — свой стиль на основе шаблона MaterialDesign (Themes/Menus.xaml): скругление 12, пункты со
-  скруглённой подсветкой, тонкая обводка и тень.
+- Установка из терминала упакованного приложения (терминалы Claude Desktop): записи в %LOCALAPPDATA% уходят в его
+  личную копию (…\Packages\<app>\LocalCache), проводник и свои терминалы их не видят. install-app.ps1 и install-cli.ps1
+  проверяют это до записи и останавливаются; оттуда — `powershell -File tools\run-outside.ps1 tools\install-cli.ps1`
+  (Windows запускает скрипт сам, вне пакета).
+
+### v0.12.1 — общие лайки, выбор модели в окне проекта
+- Понравившиеся модели — одни на все проекты (settings.json likedModels); project.json schema 5 без них.
+- Окно проекта выбирает движок тем же списком, что и «Распознавание» (EngineList: видеокарта и каталог Router AI с
+  ценой, понравившиеся сверху, поиск по имени, сердечки), а не полем для ручного ввода id.
+- tools/listen.sh — фоновое ожидание для агента: `bash tools/listen.sh [проект] [агент]`, возвращает JSON при
+  force_push или session_stopped. Двум чатам на одном проекте — разные имена агента.
 
 ### Позже
 Opus-кодирование, пакетная обработка записей с телефона, веб-UI на телефон поверх хаба.

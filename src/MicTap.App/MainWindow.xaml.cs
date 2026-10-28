@@ -34,7 +34,6 @@ public partial class MainWindow : Window
         viewModel.ArchiveRequested += (_, _) => _ = ShowArchiveAsync();
         viewModel.CompareRequested += (_, editor) => _ = ShowComparisonAsync(editor);
         viewModel.SpendRequested += (_, spend) => _ = ShowSpendAsync(spend);
-        viewModel.SettingsRequested += (_, _) => _ = ShowSettingsAsync();
         viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
         viewModel.Transcript.PropertyChanged += (_, e) =>
         {
@@ -282,14 +281,6 @@ public partial class MainWindow : Window
         {
             await _viewModel.MoveAsync(session, target);
         }
-    }
-
-    private async Task ShowSettingsAsync()
-    {
-        var content = (FrameworkElement)FindResource("SettingsDialog");
-        content.DataContext = _viewModel;
-        _viewModel.ShowRouterAiKey();
-        await DialogHost.Show(content, "MainDialog");
     }
 
     /// <summary>The key goes from the password box straight to the Credential Manager; the box is cleared at once.</summary>

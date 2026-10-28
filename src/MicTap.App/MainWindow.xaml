@@ -275,131 +275,124 @@
             <Setter Property="Background" Value="{StaticResource InfoContainerBrush}" />
         </Style>
 
-        <!-- The title and Закрыть stay in view; a long body scrolls between them. -->
-        <StackPanel x:Key="SettingsDialog" x:Shared="False" Margin="24,24,12,16" Width="652">
-            <TextBlock Text="Настройки" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
-            <ScrollViewer MaxHeight="600" Margin="0,4,0,0" VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,0,12,0">
-                    <TextBlock Text="Папка проектов" Style="{StaticResource SettingsHeader}" />
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource MaterialDesignOutlinedButton}"
-                                materialDesign:ButtonAssist.CornerRadius="12" AutomationProperties.Name="Выбрать папку проектов"
-                                Command="{Binding ChooseFolderCommand}">
-                            <StackPanel Orientation="Horizontal">
-                                <materialDesign:PackIcon Kind="FolderOpenOutline" Width="18" Height="18" VerticalAlignment="Center" />
-                                <TextBlock Margin="8,0,0,0" Text="Выбрать" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Button>
-                        <TextBox IsReadOnly="True" TextWrapping="Wrap" Text="{Binding RootFolder, Mode=OneWay}" AutomationProperties.Name="Папка проектов"
-                                 Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12" />
-                    </DockPanel>
-
-                    <TextBlock Text="Микрофон" Style="{StaticResource SettingsHeader}" />
-                    <DockPanel>
-                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Style="{StaticResource MaterialDesignIconButton}"
-                                ToolTip="Обновить список микрофонов" AutomationProperties.Name="Обновить список микрофонов"
-                                Command="{Binding RefreshDevicesCommand}">
-                            <materialDesign:PackIcon Kind="Refresh" />
-                        </Button>
-                        <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                                  AutomationProperties.Name="Микрофон" DisplayMemberPath="Name"
-                                  ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsEnabled="{Binding CanEditSettings}" />
-                    </DockPanel>
-
-                    <TextBlock Text="Черновик в панели записи" Style="{StaticResource SettingsHeader}" />
-                    <DockPanel>
-                        <TextBlock DockPanel.Dock="Right" Width="290" Margin="12,0,0,0" VerticalAlignment="Center" Text="{Binding DraftText}"
-                                   Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
-                        <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
-                                AutomationProperties.Name="Частота черновика, секунды; 0 — выключен" Value="{Binding DraftSeconds}" />
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource SettingsNote}"
-                               Text="Черновик — главная постоянная нагрузка на видеокарту: то, что звучит сейчас, распознаётся заново с каждым обновлением. Готовые фразы распознаются один раз при любой частоте. Реже или выключен — меньше расход батареи." />
-
-                    <TextBlock Text="Архив удалённого хранится" Style="{StaticResource SettingsHeader}" />
-                    <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                              AutomationProperties.Name="Срок хранения архива"
-                              ItemsSource="{x:Static local:MainViewModel.ArchiveOptions}" SelectedItem="{Binding SelectedArchive}" />
-                    <TextBlock Style="{StaticResource SettingsNote}"
-                               Text="Удалённые проекты и сессии лежат в архиве (кнопка над проектами), потом удаляются насовсем." />
-
-                    <TextBlock Text="Хоткеи" Style="{StaticResource SettingsHeader}" />
-                    <Border CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">
-                        <Grid Margin="14,6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="200" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="30" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="34" />
-                                <RowDefinition Height="34" />
-                            </Grid.RowDefinitions>
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Действие" VerticalAlignment="Center" Opacity="0.6"
-                                       Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="Сочетание" VerticalAlignment="Center" Opacity="0.6"
-                                       Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                            <Separator Grid.Row="1" Grid.ColumnSpan="2" VerticalAlignment="Top" Margin="0" />
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="Следующий язык проекта" VerticalAlignment="Center"
-                                       Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
-                            <Border Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
-                                <TextBlock Text="{Binding Hotkeys.ToggleLanguage}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                            </Border>
-                            <Separator Grid.Row="2" Grid.ColumnSpan="2" VerticalAlignment="Top" Margin="0" />
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="Старт / стоп записи" VerticalAlignment="Center"
-                                       Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
-                            <Border Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
-                                <TextBlock Text="{Binding Hotkeys.ToggleRecording}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                            </Border>
-                            <Separator Grid.Row="3" Grid.ColumnSpan="2" VerticalAlignment="Top" Margin="0" />
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="Отправить агенту сейчас" VerticalAlignment="Center"
-                                       Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
-                            <Border Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
-                                <TextBlock Text="{Binding Hotkeys.ForcePush}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
-                            </Border>
-                        </Grid>
-                    </Border>
-
-                    <TextBlock Text="Хаб для агентов" Style="{StaticResource SettingsHeader}" />
-                    <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}">
-                        <Run Text="Адрес: " Foreground="Gray" /><Run Text="{Binding HubText, Mode=OneWay}" />
-                    </TextBlock>
-                    <TextBlock Style="{StaticResource SettingsNote}" Text="Хоткеи и порт хаба меняются в файле:" />
-                    <TextBox IsReadOnly="True" TextWrapping="Wrap" Text="{Binding SettingsFile, Mode=OneWay}" AutomationProperties.Name="Файл настроек"
-                             materialDesign:TextFieldAssist.DecorationVisibility="Hidden" BorderThickness="0"
-                             Style="{StaticResource MaterialDesignTextBox}" />
-                    <TextBlock Style="{StaticResource SettingsNote}" Text="Изменения в файле действуют после перезапуска mictap." />
-
-                    <TextBlock Text="Router AI" Style="{StaticResource SettingsHeader}" />
-                    <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}" TextWrapping="Wrap" Text="{Binding RouterAiKeyText}"
-                               AutomationProperties.Name="Состояние ключа Router AI" />
-                    <!-- A saved key: replace or delete it. -->
-                    <StackPanel Margin="0,8,0,0" Orientation="Horizontal"
-                                Visibility="{Binding ShowRouterAiKeyActions, Converter={StaticResource VisibleWhenTrue}}">
-                        <Button Content="Заменить" Style="{StaticResource MaterialDesignOutlinedButton}" Click="OnReplaceRouterAiKey"
-                                AutomationProperties.Name="Заменить ключ Router AI" />
-                        <Button Margin="8,0,0,0" Content="Удалить" Style="{StaticResource MaterialDesignFlatButton}"
-                                Click="OnDeleteRouterAiKey" AutomationProperties.Name="Удалить ключ Router AI" />
+        <!-- The settings page: what used to be the settings dialog. -->
+        <StackPanel x:Key="SettingsBody" x:Shared="False" Margin="0,0,12,0">
+            <TextBlock Text="Папка проектов" Style="{StaticResource SettingsHeader}" />
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource MaterialDesignOutlinedButton}"
+                        materialDesign:ButtonAssist.CornerRadius="12" AutomationProperties.Name="Выбрать папку проектов"
+                        Command="{Binding ChooseFolderCommand}">
+                    <StackPanel Orientation="Horizontal">
+                        <materialDesign:PackIcon Kind="FolderOpenOutline" Width="18" Height="18" VerticalAlignment="Center" />
+                        <TextBlock Margin="8,0,0,0" Text="Выбрать" VerticalAlignment="Center" />
                     </StackPanel>
-                    <!-- No key yet, or replacing it: paste and save; «Сохранить» only with something pasted. -->
-                    <DockPanel Margin="0,8,0,0" Visibility="{Binding ShowRouterAiKeyInput, Converter={StaticResource VisibleWhenTrue}}">
-                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Отмена" Style="{StaticResource MaterialDesignFlatButton}"
-                                Click="OnCancelRouterAiKey" AutomationProperties.Name="Не менять ключ Router AI"
-                                Visibility="{Binding HasRouterAiKey, Converter={StaticResource VisibleWhenTrue}}" />
-                        <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Сохранить" Style="{StaticResource MaterialDesignOutlinedButton}"
-                                IsEnabled="{Binding CanSaveRouterAiKey}"
-                                Click="OnSaveRouterAiKey" AutomationProperties.Name="Сохранить ключ Router AI" />
-                        <PasswordBox Style="{StaticResource MaterialDesignOutlinedPasswordBox}" PasswordChanged="OnRouterAiKeyChanged"
-                                     materialDesign:TextFieldAssist.TextFieldCornerRadius="12" materialDesign:HintAssist.Hint="Ключ Router AI (sk-…)"
-                                     AutomationProperties.Name="Ключ Router AI" />
-                    </DockPanel>
-                    <TextBlock Style="{StaticResource SettingsNote}"
-                               Text="Ключ хранится в диспетчере учётных данных Windows, не в файле настроек. Облако выбирается в настройках проекта: его фразы уходят в Router AI, черновик — на этом компьютере." />
-                </StackPanel>
-            </ScrollViewer>
-            <Button Margin="0,12,12,0" HorizontalAlignment="Right" Content="Закрыть" IsCancel="True" IsDefault="True"
-                    Style="{StaticResource MaterialDesignFlatButton}" Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" />
+                </Button>
+                <TextBox IsReadOnly="True" TextWrapping="Wrap" Text="{Binding RootFolder, Mode=OneWay}" AutomationProperties.Name="Папка проектов"
+                         Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12" />
+            </DockPanel>
+
+            <TextBlock Text="Микрофон" Style="{StaticResource SettingsHeader}" />
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Style="{StaticResource MaterialDesignIconButton}"
+                        ToolTip="Обновить список микрофонов" AutomationProperties.Name="Обновить список микрофонов"
+                        Command="{Binding RefreshDevicesCommand}">
+                    <materialDesign:PackIcon Kind="Refresh" />
+                </Button>
+                <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                          AutomationProperties.Name="Микрофон" DisplayMemberPath="Name"
+                          ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsEnabled="{Binding CanEditSettings}" />
+            </DockPanel>
+
+            <TextBlock Text="Черновик в панели записи" Style="{StaticResource SettingsHeader}" />
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Width="290" Margin="12,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap" Text="{Binding DraftText}"
+                           Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                        AutomationProperties.Name="Частота черновика, секунды; 0 — выключен" Value="{Binding DraftSeconds}" />
+            </DockPanel>
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Черновик — главная постоянная нагрузка на видеокарту: то, что звучит сейчас, распознаётся заново с каждым обновлением. Готовые фразы распознаются один раз при любой частоте. Реже или выключен — меньше расход батареи." />
+
+            <TextBlock Text="Архив удалённого хранится" Style="{StaticResource SettingsHeader}" />
+            <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                      AutomationProperties.Name="Срок хранения архива"
+                      ItemsSource="{x:Static local:MainViewModel.ArchiveOptions}" SelectedItem="{Binding SelectedArchive}" />
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Удалённые проекты и сессии лежат в архиве (кнопка над проектами), потом удаляются насовсем." />
+
+            <TextBlock Text="Хоткеи" Style="{StaticResource SettingsHeader}" />
+            <Border CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">
+                <Grid Margin="14,6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="200" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="30" />
+                        <RowDefinition Height="34" />
+                        <RowDefinition Height="34" />
+                        <RowDefinition Height="34" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Действие" VerticalAlignment="Center" Opacity="0.6"
+                               Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="Сочетание" VerticalAlignment="Center" Opacity="0.6"
+                               Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                    <Separator Grid.Row="1" Grid.ColumnSpan="2" VerticalAlignment="Top" Margin="0" />
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Следующий язык проекта" VerticalAlignment="Center"
+                               Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                    <Border Grid.Row="1" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
+                        <TextBlock Text="{Binding Hotkeys.ToggleLanguage}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                    </Border>
+                    <Separator Grid.Row="2" Grid.ColumnSpan="2" VerticalAlignment="Top" Margin="0" />
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="Старт / стоп записи" VerticalAlignment="Center"
+                               Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                    <Border Grid.Row="2" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
+                        <TextBlock Text="{Binding Hotkeys.ToggleRecording}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                    </Border>
+                    <Separator Grid.Row="3" Grid.ColumnSpan="2" VerticalAlignment="Top" Margin="0" />
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Отправить агенту сейчас" VerticalAlignment="Center"
+                               Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                    <Border Grid.Row="3" Grid.Column="1" VerticalAlignment="Center" Style="{StaticResource HotkeyKeys}">
+                        <TextBlock Text="{Binding Hotkeys.ForcePush}" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                    </Border>
+                </Grid>
+            </Border>
+
+            <TextBlock Text="Хаб для агентов" Style="{StaticResource SettingsHeader}" />
+            <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}">
+                <Run Text="Адрес: " Foreground="Gray" /><Run Text="{Binding HubText, Mode=OneWay}" />
+            </TextBlock>
+            <TextBlock Style="{StaticResource SettingsNote}" Text="Хоткеи и порт хаба меняются в файле:" />
+            <TextBox IsReadOnly="True" TextWrapping="Wrap" Text="{Binding SettingsFile, Mode=OneWay}" AutomationProperties.Name="Файл настроек"
+                     materialDesign:TextFieldAssist.DecorationVisibility="Hidden" BorderThickness="0"
+                     Style="{StaticResource MaterialDesignTextBox}" />
+            <TextBlock Style="{StaticResource SettingsNote}" Text="Изменения в файле действуют после перезапуска mictap." />
+
+            <TextBlock Text="Router AI" Style="{StaticResource SettingsHeader}" />
+            <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}" TextWrapping="Wrap" Text="{Binding RouterAiKeyText}"
+                       AutomationProperties.Name="Состояние ключа Router AI" />
+            <!-- A saved key: replace or delete it. -->
+            <StackPanel Margin="0,8,0,0" Orientation="Horizontal"
+                        Visibility="{Binding ShowRouterAiKeyActions, Converter={StaticResource VisibleWhenTrue}}">
+                <Button Content="Заменить" Style="{StaticResource MaterialDesignOutlinedButton}" Click="OnReplaceRouterAiKey"
+                        AutomationProperties.Name="Заменить ключ Router AI" />
+                <Button Margin="8,0,0,0" Content="Удалить" Style="{StaticResource MaterialDesignFlatButton}"
+                        Click="OnDeleteRouterAiKey" AutomationProperties.Name="Удалить ключ Router AI" />
+            </StackPanel>
+            <!-- No key yet, or replacing it: paste and save; «Сохранить» only with something pasted. -->
+            <DockPanel Margin="0,8,0,0" Visibility="{Binding ShowRouterAiKeyInput, Converter={StaticResource VisibleWhenTrue}}">
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Отмена" Style="{StaticResource MaterialDesignFlatButton}"
+                        Click="OnCancelRouterAiKey" AutomationProperties.Name="Не менять ключ Router AI"
+                        Visibility="{Binding HasRouterAiKey, Converter={StaticResource VisibleWhenTrue}}" />
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Сохранить" Style="{StaticResource MaterialDesignOutlinedButton}"
+                        IsEnabled="{Binding CanSaveRouterAiKey}"
+                        Click="OnSaveRouterAiKey" AutomationProperties.Name="Сохранить ключ Router AI" />
+                <PasswordBox Style="{StaticResource MaterialDesignOutlinedPasswordBox}" PasswordChanged="OnRouterAiKeyChanged"
+                             materialDesign:TextFieldAssist.TextFieldCornerRadius="12" materialDesign:HintAssist.Hint="Ключ Router AI (sk-…)"
+                             AutomationProperties.Name="Ключ Router AI" />
+            </DockPanel>
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Ключ хранится в диспетчере учётных данных Windows, не в файле настроек. Облако выбирается в настройках проекта: его фразы уходят в Router AI, черновик — на этом компьютере." />
         </StackPanel>
 
         <Style x:Key="TreeExpander" TargetType="ToggleButton">
@@ -489,6 +482,12 @@
                       Icon="{materialDesign:PackIcon Kind=DeleteOutline}" />
         </ContextMenu>
 
+        <Style x:Key="SideMenuItem" TargetType="ListBoxItem" BasedOn="{StaticResource MaterialDesign3.NavigationRailListBoxItem}">
+            <Setter Property="Background" Value="{StaticResource InfoContainerBrush}" />
+            <Setter Property="Width" Value="76" />
+            <Setter Property="materialDesign:NavigationRailAssist.CornerRadius" Value="12" />
+        </Style>
+
         <Style x:Key="TreeRowBorder" TargetType="Border">
             <Setter Property="CornerRadius" Value="10" />
             <Setter Property="Padding" Value="8,6" />
@@ -558,6 +557,12 @@
                     </StackPanel>
 
                     <Border DockPanel.Dock="Right" Margin="0,0,12,0" Padding="10,4" CornerRadius="12"
+                            VerticalAlignment="Center" Background="#FFFFB300" ToolTip="Тестовая копия mictap (--profile): свои настройки и логи, без хоткеев"
+                            Visibility="{Binding IsProfile, Converter={StaticResource VisibleWhenTrue}}">
+                        <TextBlock Text="{Binding ProfileText}" Foreground="Black" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                    </Border>
+
+                    <Border DockPanel.Dock="Right" Margin="0,0,12,0" Padding="10,4" CornerRadius="12"
                             VerticalAlignment="Center" Background="#33FFFFFF"
                             Visibility="{Binding IsRecording, Converter={StaticResource VisibleWhenTrue}}">
                         <StackPanel Orientation="Horizontal">
@@ -603,7 +608,28 @@
                 </TextBlock>
             </Border>
 
-            <Grid Margin="12">
+            <!-- The side menu at 9 o'clock: records, agents, settings, what's new. -->
+            <Border DockPanel.Dock="Left" Padding="4,12,0,12">
+                <ListBox x:Name="SideMenu" SelectedIndex="{Binding PageIndex}" AutomationProperties.Name="Разделы"
+                         ItemContainerStyle="{StaticResource SideMenuItem}">
+                    <ListBoxItem Content="Записи" AutomationProperties.Name="Записи" ToolTip="Проекты, сессии и запись"
+                                 materialDesign:NavigationRailAssist.SelectedIcon="Microphone"
+                                 materialDesign:NavigationRailAssist.UnselectedIcon="MicrophoneOutline" />
+                    <ListBoxItem Content="Агенты" AutomationProperties.Name="Агенты" ToolTip="Агенты всех сессий: кто ждёт, кто думает, кто ушёл"
+                                 materialDesign:NavigationRailAssist.SelectedIcon="Robot"
+                                 materialDesign:NavigationRailAssist.UnselectedIcon="RobotOutline"
+                                 materialDesign:BadgedAssist.Badge="{Binding AgentsBadge}" />
+                    <ListBoxItem Content="Настройки" AutomationProperties.Name="Раздел настроек" ToolTip="Папка проектов, микрофон, черновик, архив, хоткеи, Router AI"
+                                 materialDesign:NavigationRailAssist.SelectedIcon="Cog"
+                                 materialDesign:NavigationRailAssist.UnselectedIcon="CogOutline" />
+                    <ListBoxItem Content="Что нового" AutomationProperties.Name="Что нового" ToolTip="Изменения mictap по версиям"
+                                 materialDesign:NavigationRailAssist.SelectedIcon="Gift"
+                                 materialDesign:NavigationRailAssist.UnselectedIcon="GiftOutline" />
+                </ListBox>
+            </Border>
+
+            <Grid>
+            <Grid Margin="12" Visibility="{Binding IsRecordsPage, Converter={StaticResource VisibleWhenTrue}}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="270" MinWidth="180" MaxWidth="520" />
                     <ColumnDefinition Width="12" />
@@ -1038,6 +1064,121 @@
                         </DockPanel>
                     </materialDesign:Card>
                 </DockPanel>
+            </Grid>
+
+            <!-- Agents: every agent of every session. -->
+            <materialDesign:Card Margin="12" Padding="20,16" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}"
+                                 Visibility="{Binding IsAgentsPage, Converter={StaticResource VisibleWhenTrue}}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Агенты" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+                    <TextBlock DockPanel.Dock="Top" Margin="0,4,0,12" TextWrapping="Wrap" Opacity="0.7" Style="{StaticResource MaterialDesignBodyMediumTextBlock}"
+                               Text="Кто читает ваши сессии через mictap: «ждёт» — ждёт новых фраз, «думает» — отвечает на прочитанное, «ушёл» — не появлялся больше 10 минут." />
+                    <Grid>
+                        <DataGrid ItemsSource="{Binding AllAgents}" AutomationProperties.Name="Список агентов"
+                                  Visibility="{Binding HasAgents, Converter={StaticResource VisibleWhenTrue}}"
+                                  AutoGenerateColumns="False" IsReadOnly="True" CanUserAddRows="False" CanUserDeleteRows="False"
+                                  CanUserReorderColumns="False" CanUserResizeRows="False" HeadersVisibility="Column" SelectionMode="Single"
+                                  GridLinesVisibility="None" Background="Transparent"
+                                  materialDesign:DataGridAssist.CellPadding="8,6" materialDesign:DataGridAssist.ColumnHeaderPadding="8,6">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Агент" Width="200" SortMemberPath="Name">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate DataType="{x:Type local:AgentListRow}">
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Ellipse x:Name="Dot" Width="8" Height="8" Margin="0,0,8,0" VerticalAlignment="Center" Fill="#FFB0B0B0" />
+                                                <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                            </StackPanel>
+                                            <DataTemplate.Triggers>
+                                                <DataTrigger Binding="{Binding IsWaiting}" Value="True">
+                                                    <Setter TargetName="Dot" Property="Fill" Value="#FF2E7D32" />
+                                                </DataTrigger>
+                                            </DataTemplate.Triggers>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Состояние" Binding="{Binding State}" Width="150" />
+                                <DataGridTextColumn Header="Проект" Binding="{Binding Project}" Width="160" />
+                                <DataGridTextColumn Header="Сессия" Binding="{Binding Session}" Width="*" />
+                                <DataGridTextColumn Header="Был" Binding="{Binding LastSeen}" Width="130" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center" Opacity="0.45" TextWrapping="Wrap"
+                                   Style="{StaticResource MaterialDesignBodyLargeTextBlock}"
+                                   Visibility="{Binding HasAgents, Converter={StaticResource CollapsedWhenTrue}}"
+                                   Text="Агентов пока не было. Агент подключается командой mictap wait." />
+                    </Grid>
+                </DockPanel>
+            </materialDesign:Card>
+
+            <!-- Settings: a page instead of the old dialog. -->
+            <materialDesign:Card Margin="12" Padding="20,16,8,16" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}"
+                                 Visibility="{Binding IsSettingsPage, Converter={StaticResource VisibleWhenTrue}}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Настройки" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+                    <ScrollViewer Margin="0,4,0,0" VerticalScrollBarVisibility="Auto">
+                        <ContentControl MaxWidth="720" HorizontalAlignment="Left" Content="{StaticResource SettingsBody}" Focusable="False" />
+                    </ScrollViewer>
+                </DockPanel>
+            </materialDesign:Card>
+
+            <!-- What's new, as GitHub releases: the versions at 9 o'clock, the chosen one's changes at 3 o'clock. -->
+            <Grid Margin="12" Visibility="{Binding IsWhatsNewPage, Converter={StaticResource VisibleWhenTrue}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <materialDesign:Card Padding="8" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Margin="10,6,0,6" Text="Версии" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                        <ListBox ItemsSource="{Binding Releases}" SelectedItem="{Binding SelectedRelease}" AutomationProperties.Name="Версии">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate DataType="{x:Type local:Release}">
+                                    <StackPanel Margin="2,2">
+                                        <TextBlock Text="{Binding Version}" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+                                        <TextBlock Text="{Binding Date}" Opacity="0.6" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </materialDesign:Card>
+                <materialDesign:Card Grid.Column="2" Padding="28,20" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto" DataContext="{Binding SelectedRelease}">
+                        <StackPanel MaxWidth="760" HorizontalAlignment="Left">
+                            <TextBlock Style="{StaticResource MaterialDesignHeadlineMediumTextBlock}">
+                                <Run Text="mictap" /><Run Text="{Binding Version, Mode=OneWay, StringFormat=' {0}'}" />
+                            </TextBlock>
+                            <TextBlock Margin="0,4,0,8" Text="{Binding Date}" Opacity="0.6" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                            <ItemsControl ItemsSource="{Binding Sections}" AutomationProperties.Name="Изменения версии">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type local:ReleaseSection}">
+                                        <StackPanel Margin="0,12,0,0">
+                                            <StackPanel Orientation="Horizontal">
+                                                <materialDesign:PackIcon Kind="{Binding Icon}" Width="20" Height="20" VerticalAlignment="Center"
+                                                                         Foreground="{DynamicResource MaterialDesign.Brush.Primary}" />
+                                                <TextBlock Margin="8,0,0,0" Text="{Binding Title}" VerticalAlignment="Center"
+                                                           Style="{StaticResource MaterialDesignTitleMediumTextBlock}" />
+                                            </StackPanel>
+                                            <ItemsControl Margin="28,6,0,0" ItemsSource="{Binding Items}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <DockPanel Margin="0,3">
+                                                            <Ellipse DockPanel.Dock="Left" Width="5" Height="5" Margin="0,9,12,0" VerticalAlignment="Top"
+                                                                     Fill="{DynamicResource MaterialDesign.Brush.Foreground}" Opacity="0.6" />
+                                                            <TextBlock Text="{Binding}" TextWrapping="Wrap" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
+                                                        </DockPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </ScrollViewer>
+                </materialDesign:Card>
+            </Grid>
             </Grid>
         </DockPanel>
     </materialDesign:DialogHost>

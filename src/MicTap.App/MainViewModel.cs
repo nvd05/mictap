@@ -80,6 +80,18 @@ public sealed partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private EngineChoice? _selectedEngine;
 
+    /// <summary>The section of the side menu, in <see cref="AppPage"/> order.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsRecordsPage), nameof(IsAgentsPage), nameof(IsSettingsPage), nameof(IsWhatsNewPage))]
+    private int _pageIndex;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AgentsBadge))]
+    private int _waitingAgents;
+
+    [ObservableProperty]
+    private Release? _selectedRelease;
+
     /// <summary>How often the draft is recognized, from the settings slider: 0 is off.</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DraftText))]
@@ -176,6 +188,7 @@ public sealed partial class MainViewModel : ObservableObject
         _appVersion = appVersion;
         _logger = logger.ForContext<MainViewModel>();
         RootFolder = settings.RootFolder ?? Core.Projects.DefaultRoot;
+        SelectedRelease = Releases.FirstOrDefault();
         _infoTimer = new DispatcherTimer(InfoShownFor, DispatcherPriority.Background, (_, _) => ClearInfo(), _dispatcher);
         _infoTimer.Stop();
         recorder.LevelChanged += OnLevelChanged;
@@ -216,9 +229,6 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>The comparison dialog is to be shown; <see cref="CompareAsync"/> runs on its yes.</summary>
     public event EventHandler<ComparisonEditor>? CompareRequested;
 
-    /// <summary>The window shows the settings dialog.</summary>
-    public event EventHandler? SettingsRequested;
-
     public ObservableCollection<AudioDevice> Devices { get; } = [];
 
     /// <summary>Projects with their sessions, for the side tree.</summary>
@@ -254,6 +264,25 @@ public sealed partial class MainViewModel : ObservableObject
     /// <summary>Agents of the shown session: waiting, thinking or gone.</summary>
     public ObservableCollection<AgentRow> Agents { get; } = [];
 
+    /// <summary>Every agent of every session, for «Агенты»: waiting first, then thinking, then gone, latest first.</summary>
+    public ObservableCollection<AgentListRow> AllAgents { get; } = [];
+
+    /// <summary>The waiting agents in a badge on «Агенты»; null hides it.</summary>
+    public object? AgentsBadge => WaitingAgents > 0 ? WaitingAgents : null;
+
+    public bool HasAgents => AllAgents.Count > 0;
+
+    public bool IsRecordsPage => PageIndex == (int)AppPage.Records;
+
+    public bool IsAgentsPage => PageIndex == (int)AppPage.Agents;
+
+    public bool IsSettingsPage => PageIndex == (int)AppPage.Settings;
+
+    public bool IsWhatsNewPage => PageIndex == (int)AppPage.WhatsNew;
+
+    /// <summary>«Что нового»: the versions of CHANGELOG.md, newest first.</summary>
+    public IReadOnlyList<Release> Releases { get; } = ReleaseNotes.Load();
+
     public TranscriptViewModel Transcript { get; }
 
     public bool CanEditSettings => !IsRecording && !IsStarting;
@@ -262,6 +291,11 @@ public sealed partial class MainViewModel : ObservableObject
 
     /// <summary>The project in the app bar; the session is named above its text.</summary>
     public string Title => SelectedProject?.Name ?? "";
+
+    /// <summary>A test copy started with --profile: its folder, shown in the app bar; null for the user's mictap.</summary>
+    public string? ProfileText => AppPaths.Profile is { } profile ? $"тест · {Path.GetFileName(profile)}" : null;
+
+    public bool IsProfile => AppPaths.Profile is not null;
 
     /// <summary>Name of the shown session, or of the new one the next recording makes.</summary>
     public string SessionHeader =>
@@ -927,7 +961,15 @@ public sealed partial class MainViewModel : ObservableObject
     }
 
     [RelayCommand]
-    private void OpenSettings() => SettingsRequested?.Invoke(this, EventArgs.Empty);
+    private void OpenSettings() => PageIndex = (int)AppPage.Settings;
+
+    partial void OnPageIndexChanged(int value)
+    {
+        if (value == (int)AppPage.Settings)
+        {
+            ShowRouterAiKey(); // a half-typed key from the last visit is not kept
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanEditSettings))]
     private void ChooseFolder()
@@ -1488,12 +1530,14 @@ public sealed partial class MainViewModel : ObservableObject
 
         DateTimeOffset now = DateTimeOffset.UtcNow;
         int connected = 0;
+        List<(AgentPresence Agent, string Project, string Session)> everyone = [];
         foreach (ProjectNode project in Projects)
         {
             int inProject = 0;
             foreach (SessionNode session in project.Sessions)
             {
                 IReadOnlyList<AgentPresence> agents = _agentsState.AgentsOf(session.Session);
+                everyone.AddRange(agents.Select(a => (a, project.Project.Name, session.Session.Name)));
                 AgentPresence[] present = [ .. agents.Where(a => a.State != AgentState.Gone) ];
                 session.AgentCount = present.Length;
                 session.AgentsText = string.Join("\n", present.Select(a => $"{a.Name} · {Describe(a, now)}"));
@@ -1517,6 +1561,17 @@ public sealed partial class MainViewModel : ObservableObject
                 Agents.Add(row);
             }
         }
+
+        WaitingAgents = connected;
+        AgentListRow[] all =
+        [
+            .. everyone
+                .OrderBy(a => a.Agent.State)
+                .ThenByDescending(a => a.Agent.LastSeen)
+                .Select(a => new AgentListRow(a.Agent.Name, a.Project, a.Session, Describe(a.Agent, now), LastSeen(a.Agent, now), a.Agent.State == AgentState.Waiting)),
+        ];
+        Sync(AllAgents, all);
+        OnPropertyChanged(nameof(HasAgents));
 
         if (!HubWarning && HubText.StartsWith("127.", StringComparison.Ordinal))
         {
@@ -1626,6 +1681,35 @@ public sealed partial class MainViewModel : ObservableObject
         ElapsedText = FormatElapsed(TimeSpan.FromTicks(Interlocked.Read(ref _sessionOffsetTicks)) + recorded);
     }
 
+    private static string LastSeen(AgentPresence agent, DateTimeOffset now)
+    {
+        TimeSpan ago = now - agent.LastSeen;
+        return agent.State == AgentState.Waiting || ago < TimeSpan.FromMinutes(1) ? "сейчас"
+            : ago < TimeSpan.FromHours(1) ? $"{(int)ago.TotalMinutes} мин назад"
+            : agent.LastSeen.ToLocalTime().ToString("dd.MM HH:mm");
+    }
+
+    /// <summary>Makes <paramref name="list"/> hold <paramref name="rows"/>, touching only the rows that changed: no flicker every second.</summary>
+    private static void Sync<T>(ObservableCollection<T> list, IReadOnlyList<T> rows)
+    {
+        for (int i = 0; i < rows.Count; i++)
+        {
+            if (i == list.Count)
+            {
+                list.Add(rows[ i ]);
+            }
+            else if (!Equals(list[ i ], rows[ i ]))
+            {
+                list[ i ] = rows[ i ];
+            }
+        }
+
+        while (list.Count > rows.Count)
+        {
+            list.RemoveAt(list.Count - 1);
+        }
+    }
+
     private static string Describe(AgentPresence agent, DateTimeOffset now) => agent.State switch
     {
         AgentState.Waiting => "ждёт",
@@ -1708,3 +1792,15 @@ public sealed partial class EngineChoice(string? model, string title, string pri
 
 /// <summary>An agent of the shown session and what it is doing, in words.</summary>
 public sealed record AgentRow(string Name, string State);
+
+/// <summary>An agent in «Агенты»: where it works and what it is doing.</summary>
+public sealed record AgentListRow(string Name, string Project, string Session, string State, string LastSeen, bool IsWaiting);
+
+/// <summary>The sections of the side menu, in its order.</summary>
+public enum AppPage
+{
+    Records,
+    Agents,
+    Settings,
+    WhatsNew,
+}

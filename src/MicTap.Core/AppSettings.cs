@@ -18,6 +18,9 @@ public sealed record AppSettings
 
     public const int MaxArchiveDays = 3650;
 
+    /// <summary>The graphics card (Whisper on this computer) among <see cref="LikedModels"/>.</summary>
+    public const string LocalModel = "local";
+
     /// <summary>Folder of projects; null means <see cref="Projects.DefaultRoot"/>.</summary>
     public string? RootFolder { get; init; }
 
@@ -49,6 +52,23 @@ public sealed record AppSettings
     /// <summary>Projects (their folder names under the root) listed first.</summary>
     public IReadOnlyList<string> PinnedProjects { get; init; } = [];
 
+    /// <summary>
+    /// Recognition engines the user liked, for every project: Router AI model ids and <see cref="LocalModel"/> for the
+    /// graphics card. They come first in the engine lists.
+    /// </summary>
+    public IReadOnlyList<string> LikedModels { get; init; } = [];
+
+    /// <summary>Whether the user liked <paramref name="model"/> (null — the graphics card).</summary>
+    public bool Likes(string? model) => LikedModels.Contains(model ?? LocalModel);
+
+    /// <summary>These settings with <paramref name="model"/> (null — the graphics card) liked or not.</summary>
+    public AppSettings WithLike(string? model, bool liked)
+    {
+        string id = model ?? LocalModel;
+        IEnumerable<string> others = LikedModels.Where(m => m != id);
+        return this with { LikedModels = [ .. liked ? others.Append(id) : others ] };
+    }
+
     // The lists compare by their items: a record compares them by reference.
     public bool Equals(AppSettings? other) =>
         other is not null
@@ -60,7 +80,8 @@ public sealed record AppSettings
         && LiveDraftSeconds == other.LiveDraftSeconds
         && ArchiveDays == other.ArchiveDays
         && HiddenProjects.SequenceEqual(other.HiddenProjects)
-        && PinnedProjects.SequenceEqual(other.PinnedProjects);
+        && PinnedProjects.SequenceEqual(other.PinnedProjects)
+        && LikedModels.SequenceEqual(other.LikedModels);
 
     public override int GetHashCode() =>
         HashCode.Combine(RootFolder, DeviceName, ChunkSeconds, Hotkeys, HubPort, LiveDraftSeconds, ArchiveDays, HiddenProjects.Count);

@@ -23,9 +23,9 @@ public sealed class ProjectsTests : IDisposable
         Assert.Equal("ja", loaded.Settings.DefaultLanguage);
         JsonElement root = JsonDocument.Parse(File.ReadAllText(project.SettingsFile)).RootElement;
         Assert.Equal(
-            [ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds", "engine", "cloudModel", "likedModels" ],
+            [ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds", "engine", "cloudModel" ],
             root.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(4, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(5, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("local", root.GetProperty("engine").GetString());
         Assert.Equal(1.2, root.GetProperty("phrasePauseSeconds").GetDouble());
         Assert.Equal("deleteAfterTranscript", root.GetProperty("audioRetention").GetString());
@@ -108,36 +108,25 @@ public sealed class ProjectsTests : IDisposable
     }
 
     [Fact]
-    public void Liked_models_round_trip_and_older_files_have_none()
+    public void Likes_of_schema_4_projects_are_taken_once_and_the_files_rewritten_without_them()
     {
-        string folder = Path.Combine(_temp.Path, "Общий");
-        Directory.CreateDirectory(folder);
-        File.WriteAllText(
-            Path.Combine(folder, "project.json"),
-            """{ "schemaVersion": 3, "name": "Общий", "languages": [ "ru" ], "audioRetention": "keep", "engine": "local" }""");
-        ProjectSettings liked = new ProjectSettings("Японский", [ "ja", "ru" ], AudioRetention.Keep)
-            .WithLike("x-ai/grok-stt-1.0", true)
-            .WithLike(null, true)
-            .WithLike("openai/gpt-transcribe", true)
-            .WithLike("x-ai/grok-stt-1.0", false);
-        ProjectInfo japanese = Projects.Create(_temp.Path, liked);
+        foreach ((string name, string liked) in new[] { ("Отношения", """[ "local", "x-ai/grok-stt-1.0" ]"""), ("Японский", """[ "x-ai/grok-stt-1.0" ]""") })
+        {
+            string folder = Path.Combine(_temp.Path, name);
+            Directory.CreateDirectory(folder);
+            File.WriteAllText(
+                Path.Combine(folder, "project.json"),
+                $$"""{ "schemaVersion": 4, "name": "{{name}}", "languages": [ "ru" ], "audioRetention": "keep", "likedModels": {{liked}} }""");
+        }
 
-        ProjectSettings old = Projects.Load(folder).Settings;
-        ProjectSettings loaded = Projects.Load(japanese.Folder).Settings;
+        IReadOnlyList<string> first = Projects.TakeLegacyLikes(_temp.Path);
+        IReadOnlyList<string> second = Projects.TakeLegacyLikes(_temp.Path);
 
-        Assert.False(old.Likes(null));
-        Assert.Equal([ "local", "openai/gpt-transcribe" ], loaded.LikedModels);
-        Assert.True(loaded.Likes(null));
-        Assert.False(loaded.Likes("x-ai/grok-stt-1.0"));
-        Assert.Contains("\"schemaVersion\": 4", File.ReadAllText(japanese.SettingsFile));
-    }
-
-    [Fact]
-    public void A_liked_model_must_be_a_router_ai_model_or_local()
-    {
-        var settings = new ProjectSettings("Облако", [ "ru" ], AudioRetention.Keep, LikedModels: [ "whisper" ]);
-
-        Assert.Throws<ArgumentException>(() => Projects.Validate(settings));
+        Assert.Equal([ "local", "x-ai/grok-stt-1.0" ], first);
+        Assert.Empty(second);
+        string json = File.ReadAllText(Path.Combine(_temp.Path, "Отношения", "project.json"));
+        Assert.DoesNotContain("likedModels", json);
+        Assert.Contains("\"schemaVersion\": 5", json);
     }
 
     [Theory]

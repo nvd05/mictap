@@ -19,6 +19,7 @@ public sealed class SettingsStoreTests : IDisposable
             ChunkSeconds = 90,
             HiddenProjects = [ "Отношения" ],
             PinnedProjects = [ "mictap", "Японский" ],
+            LikedModels = [ AppSettings.LocalModel, "mistralai/voxtral-small-transcribe-3-0" ],
         };
 
         store.Save(settings);

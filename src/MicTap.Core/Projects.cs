@@ -29,11 +29,8 @@ public enum TranscriptionEngine
 
 /// <summary>
 /// Contents of project.json. The first language is the default; the language hotkey goes round the list.
-/// <paramref name="PhrasePauseSeconds"/> is the silence that ends a phrase: short for lectures, longer for a
-/// conversation where one thinks before answering. Schema 2 added it; a schema 1 file reads with the default.
-/// <paramref name="Engine"/> and <paramref name="CloudModel"/> came with schema 3; older files read as local.
-/// Schema 4 also had the models liked for the project; in schema 5 they are one list for all projects, in settings.json
-/// (<see cref="AppSettings.LikedModels"/>), and <see cref="Projects.TakeLegacyLikes"/> moves them there.
+/// <paramref name="PhrasePauseSeconds"/> is the silence that ends a phrase.
+/// <paramref name="LiveDraftSeconds"/> overrides the app's draft frequency for this project; null means the app's.
 /// </summary>
 public sealed record ProjectSettings(
     string Name,
@@ -41,9 +38,10 @@ public sealed record ProjectSettings(
     AudioRetention AudioRetention,
     double PhrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds,
     TranscriptionEngine Engine = TranscriptionEngine.Local,
-    string CloudModel = RouterAiTranscriber.DefaultModel)
+    string CloudModel = RouterAiTranscriber.DefaultModel,
+    int? LiveDraftSeconds = null)
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     public const double DefaultPhrasePauseSeconds = 1.2;
 
@@ -149,6 +147,54 @@ public static partial class Projects
         return saved;
     }
 
+    /// <summary>
+    /// Renames a project and moves its folder, with every session, transcript and agent cursor in it. A name already
+    /// taken as a folder is an error, not a silent _2: a rename must not merge two projects. If writing project.json
+    /// fails after the move, the folder goes back where it was.
+    /// </summary>
+    public static ProjectInfo Rename(ProjectInfo project, string newName)
+    {
+        string name = newName.Trim();
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            throw new ArgumentException("У проекта должно быть имя.");
+        }
+
+        var settings = project.Settings with { Name = name };
+        Validate(settings);
+        string baseName = SessionFolders.Sanitize(name);
+        if (baseName.Length == 0)
+        {
+            throw new ArgumentException($"«{newName}» не годится как имя папки.");
+        }
+
+        string root = Path.GetDirectoryName(project.Folder)!;
+        string target = Path.Combine(root, baseName);
+        if (SameFolder(project.Folder, target))
+        {
+            return Save(project, settings);
+        }
+
+        if (Directory.Exists(target))
+        {
+            throw new IOException($"Папка «{baseName}» уже есть: проект с таким именем или папкой не переименован.");
+        }
+
+        Directory.Move(project.Folder, target);
+        var moved = new ProjectInfo(target, settings);
+        try
+        {
+            JsonFiles.Write(moved.SettingsFile, settings);
+        }
+        catch
+        {
+            Directory.Move(target, project.Folder);
+            throw;
+        }
+
+        return moved;
+    }
+
     /// <summary>The project made when the root has none yet, so recording works from the first start.</summary>
     public static ProjectSettings FirstProject { get; } = new("Общий", [ "ru", "ja" ], AudioRetention.Keep);
 
@@ -186,11 +232,15 @@ public static partial class Projects
                 $"Пауза фразы — от {minPause} до {ProjectSettings.MaxPhrasePauseSeconds} с, а не {settings.PhrasePauseSeconds}.");
         }
 
+        if (settings.LiveDraftSeconds is < 0 or > AppSettings.MaxLiveDraftSeconds)
+        {
+            throw new ArgumentException($"Черновик — от 0 до {AppSettings.MaxLiveDraftSeconds} с, а не {settings.LiveDraftSeconds}.");
+        }
+
         if (settings.Engine == TranscriptionEngine.RouterAi && !CloudModelId().IsMatch(settings.CloudModel ?? ""))
         {
             throw new ArgumentException($"«{settings.CloudModel}» — не модель Router AI; нужен вид openai/whisper-large-v3.");
         }
-
     }
 
     /// <summary>
@@ -217,6 +267,11 @@ public static partial class Projects
 
         return [ .. liked.Distinct() ];
     }
+
+    private static bool SameFolder(string a, string b) =>
+        string.Equals(
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+            StringComparison.OrdinalIgnoreCase);
 
     [GeneratedRegex("^[a-z]{2,3}$")]
     private static partial Regex LanguageCode();

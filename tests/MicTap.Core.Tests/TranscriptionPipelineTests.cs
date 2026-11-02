@@ -22,6 +22,36 @@ public sealed class TranscriptionPipelineTests : IDisposable
     }
 
     [Fact]
+    public async Task Manual_text_goes_after_the_speech_already_written_and_in_order()
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((_, _) => "голос"));
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await Eventually(() => Lines().Length == 1);
+
+        pipeline.AppendManual(session, "руками", "ru", 1, 1);
+        pipeline.AppendManual(session, "ещё", "ru", 1, 1);
+
+        await Eventually(() => pipeline.SinkFor(session).Lines.Count == 3);
+        Assert.Equal([ "голос", "руками", "ещё" ], pipeline.SinkFor(session).Lines.Select(line => line.Text));
+        Assert.Equal([ 1, 2, 3 ], pipeline.SinkFor(session).Lines.Select(line => line.Seq));
+        await _recorder.StopAsync();
+    }
+
+    [Fact]
+    public async Task Manual_text_without_a_recording_is_written_without_waiting_for_the_model()
+    {
+        var loaded = new TaskCompletionSource<ITranscriber>();
+        using TranscriptionPipeline pipeline = Run(_ => loaded.Task);
+        SessionInfo session = SessionFolders.OpenText(_temp.Path, "Текст", "ru", "test");
+
+        pipeline.AppendManual(session, "без микрофона", "ru", 0, 0);
+
+        await Eventually(() => pipeline.SinkFor(session).Lines.Count == 1);
+        Assert.Equal("без микрофона", pipeline.SinkFor(session).Lines[ 0 ].Text);
+    }
+
+    [Fact]
     public async Task Speech_segments_become_lines_of_transcript_v2_and_silence_never_reaches_whisper()
     {
         var heard = new ConcurrentQueue<float[]>();

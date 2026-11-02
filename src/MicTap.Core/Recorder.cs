@@ -419,8 +419,8 @@ public sealed class Recorder
     /// </summary>
     private static TimeSpan AudioEnd(SessionInfo session, SessionMeta meta)
     {
-        double end = meta.Starts.Max(s => s.Offset + (s.Duration ?? 0));
-        end = Math.Max(end, meta.LanguageMarks.Max(m => m.At));
+        double end = meta.Starts.Count == 0 ? 0 : meta.Starts.Max(s => s.Offset + (s.Duration ?? 0));
+        end = Math.Max(end, meta.LanguageMarks.Count == 0 ? 0 : meta.LanguageMarks.Max(m => m.At));
         if (Directory.Exists(session.AudioFolder))
         {
             long audioBytes = Directory.EnumerateFiles(session.AudioFolder, "*.wav")

@@ -57,9 +57,10 @@ public sealed class TranscriptionPipeline : IDisposable
     private readonly Channel<bool> _liveWake = Channel.CreateBounded<bool>(
         new BoundedChannelOptions(1) { FullMode = BoundedChannelFullMode.DropWrite, SingleReader = true });
 
-    // Phrases to recognize, in order, with pushes and recording ends after the phrases said before them.
+    // Phrases to recognize, in order, with pushes, hand-typed text and recording ends after the phrases said before them.
+    // The UI adds hand-typed text, so there is more than one writer.
     private readonly Channel<object> _segments = Channel.CreateUnbounded<object>(
-        new UnboundedChannelOptions { SingleReader = true, SingleWriter = true });
+        new UnboundedChannelOptions { SingleReader = true, SingleWriter = false });
 
     private readonly CancellationTokenSource _stop = new();
     private readonly Lock _gate = new();
@@ -71,6 +72,7 @@ public sealed class TranscriptionPipeline : IDisposable
     private int _pending;
     private int _failed;
     private long _liveIntervalTicks;
+    private volatile bool _recording;
 
     /// <param name="cloud">Makes the cloud transcriber of a model for a session's phrases.</param>
     /// <param name="modelOf">
@@ -116,6 +118,9 @@ public sealed class TranscriptionPipeline : IDisposable
     /// <summary>A segment's text was appended to transcript.jsonl.</summary>
     public event EventHandler<SegmentTranscript>? SegmentTranscribed;
 
+    /// <summary>Text typed by the user was appended to transcript.jsonl; it is not a draft and does not touch one.</summary>
+    public event EventHandler<SegmentTranscript>? ManualTextAdded;
+
     /// <summary>
     /// After <see cref="Push"/>: everything said before it is in the transcript. Not raised for a push that comes after
     /// the recording has ended.
@@ -160,6 +165,7 @@ public sealed class TranscriptionPipeline : IDisposable
             _janitors.TryRemove(started.Session.Folder, out _);
         }
 
+        _recording = true;
         _stream.Writer.TryWrite(started);
         Volatile.Write(ref _finished, new Finished(started.Session, started.Offset));
         Volatile.Write(ref _liveLanguage, new LiveLanguage(started.Session, started.Language));
@@ -200,6 +206,26 @@ public sealed class TranscriptionPipeline : IDisposable
     /// <see cref="Pushed"/> follows once it and every earlier phrase are in the transcript.
     /// </summary>
     public void Push(SessionInfo session) => _stream.Writer.TryWrite(new PushRequest(session));
+
+    /// <summary>
+    /// Appends text typed by hand, in the order it is sent, and lets agents reading the session see it. It does not go
+    /// through speech recognition and never replaces the live draft.
+    /// </summary>
+    public void AppendManual(SessionInfo session, string text, string language, double start, double end)
+    {
+        var line = new ManualTextRequest(session, text, language, Math.Max(0, start), Math.Max(start, end));
+
+        // With a recording the text goes through its stream, after the speech said before it. Without one it goes
+        // straight to the transcript, even while the recognition models are still loading.
+        if (_recording)
+        {
+            _stream.Writer.TryWrite(line);
+        }
+        else
+        {
+            _segments.Writer.TryWrite(line);
+        }
+    }
 
     /// <summary>The transcript of a session; the user's edits go through <see cref="ITranscriptSink.Edit"/>.</summary>
     public JsonlTranscriptSink SinkFor(SessionInfo session)
@@ -267,10 +293,20 @@ public sealed class TranscriptionPipeline : IDisposable
                         Queue(session, segmenter!.Flush(), segmenter, janitor, cloud);
                         _segments.Writer.TryWrite(push);
                         break;
-                    case SessionEnd end:
-                        if (end.Session == session)
+                    case ManualTextRequest manual:
+                        if (segmenter is not null && manual.Session == session)
                         {
-                            Queue(session, segmenter!.Flush(), segmenter, janitor, cloud);
+                            // Speech said before the typing gets its text first: the history keeps the order.
+                            Queue(manual.Session, segmenter.Flush(), segmenter, janitor, cloud);
+                        }
+
+                        _segments.Writer.TryWrite(manual);
+                        break;
+                    case SessionEnd end:
+                        bool mine = end.Session == session;
+                        if (mine)
+                        {
+                            Queue(end.Session, segmenter!.Flush(), segmenter, janitor, cloud);
                             janitor = null;
                             cloud = null;
                             session = null;
@@ -278,6 +314,11 @@ public sealed class TranscriptionPipeline : IDisposable
                         }
 
                         _segments.Writer.TryWrite(end); // after the last phrases: the end is reported once they are written
+                        if (mine)
+                        {
+                            _recording = false;
+                        }
+
                         break;
                 }
             }
@@ -302,6 +343,11 @@ public sealed class TranscriptionPipeline : IDisposable
                 {
                     case PushRequest push:
                         Pushed?.Invoke(this, push.Session); // the phrases before it are written by now
+                        continue;
+                    case ManualTextRequest manual:
+                        TranscriptLine manualLine = SinkFor(manual.Session).Append(
+                            manual.Start, manual.End, manual.Language, manual.Text);
+                        ManualTextAdded?.Invoke(this, new SegmentTranscript(manual.Session, manualLine));
                         continue;
                     case SessionEnd end:
                         RecordingTranscribed?.Invoke(this, end.Session);
@@ -594,6 +640,9 @@ public sealed class TranscriptionPipeline : IDisposable
     private sealed record SessionEnd(SessionInfo Session);
 
     private sealed record PushRequest(SessionInfo Session);
+
+    /// <summary>Text typed by hand, queued after the speech said before it.</summary>
+    private sealed record ManualTextRequest(SessionInfo Session, string Text, string Language, double Start, double End);
 
     /// <summary>A phrase to recognize; <paramref name="Model"/> is the cloud model its recording started with, if any.</summary>
     private sealed record PendingSegment(SessionInfo Session, SpeechSegment Segment, ChunkJanitor? Janitor, string? Model);

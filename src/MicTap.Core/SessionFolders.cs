@@ -46,6 +46,23 @@ public static class SessionFolders
         return session;
     }
 
+    /// <summary>
+    /// Opens a session for text typed by hand: it has meta.json, but no recording starts and no audio. A recording
+    /// may later append to it like to any other session.
+    /// </summary>
+    public static SessionInfo OpenText(string projectFolder, string name, string language, string appVersion)
+    {
+        SessionInfo session = Open(projectFolder, name);
+        if (!File.Exists(session.MetaFile))
+        {
+            new SessionMeta(
+                [], "text", MetaFormat.From(PcmFormat.Mono16k), AppSettings.DefaultChunkSeconds, appVersion,
+                [ new LanguageMark(0, language) ]).WriteTo(session);
+        }
+
+        return session;
+    }
+
     /// <summary>Sessions of a project, the most recently recorded first (by the time meta.json was last written).</summary>
     public static IReadOnlyList<SessionInfo> List(string projectFolder) =>
         !Directory.Exists(projectFolder)

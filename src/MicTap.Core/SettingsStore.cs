@@ -42,6 +42,20 @@ public sealed class SettingsStore(string filePath)
 
     private void Validate(AppSettings settings)
     {
+        try
+        {
+            Projects.Validate(settings.NewProjectDefaults.ForProject("Новый проект"));
+            if (settings.NewProjectDefaults.Languages.Any(code => !LanguageCatalog.Supports(code))
+                || settings.FavoriteLanguages.Any(code => !LanguageCatalog.Supports(code)))
+            {
+                throw new ArgumentException("Настройки содержат неподдерживаемый язык.");
+            }
+        }
+        catch (ArgumentException ex)
+        {
+            throw new InvalidDataException($"Settings file {FilePath}: {ex.Message}", ex);
+        }
+
         if (settings.ChunkSeconds is < 1 or > AppSettings.MaxChunkSeconds)
         {
             throw new InvalidDataException(

@@ -44,6 +44,8 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     private bool _selecting;
     private AgentsState? _agentsState;
     private SessionNode? _recordingNode;
+    private readonly Dictionary<string, string> _pendingProjectNames = new(StringComparer.OrdinalIgnoreCase);
+    private Task _finishingRecording = Task.CompletedTask;
 
     [ObservableProperty]
     private string _rootFolder = Core.Projects.DefaultRoot;
@@ -381,7 +383,16 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         Transcript.SetDraftInterval(_settings.LiveDraftSeconds);
     }
 
-    public Task StopRecordingAsync() => _recorder.StopAsync();
+    public async Task StopRecordingAsync()
+    {
+        await _recorder.StopAsync();
+        await _dispatcher.InvokeAsync(() => { });
+        await _finishingRecording;
+    }
+
+    public bool IsFinishingRecording => !_finishingRecording.IsCompleted;
+
+    public Task FinishRecordingAsync() => _finishingRecording;
 
     /// <summary>The side tree selected a project (a new session in it) or a session (appending to it).</summary>
     public void Select(object? node)
@@ -512,19 +523,92 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     }
 
     /// <summary>Saves a project's settings from the dialog.</summary>
-    public void SaveProject(ProjectInfo project, ProjectSettings settings)
+    public async Task SaveProjectAsync(ProjectInfo project, ProjectSettings settings)
     {
         try
         {
+            bool rename = settings.Name != project.Name;
+            if (rename)
+            {
+                if (Core.SessionFolders.Sanitize(settings.Name) != settings.Name)
+                    throw new ArgumentException("Название должно быть допустимым именем папки Windows.");
+                string target = Path.Combine(Path.GetDirectoryName(project.Folder)!, settings.Name);
+                if (!string.Equals(target, project.Folder, StringComparison.OrdinalIgnoreCase) && (Directory.Exists(target) || File.Exists(target)))
+                    throw new IOException($"Папка «{settings.Name}» уже существует.");
+            }
+            if (rename && IsRecording)
+            {
+                _pendingProjectNames[ project.Folder ] = settings.Name;
+                settings = settings with { Name = project.Name };
+            }
+            else if (rename)
+            {
+                await RenameProjectAsync(project, settings);
+                return;
+            }
+            else
+            {
+                _pendingProjectNames.Remove(project.Folder);
+            }
             ProjectInfo saved = Core.Projects.Save(project, settings);
             _logger.Information("Project {Project} settings saved", saved.Name);
             UpdateProjectInPlace(saved);
-            ShowMessage($"Настройки проекта «{saved.Name}» сохранены.", isError: false);
+            if (_recordingNode is { } recording && recording.Project.Project.Folder == saved.Folder)
+            {
+                Transcript.Pipeline.SetPhrasePause(recording.Session, saved.Settings.PhrasePause);
+                Transcript.EngineSwitched(recording.Session, saved.Settings.CloudModelInUse);
+            }
+            ShowMessage(_pendingProjectNames.TryGetValue(project.Folder, out string? pending)
+                ? $"Настройки сохранены. Папка проекта получит имя «{pending}» после остановки записи и распознавания."
+                : $"Настройки проекта «{saved.Name}» сохранены.", isError: false);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
         {
             _logger.Error(ex, "Saving project {Project} failed", settings.Name);
             ShowMessage($"Настройки не сохранены: {ex.Message}", isError: true);
+        }
+    }
+
+    private async Task RenameProjectAsync(ProjectInfo project, ProjectSettings settings)
+    {
+        IsStarting = true; // No new recording may open files while the folder is moving.
+        try
+        {
+            if (!await Transcript.WhenIdleAsync(TimeSpan.FromSeconds(60)))
+            {
+                throw new IOException("Распознавание ещё не закончило текст. Повторите переименование после завершения очереди.");
+            }
+
+            SessionInfo? selected = SelectedSession;
+            SessionInfo[] sessions = [ .. SessionFolders.List(project.Folder) ];
+            ProjectInfo moved = _agentsState is null
+                ? Core.Projects.Rename(project, settings)
+                : await _agentsState.MoveProjectAsync(project, () => Core.Projects.Rename(project, settings));
+            string oldFolderName = Path.GetFileName(project.Folder);
+            string newFolderName = Path.GetFileName(moved.Folder);
+            Save(_settings with
+            {
+                HiddenProjects = [ .. _settings.HiddenProjects.Select(n => n == oldFolderName ? newFolderName : n) ],
+                PinnedProjects = [ .. _settings.PinnedProjects.Select(n => n == oldFolderName ? newFolderName : n) ],
+            });
+            foreach (SessionInfo before in sessions)
+            {
+                Transcript.SessionRenamed(before, new SessionInfo(before.Name, Path.Combine(moved.Folder, before.Name)));
+            }
+
+            LoadProjects(select: moved.Folder);
+            if (selected is not null && Projects.SelectMany(p => p.Sessions).FirstOrDefault(s =>
+                    s.Project.Project.Folder == moved.Folder && s.Name == selected.Name) is { } after)
+            {
+                after.IsSelected = true;
+                Select(after);
+            }
+            _logger.Information("Project moved from {Before} to {After}", project.Folder, moved.Folder);
+            ShowMessage($"Проект переименован. Папка: {moved.Folder}", isError: false);
+        }
+        finally
+        {
+            IsStarting = false;
         }
     }
 
@@ -915,7 +999,9 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     [RelayCommand(CanExecute = nameof(CanEditSettings))]
     private void NewProject() => NewProjectRequested?.Invoke(this, EventArgs.Empty);
 
-    [RelayCommand(CanExecute = nameof(CanEditProject))]
+    private bool CanEditProjectSettings(ProjectNode? node) => !IsStarting && (node?.Project ?? SelectedProject) is not null;
+
+    [RelayCommand(CanExecute = nameof(CanEditProjectSettings))]
     private void EditProject(ProjectNode? node) => EditProjectRequested?.Invoke(this, node?.Project ?? SelectedProject!);
 
     [RelayCommand(CanExecute = nameof(CanEditProject))]
@@ -1052,6 +1138,8 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
 
     public void HubStarted(int port)
     {
+        _settings = _settings with { HubPort = port };
+        _settingsStore.Save(_settings);
         HubText = $"127.0.0.1:{port}";
         HubWarning = false;
     }
@@ -1247,7 +1335,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     }
 
     [RelayCommand(CanExecute = nameof(IsRecording))]
-    private Task StopAsync() => _recorder.StopAsync();
+    private Task StopAsync() => StopRecordingAsync();
 
     [RelayCommand(CanExecute = nameof(HasRecordingAgents))]
     private void SendToAgents() => SendToAgentsNow();
@@ -1311,6 +1399,11 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
             node.Project = saved;
         }
 
+        if (SelectedProject?.Folder != saved.Folder)
+        {
+            return;
+        }
+
         string language = Language;
         SelectedProject = saved;
         if (Language != language && Languages.Any(l => l.Code == language))
@@ -1318,6 +1411,10 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
             _quietLanguage = true;
             Language = language;
             _quietLanguage = false;
+        }
+        else if (IsRecording && Language != language)
+        {
+            _recorder.MarkLanguage(Language);
         }
     }
 
@@ -1378,7 +1475,12 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     public ProjectEditor NewProjectEditor() => ProjectEditor.ForNew(_cloudModels, () => _settings, SetLike);
 
     /// <inheritdoc cref="NewProjectEditor"/>
-    public ProjectEditor ProjectEditorFor(ProjectInfo project) => ProjectEditor.For(project, _cloudModels, () => _settings, SetLike);
+    public ProjectEditor ProjectEditorFor(ProjectInfo project)
+    {
+        ProjectEditor editor = ProjectEditor.For(project, _cloudModels, () => _settings, SetLike);
+        if (_pendingProjectNames.TryGetValue(project.Folder, out string? name)) editor.Name = name;
+        return editor;
+    }
 
     /// <summary>The engine list is being rebuilt or set from the project: its text changes are not the user's typing.</summary>
     public bool IsUpdatingEngines => _quietEngine || Engines.IsRebuilding;
@@ -1690,7 +1792,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         });
 
     private void OnRecordingStopped(object? sender, RecordingStopped stopped) =>
-        _dispatcher.InvokeAsync(async () =>
+        _finishingRecording = _dispatcher.InvokeAsync(async () =>
         {
             SessionNode? node = _recordingNode;
             _recordingNode = null;
@@ -1716,12 +1818,25 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
                 RecordingFailed?.Invoke(this, text);
             }
 
-            // A name typed during the recording goes to the folder now that nothing is written there.
-            if (node is not null && SessionName.Trim().Length > 0 && SessionFolders.Sanitize(SessionName) != node.Name)
+            bool renameSession = node is not null && SessionName.Trim().Length > 0 && SessionFolders.Sanitize(SessionName) != node.Name;
+            bool moving = renameSession || _pendingProjectNames.Count > 0;
+            if (moving) IsStarting = true;
+            try
             {
-                await RenameSessionAsync(node, SessionName);
+                // No new recording may reopen the files while deferred folder moves finish.
+                if (renameSession) await RenameSessionAsync(node!, SessionName);
+                foreach ((string folder, string name) in _pendingProjectNames.ToArray())
+                {
+                    _pendingProjectNames.Remove(folder);
+                    ProjectInfo project = Core.Projects.Load(folder);
+                    await SaveProjectAsync(project, project.Settings with { Name = name });
+                }
             }
-        });
+            finally
+            {
+                if (moving) IsStarting = false;
+            }
+        }).Task.Unwrap();
 
     /// <summary>The status line names the last recorded session: not once it is in the Recycle Bin.</summary>
     private void ForgetLastRecorded(SessionNode deleted)

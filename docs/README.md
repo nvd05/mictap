@@ -123,14 +123,23 @@ powershell -ExecutionPolicy Bypass -File tools\install-app.ps1    # mictap в %L
 ## Агенты: команда mictap
 
 Пока mictap запущен, внутри него работает хаб на `127.0.0.1:47310` (порт — `hubPort` в `settings.json`;
-занят — в строке статуса «Хаб выключен», запись работает). Агенты читают текст командой `mictap`:
+занят — в строке статуса «Хаб выключен», запись работает). Если Windows запрещает порт с ошибкой 10013,
+хаб выбирает свободный и сохраняет его в `hubPort`; CLI читает новый порт при каждом запуске.
+Агенты читают текст командой `mictap` (название команды идёт перед её параметрами):
 
 ```
 powershell -ExecutionPolicy Bypass -File tools\install-cli.ps1    # один раз: mictap.exe в %LOCALAPPDATA%\mictap\bin и в PATH
 mictap wait --min-words 20                # ждёт 20 слов в активной записи, печатает JSON и выходит
+mictap wait --project Планы --wait-for-start --max-wait 45  # можно вызвать до начала записи
 mictap wait --project Японский --session "Пара 1" --agent claude --max-wait 60
 mictap status | mictap projects | mictap sessions --project Японский | mictap tail --session "Пара 1" --seq 10
 ```
+
+При переименовании проекта перемещается его папка целиком, включая сессии, звук и курсоры агентов.
+Во время записи перенос откладывается до остановки и завершения распознавания. Подключённые клиенты
+получают событие SignalR `ProjectMoved`; `wait --wait-for-start` возвращает `reason: "project_moved"`
+и объект `move` с `previous_project`, `project`, `previous_folder`, `project_folder`. Агент должен использовать
+новое имя и путь при следующих вызовах. `tools/listen.sh` отдаёт такое уведомление агенту и выходит.
 
 `wait` — петля: вызвать, обработать сегменты, вызвать снова; следующий вызов продолжает с курсора
 (`agents\<agent>.json`), `--from-start` читает сессию сначала. Ответ — одна строка:

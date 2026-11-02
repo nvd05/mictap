@@ -18,6 +18,9 @@ public partial class MainWindow : Window
     private System.Drawing.Icon? _trayIcon;
     private Point _dragStart;
     private bool _searchingEngines;
+    private bool _followTranscript = true;
+    private double _transcriptOffset;
+    private int _transcriptUpdate;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -26,9 +29,13 @@ public partial class MainWindow : Window
         DataContext = viewModel;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
         viewModel.RecordingFailed += OnRecordingFailed;
-        viewModel.NewProjectRequested += (_, _) => _ = ShowProjectDialogAsync(viewModel.NewProjectEditor(), viewModel.CreateProject);
+        viewModel.NewProjectRequested += (_, _) => _ = ShowProjectDialogAsync(viewModel.NewProjectEditor(), settings =>
+        {
+            viewModel.CreateProject(settings);
+            return Task.CompletedTask;
+        });
         viewModel.EditProjectRequested += (_, project) =>
-            _ = ShowProjectDialogAsync(viewModel.ProjectEditorFor(project), settings => viewModel.SaveProject(project, settings));
+            _ = ShowProjectDialogAsync(viewModel.ProjectEditorFor(project), settings => viewModel.SaveProjectAsync(project, settings));
         viewModel.RenameSessionRequested += (_, session) => _ = ShowRenameDialogAsync(session);
         viewModel.DeleteRequested += (_, request) => _ = ConfirmDeleteAsync(request);
         viewModel.ArchiveRequested += (_, _) => _ = ShowArchiveAsync();
@@ -71,8 +78,22 @@ public partial class MainWindow : Window
 
     private async void OnWindowClosing(object? sender, CancelEventArgs e)
     {
-        if (_closeConfirmed || !_viewModel.IsRecording)
+        if (_closeConfirmed)
         {
+            return;
+        }
+
+        if (!_viewModel.IsRecording)
+        {
+            if (_viewModel.IsFinishingRecording)
+            {
+                e.Cancel = true;
+                if (_confirmingClose) return;
+                _confirmingClose = true;
+                await _viewModel.FinishRecordingAsync();
+                _closeConfirmed = true;
+                Close();
+            }
             return;
         }
 
@@ -99,7 +120,7 @@ public partial class MainWindow : Window
     }
 
     /// <summary>The project dialog; it stays open while what was typed is not valid, with the reason shown in it.</summary>
-    private async Task ShowProjectDialogAsync(ProjectEditor editor, Action<ProjectSettings> apply)
+    private async Task ShowProjectDialogAsync(ProjectEditor editor, Func<ProjectSettings, Task> apply)
     {
         var content = (FrameworkElement)FindResource("ProjectDialog");
         content.DataContext = editor;
@@ -114,7 +135,7 @@ public partial class MainWindow : Window
 
         if (settings is not null)
         {
-            apply(settings);
+            await apply(settings);
         }
     }
 
@@ -309,6 +330,21 @@ public partial class MainWindow : Window
     /// <summary>The day of the topmost phrase in view sticks to the top while the text is scrolled away from its start.</summary>
     private void OnTranscriptScrolled(object sender, ScrollChangedEventArgs e)
     {
+        if (e.OriginalSource != TranscriptScroll)
+        {
+            return;
+        }
+
+        if (e.ExtentHeightChange == 0 && e.ViewportHeightChange == 0)
+        {
+            _transcriptOffset = TranscriptScroll.VerticalOffset;
+            _followTranscript = _transcriptOffset >= TranscriptScroll.ScrollableHeight - 2;
+        }
+        else if (e.ExtentHeightChange != 0)
+        {
+            TranscriptScroll.ScrollToVerticalOffset(_followTranscript ? TranscriptScroll.ExtentHeight : _transcriptOffset);
+        }
+
         TranscriptItem? first = null;
         for (int i = 0; i < TranscriptItems.Items.Count; i++)
         {
@@ -331,11 +367,20 @@ public partial class MainWindow : Window
     /// <summary>New lines scroll the transcript to its end unless the user scrolled up to read.</summary>
     private void FollowTranscript()
     {
-        bool atEnd = TranscriptScroll.VerticalOffset >= TranscriptScroll.ScrollableHeight - 48;
-        if (atEnd)
+        if (_viewModel.Transcript.Items.Count == 0)
         {
-            Dispatcher.InvokeAsync(TranscriptScroll.ScrollToEnd, System.Windows.Threading.DispatcherPriority.Background);
+            _followTranscript = true;
+            _transcriptOffset = 0;
         }
+
+        int update = ++_transcriptUpdate;
+        Dispatcher.InvokeAsync(() =>
+        {
+            if (update == _transcriptUpdate)
+            {
+                TranscriptScroll.ScrollToVerticalOffset(_followTranscript ? TranscriptScroll.ExtentHeight : _transcriptOffset);
+            }
+        }, System.Windows.Threading.DispatcherPriority.Loaded);
     }
 
     private void ShowFromTray()

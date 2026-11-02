@@ -11,7 +11,7 @@ public sealed record RetentionOption(AudioRetention Value, string Name)
 }
 
 /// <summary>
-/// The project dialog: a new project, or the settings of an existing one (its name stays). Who recognizes the phrases is
+/// The project dialog: a new project, or the settings and folder name of an existing one. Who recognizes the phrases is
 /// picked from the same list as the engine box above the session's text: the graphics card or a Router AI model, with
 /// search and the liked ones first.
 /// </summary>

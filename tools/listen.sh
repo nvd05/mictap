@@ -16,7 +16,7 @@ agent=${2:-claude-code}
 while true; do
     # --min-words 100000: never back just because enough words came; only on «send» or a stop.
     # --skip-backlog: a session this agent has never read counts as read up to now, not handed back whole.
-    out=$(mictap wait --project "$project" --agent "$agent" --min-words 100000 --skip-backlog 2>&1)
+    out=$(mictap wait --project "$project" --agent "$agent" --min-words 100000 --skip-backlog --wait-for-start 2>&1)
     code=$?
 
     # 2 = nothing is recording in the project now, 3 = mictap is not running (being reinstalled): look again soon.
@@ -29,6 +29,12 @@ while true; do
     if [ "$code" -ne 0 ]; then
         echo "WAIT EXIT $code: $out"
         exit "$code"
+    fi
+
+    # Let the agent update its project and filesystem path before listening again.
+    if echo "$out" | grep -q '"reason":"project_moved"'; then
+        echo "$out"
+        exit 0
     fi
 
     # A stop with nothing new said: keep listening.

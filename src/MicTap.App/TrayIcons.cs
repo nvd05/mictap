@@ -18,7 +18,7 @@ public static class TrayIcons
     public static System.Drawing.Icon Render(bool recording, string language)
     {
         var decoder = BitmapDecoder.Create(
-            new Uri($"pack://application:,,,/Assets/{(recording ? "mictap-recording" : "mictap")}.ico"),
+            new Uri($"pack://application:,,,/MicTap.App;component/Assets/{(recording ? "mictap-recording" : "mictap")}.ico"),
             BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
         BitmapFrame frame = decoder.Frames.OrderBy(f => Math.Abs(f.PixelWidth - Size)).First();
 

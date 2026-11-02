@@ -1,4 +1,5 @@
 using System.IO;
+using System.Net.Sockets;
 using System.Windows;
 using System.Windows.Threading;
 using MicTap.Core;
@@ -112,14 +113,27 @@ public partial class App : Application
     {
         try
         {
-            _hub = await HubHost.StartAsync(port, agents);
+            try
+            {
+                _hub = await HubHost.StartAsync(port, agents);
+            }
+            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AccessDenied)
+            {
+                Log.Warning(ex, "Windows denied hub port {Port}; requesting an available port", port);
+                _hub = await HubHost.StartAsync(0, agents);
+            }
             Log.Information("Agents hub listens on 127.0.0.1:{Port}", _hub.Port);
             viewModel.HubStarted(_hub.Port);
         }
-        catch (IOException ex)
+        catch (Exception ex) when (ex is IOException or SocketException or UnauthorizedAccessException or InvalidOperationException)
         {
-            Log.Warning(ex, "Agents hub is off: port {Port} is taken", port);
-            viewModel.HubFailed($"порт {port} занят");
+            if (_hub is not null)
+            {
+                await _hub.DisposeAsync();
+                _hub = null;
+            }
+            Log.Warning(ex, "Agents hub failed on port {Port}", port);
+            viewModel.HubFailed($"порт {port}: {ex.Message}");
         }
     }
 

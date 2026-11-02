@@ -14,12 +14,13 @@ project=${1:-mictap}
 agent=${2:-claude-code}
 
 while true; do
+    # --wait-for-start: wait for the next recording of the project instead of exiting when nothing records now.
     # --min-words 100000: never back just because enough words came; only on «send» or a stop.
     # --skip-backlog: a session this agent has never read counts as read up to now, not handed back whole.
-    out=$(mictap wait --project "$project" --agent "$agent" --min-words 100000 --skip-backlog 2>&1)
+    out=$(mictap wait --project "$project" --agent "$agent" --wait-for-start --min-words 100000 --skip-backlog 2>&1)
     code=$?
 
-    # 2 = nothing is recording in the project now, 3 = mictap is not running (being reinstalled): look again soon.
+    # 2 = no such project, 3 = mictap is not running (being reinstalled): look again soon.
     if [ "$code" -eq 2 ] || [ "$code" -eq 3 ]; then
         sleep 3
         continue
@@ -29,6 +30,12 @@ while true; do
     if [ "$code" -ne 0 ]; then
         echo "WAIT EXIT $code: $out"
         exit "$code"
+    fi
+
+    # The project folder moved: keep reading under its new name; the cursor did not move.
+    if echo "$out" | grep -q '"reason":"project_moved"'; then
+        project=$(echo "$out" | sed -n 's/.*"new_name":"\([^"]*\)".*/\1/p')
+        continue
     fi
 
     # A stop with nothing new said: keep listening.

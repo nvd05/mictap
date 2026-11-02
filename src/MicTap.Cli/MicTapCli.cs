@@ -30,14 +30,19 @@ public static class MicTapCli
         "(reason force_push, even below --min-words): the user has finished the thought and waits for your answer — answer " +
         "right away and call wait again only after that. A press while no wait runs makes the next wait return at once " +
         "with force_push. Without --project and --session it follows the active recording; with --project alone, the " +
-        "recording of that project. A new wait of the same --agent on the same session takes over an older one still " +
-        "running: the older exits with code 5 and leaves the cursor alone. Behind a tool call with a time limit keep " +
-        "--max-wait well below it — 45 or less through Claude Desktop, which gives up on a call after 60 s: a wait that " +
-        "outlives the call and ends before your next one moves the cursor past segments you never saw. " +
+        "recording of that project. --wait-for-start makes the wait begin when the next recording starts instead of " +
+        "failing when nothing records now: with --session it waits for that session to be recorded into again, without " +
+        "--session it waits for the next recording of --project (or of any project when none is named). After " +
+        "session_stopped call wait again with --wait-for-start to follow the next recording. A project rename ends the " +
+        "wait with reason project_moved and a move {old_name,new_name,old_path,new_path}: the cursor did not move, so " +
+        "continue with the new project name and path. A new wait of the same --agent on the same session takes over an " +
+        "older one still running: the older exits with code 5 and leaves the cursor alone. Behind a tool call with a " +
+        "time limit keep --max-wait well below it — 45 or less through Claude Desktop, which gives up on a call after 60 s: " +
+        "a wait that outlives the call and ends before your next one moves the cursor past segments you never saw. " +
         "Output: {project, session, session_started, reason, from_seq, to_seq, lang_now, " +
-        "segments:[{seq,start,end,start_at,end_at,lang,text}]}; reason is first_event, min_words, max_wait, session_stopped " +
-        "or force_push; start/end are seconds from the session start, session_started/start_at/end_at the clock time in " +
-        "ISO 8601 with the time zone (which day and hour it was said).";
+        "segments:[{seq,start,end,start_at,end_at,lang,text}], move}; reason is first_event, min_words, max_wait, " +
+        "session_stopped, force_push or project_moved; start/end are seconds from the session start, " +
+        "session_started/start_at/end_at the clock time in ISO 8601 with the time zone (which day and hour it was said).";
 
     private const string ExitCodes =
         "Exit codes: 0 ok, 2 no such project or session (or nothing recording), 3 mictap is not running, 4 bad arguments, " +
@@ -81,6 +86,12 @@ public static class MicTapCli
             Description = "A session this agent has never read counts as read up to now: only what is said from here on comes. "
                 + "For a listener that follows a project and should not get its old sessions all at once.",
         };
+        var waitForStart = new Option<bool>("--wait-for-start")
+        {
+            Description = "Wait for the next recording instead of failing when nothing records now. With --session, wait "
+                + "for that session to be recorded into again; with --project alone, for its next recording; with neither, "
+                + "for any next recording.",
+        };
         minWords.Validators.Add(result =>
         {
             if (result.GetValueOrDefault<int?>() is <= 0)
@@ -96,12 +107,16 @@ public static class MicTapCli
             }
         });
 
-        var wait = new Command("wait", WaitHelp + " " + ExitCodes) { project, session, agent, minWords, maxWait, fromStart, skipBacklog };
+        var wait = new Command("wait", WaitHelp + " " + ExitCodes)
+        {
+            project, session, agent, minWords, maxWait, fromStart, skipBacklog, waitForStart,
+        };
         wait.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
             await hub.InvokeAsync<WaitReply>(
                 AgentHub.Wait,
                 new WaitRequest(parse.GetValue(project), parse.GetValue(session), parse.GetValue(agent)!,
-                    parse.GetValue(minWords), parse.GetValue(maxWait), parse.GetValue(fromStart), parse.GetValue(skipBacklog)),
+                    parse.GetValue(minWords), parse.GetValue(maxWait), parse.GetValue(fromStart), parse.GetValue(skipBacklog),
+                    parse.GetValue(waitForStart)),
                 token)));
 
         var status = new Command("status", "The running recording (project, session, language now) and the agents.") { agent };

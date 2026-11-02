@@ -96,13 +96,20 @@ public static class MicTapCli
             }
         });
 
-        var wait = new Command("wait", WaitHelp + " " + ExitCodes) { project, session, agent, minWords, maxWait, fromStart, skipBacklog };
+        var waitForStart = new Option<bool>("--wait-for-start")
+        {
+            Description = "Wait for recording to start when it is stopped. --max-wait includes this time; call again after session_stopped.",
+        };
+        var wait = new Command("wait", WaitHelp + " A rename returns reason project_moved and move with previous_project, project, previous_folder, project_folder; use the new name and path next time. " + ExitCodes)
+        {
+            project, session, agent, minWords, maxWait, fromStart, skipBacklog, waitForStart,
+        };
         wait.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
             await hub.InvokeAsync<WaitReply>(
                 AgentHub.Wait,
                 new WaitRequest(parse.GetValue(project), parse.GetValue(session), parse.GetValue(agent)!,
-                    parse.GetValue(minWords), parse.GetValue(maxWait), parse.GetValue(fromStart), parse.GetValue(skipBacklog)),
-                token)));
+                    parse.GetValue(minWords), parse.GetValue(maxWait), parse.GetValue(fromStart), parse.GetValue(skipBacklog), parse.GetValue(waitForStart)),
+                token), reportMoves: false));
 
         var status = new Command("status", "The running recording (project, session, language now) and the agents.") { agent };
         status.SetAction((parse, token) => CallAsync(port, parse.GetValue(agent)!, output, error, async hub =>
@@ -152,11 +159,15 @@ public static class MicTapCli
         return await parsed.InvokeAsync(new InvocationConfiguration { Output = output, Error = error }, cancellation);
     }
 
-    private static async Task<int> CallAsync<T>(int port, string agent, TextWriter output, TextWriter error, Func<HubConnection, Task<T>> call)
+    private static async Task<int> CallAsync<T>(int port, string agent, TextWriter output, TextWriter error, Func<HubConnection, Task<T>> call,
+        bool reportMoves = true)
     {
         await using HubConnection hub = new HubConnectionBuilder()
             .WithUrl($"http://127.0.0.1:{port}{AgentHub.Path}?{AgentHub.AgentQuery}={Uri.EscapeDataString(agent)}")
             .Build();
+        using IDisposable moveNotice = hub.On<ProjectMovedDto>(AgentHub.ProjectMoved, move => reportMoves
+            ? error.WriteLineAsync(JsonSerializer.Serialize(new { Reason = "project_moved", Move = move }, JsonOptions))
+            : Task.CompletedTask);
         try
         {
             await hub.StartAsync();

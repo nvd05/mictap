@@ -149,6 +149,37 @@ public static partial class Projects
         return saved;
     }
 
+    /// <summary>Moves the entire project; callers must finish recording and recognition first.</summary>
+    public static ProjectInfo Rename(ProjectInfo project, string name) => Rename(project, project.Settings with { Name = name });
+
+    public static ProjectInfo Rename(ProjectInfo project, ProjectSettings settings)
+    {
+        string name = settings.Name.Trim();
+        settings = settings with { Name = name };
+        Validate(settings);
+        if (SessionFolders.Sanitize(name) != name || name is "." or "..")
+        {
+            throw new ArgumentException("Название должно быть допустимым именем папки Windows.");
+        }
+
+        string target = Path.Combine(Path.GetDirectoryName(project.Folder)!, name);
+        if (string.Equals(project.Folder, target, StringComparison.Ordinal)) return Save(project, settings);
+        bool caseOnly = string.Equals(project.Folder, target, StringComparison.OrdinalIgnoreCase);
+        if (!caseOnly && (Directory.Exists(target) || File.Exists(target))) throw new IOException($"Папка «{name}» уже существует.");
+        string intermediate = caseOnly ? project.Folder + ".rename-" + Guid.NewGuid().ToString("N") : target;
+        Directory.Move(project.Folder, intermediate);
+        try
+        {
+            if (caseOnly) Directory.Move(intermediate, target);
+            return Save(project with { Folder = target }, settings);
+        }
+        catch
+        {
+            Directory.Move(Directory.Exists(target) ? target : intermediate, project.Folder);
+            throw;
+        }
+    }
+
     /// <summary>The project made when the root has none yet, so recording works from the first start.</summary>
     public static ProjectSettings FirstProject { get; } = new("Общий", [ "ru", "ja" ], AudioRetention.Keep);
 

@@ -23,7 +23,7 @@ public sealed class SpeechSegmenter
     private static readonly int LeadSamples = ToSamples(TimeSpan.FromMilliseconds(200));
 
     private readonly SpeechDetector _detect;
-    private readonly int _pauseSamples;
+    private int _pauseSamples;
     private readonly List<(long Position, string Language)> _marks = [];
     private float[] _pending = new float[ Rate * 40 ];
     private int _count;
@@ -43,6 +43,8 @@ public sealed class SpeechSegmenter
 
     /// <summary>The language of the next segment.</summary>
     public string Language { get; private set; }
+
+    public void SetPause(TimeSpan pause) => _pauseSamples = ToSamples(TimeSpan.FromTicks(Math.Max(pause.Ticks, MinSilence.Ticks)));
 
     public TimeSpan Received => FromSamples(ReceivedSamples);
 

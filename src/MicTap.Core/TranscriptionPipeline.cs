@@ -201,6 +201,8 @@ public sealed class TranscriptionPipeline : IDisposable
     /// </summary>
     public void Push(SessionInfo session) => _stream.Writer.TryWrite(new PushRequest(session));
 
+    public void SetPhrasePause(SessionInfo session, TimeSpan pause) => _stream.Writer.TryWrite((session, pause));
+
     /// <summary>The transcript of a session; the user's edits go through <see cref="ITranscriptSink.Edit"/>.</summary>
     public JsonlTranscriptSink SinkFor(SessionInfo session)
     {
@@ -251,6 +253,9 @@ public sealed class TranscriptionPipeline : IDisposable
             {
                 switch (item)
                 {
+                    case ValueTuple<SessionInfo, TimeSpan> change when change.Item1 == session:
+                        segmenter!.SetPause(change.Item2);
+                        break;
                     case RecordingStarted started:
                         session = started.Session;
                         segmenter = new SpeechSegmenter(detect, started.Language, started.Offset, started.PhrasePause);

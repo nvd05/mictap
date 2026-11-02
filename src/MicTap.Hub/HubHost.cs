@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.AspNetCore.SignalR;
 
 namespace MicTap.Hub;
 
@@ -16,11 +17,16 @@ namespace MicTap.Hub;
 public sealed class HubHost : IAsyncDisposable
 {
     private readonly WebApplication _app;
+    private readonly AgentsState _state;
+    private readonly Func<ProjectMovedDto, Task> _notifyMove;
 
-    private HubHost(WebApplication app, int port)
+    private HubHost(WebApplication app, int port, AgentsState state)
     {
         _app = app;
         Port = port;
+        _state = state;
+        _notifyMove = move => app.Services.GetRequiredService<IHubContext<AgentsHub>>().Clients.All.SendAsync(AgentHub.ProjectMoved, move);
+        state.ProjectRelocated += _notifyMove;
     }
 
     public int Port { get; }
@@ -38,21 +44,22 @@ public sealed class HubHost : IAsyncDisposable
         app.MapHub<AgentsHub>(AgentHub.Path);
         try
         {
-            await app.StartAsync();
+            await app.StartAsync().ConfigureAwait(false);
         }
-        catch (IOException)
+        catch
         {
-            await app.DisposeAsync();
+            await app.DisposeAsync().ConfigureAwait(false);
             throw;
         }
 
         string address = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.First();
-        return new HubHost(app, new Uri(address).Port);
+        return new HubHost(app, new Uri(address).Port, state);
     }
 
     public async ValueTask DisposeAsync()
     {
-        await _app.StopAsync();
-        await _app.DisposeAsync();
+        _state.ProjectRelocated -= _notifyMove;
+        await _app.StopAsync().ConfigureAwait(false);
+        await _app.DisposeAsync().ConfigureAwait(false);
     }
 }

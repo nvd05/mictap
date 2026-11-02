@@ -44,6 +44,49 @@ public sealed class AgentsState
     private readonly HashSet<string> _pushes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Transcribing> _transcribing = new(StringComparer.OrdinalIgnoreCase);
     private Recording? _active;
+    private TaskCompletionSource<SessionInfo> _nextStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private TaskCompletionSource<ProjectMovedDto> _nextMove = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly Dictionary<string, string> _movedFolders = new(StringComparer.OrdinalIgnoreCase);
+
+    public event Func<ProjectMovedDto, Task>? ProjectRelocated;
+
+    public async Task<ProjectInfo> MoveProjectAsync(ProjectInfo before, Func<ProjectInfo> rename)
+    {
+        ProjectInfo after;
+        ProjectMovedDto move;
+        lock (_gate)
+        {
+            // Cursor commits use the same lock: none may recreate the old folder during the move.
+            if (_active is { } active && SameFolder(Path.GetDirectoryName(active.Session.Folder)!, before.Folder))
+                throw new InvalidOperationException("Остановите запись перед переносом проекта.");
+            after = rename();
+            move = new ProjectMovedDto(before.Name, after.Name, before.Folder, after.Folder);
+            foreach (string source in _movedFolders.Where(p => SameFolder(p.Value, before.Folder)).Select(p => p.Key).ToArray())
+            {
+                _movedFolders[ source ] = after.Folder;
+            }
+            _movedFolders[ before.Folder ] = after.Folder;
+            foreach (Presence presence in _agents.Values.Where(p => p.Session is not null &&
+                         SameFolder(Path.GetDirectoryName(p.Session.Folder)!, before.Folder)))
+            {
+                presence.Project = after.Name;
+                presence.Session = new SessionInfo(presence.Session!.Name, Path.Combine(after.Folder, presence.Session.Name));
+            }
+            _nextMove.TrySetResult(move);
+            _nextMove = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            foreach (string folder in _changes.Keys.Where(f => SameFolder(Path.GetDirectoryName(f)!, before.Folder)).ToArray())
+            {
+                _changes.Remove(folder, out TaskCompletionSource? change);
+                change?.TrySetResult();
+            }
+        }
+        if (ProjectRelocated is { } handlers)
+        {
+            foreach (Func<ProjectMovedDto, Task> handler in handlers.GetInvocationList()) await handler(move);
+        }
+        AgentsChanged?.Invoke(this, EventArgs.Empty);
+        return after;
+    }
     private bool _transcriptionFailed;
     private string _root;
 
@@ -95,6 +138,8 @@ public sealed class AgentsState
         {
             _active = new Recording(session, ProjectName(session), language);
             _pushes.Remove(session.Folder);
+            _nextStart.TrySetResult(session);
+            _nextStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         Pulse(session.Folder);
@@ -210,7 +255,7 @@ public sealed class AgentsState
 
         return new StatusReply(
             _version,
-            active is null ? null : new RecordingDto(active.Project, active.Session.Name, active.Language),
+            active is null ? null : new RecordingDto(ProjectName(active.Session), active.Session.Name, active.Language),
             [ .. AllAgents() ]);
     }
 
@@ -244,6 +289,65 @@ public sealed class AgentsState
     /// </summary>
     public async Task<WaitReply> WaitAsync(WaitRequest request, string connectionId, CancellationToken cancellation)
     {
+        DateTimeOffset? deadline = request.MaxWaitSeconds is { } seconds ? _time.GetUtcNow().AddSeconds(seconds) : null;
+        if (request.WaitForStart)
+        {
+            // Validate names before waiting: a typo must not turn into an endless wait.
+            if (request.Project is not null) FindProject(request.Project);
+            if (request.Session is not null) Resolve(request.Project, request.Session);
+            while (true)
+            {
+                SessionInfo? current;
+                Task<SessionInfo> next;
+                Task<ProjectMovedDto> moved;
+                lock (_gate)
+                {
+                    current = CurrentSession();
+                    next = _nextStart.Task;
+                    moved = _nextMove.Task;
+                }
+                bool matches = current is not null
+                    && (request.Project is null || SameFolder(Path.GetDirectoryName(current.Folder)!, FindProject(request.Project).Folder))
+                    && (request.Session is null || string.Equals(current.Name, request.Session, StringComparison.OrdinalIgnoreCase));
+                if (matches)
+                {
+                    request = request with { Project = Projects.Load(Path.GetDirectoryName(current!.Folder)!).Name, Session = current.Name };
+                    break;
+                }
+                if (deadline is { } end && _time.GetUtcNow() >= end)
+                {
+                    return new WaitReply(request.Project ?? "", request.Session ?? "", null, WaitReasons.MaxWait, 0, 0, null, []);
+                }
+
+                try
+                {
+                    TimeSpan left = deadline is { } limit ? limit - _time.GetUtcNow() : Timeout.InfiniteTimeSpan;
+                    Task changed = await Task.WhenAny(next, moved).WaitAsync(left < TimeSpan.Zero && deadline is not null ? TimeSpan.Zero : left, _time, cancellation);
+                    if (changed == moved)
+                    {
+                        ProjectMovedDto move = await moved;
+                        if (request.Project is null || string.Equals(request.Project, move.PreviousProject, StringComparison.OrdinalIgnoreCase)
+                            || string.Equals(request.Project, Path.GetFileName(move.PreviousFolder), StringComparison.OrdinalIgnoreCase))
+                        {
+                            return new WaitReply(move.Project, request.Session ?? "", null, WaitReasons.ProjectMoved, 0, 0, null, [], move);
+                        }
+                        continue;
+                    }
+                    SessionInfo started = await next;
+                    if ((request.Project is null || SameFolder(Path.GetDirectoryName(started.Folder)!, FindProject(request.Project).Folder))
+                        && (request.Session is null || string.Equals(started.Name, request.Session, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        request = request with { Project = Projects.Load(Path.GetDirectoryName(started.Folder)!).Name, Session = started.Name };
+                        break;
+                    }
+                }
+                catch (TimeoutException)
+                {
+                    return new WaitReply(request.Project ?? "", request.Session ?? "", null, WaitReasons.MaxWait, 0, 0, null, []);
+                }
+            }
+        }
+
         (ProjectInfo project, SessionInfo session) = Resolve(request.Project, request.Session);
         using var waiter = new Waiter(request.Agent);
         try
@@ -251,7 +355,6 @@ public sealed class AgentsState
             int? backlogEnd = request.SkipBacklog ? BacklogEnd(session) : null;
             int cursor = Enter(session, waiter, request.FromStart, backlogEnd);
             Joined(request.Agent, connectionId, project, session, cursor);
-            DateTimeOffset? deadline = request.MaxWaitSeconds is { } seconds ? _time.GetUtcNow().AddSeconds(seconds) : null;
             bool unconditional = request.MinWords is null && request.MaxWaitSeconds is null;
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation, waiter.TakenOver);
 
@@ -260,6 +363,10 @@ public sealed class AgentsState
             while (true)
             {
                 Task change = ChangeOf(session.Folder); // taken before reading, so a segment written meanwhile wakes us
+                lock (_gate)
+                {
+                    if (MoveReply(project, session) is { } moved) return moved;
+                }
                 unread = [ .. _readLines(session).Where(l => l.Seq > cursor) ];
                 if (waiter.Pushed)
                 {
@@ -307,9 +414,13 @@ public sealed class AgentsState
             }
 
             int toSeq = unread.Count > 0 ? unread[ ^1 ].Seq : cursor;
-            if (!Commit(session, waiter, new AgentCursor(toSeq, _time.GetUtcNow(), new AgentPolicy(request.MinWords, request.MaxWaitSeconds))))
+            lock (_gate)
             {
-                throw TakenOver(request.Agent);
+                if (MoveReply(project, session) is { } moved) return moved;
+                if (!Commit(session, waiter, new AgentCursor(toSeq, _time.GetUtcNow(), new AgentPolicy(request.MinWords, request.MaxWaitSeconds))))
+                {
+                    throw TakenOver(request.Agent);
+                }
             }
 
             Answered(request.Agent, toSeq);
@@ -322,6 +433,14 @@ public sealed class AgentsState
             Leave(session, waiter);
             Left(request.Agent, connectionId);
         }
+    }
+
+    // Called under _gate, including immediately before a cursor commit.
+    private WaitReply? MoveReply(ProjectInfo project, SessionInfo session)
+    {
+        if (!_movedFolders.TryGetValue(project.Folder, out string? folder) || SameFolder(folder, project.Folder)) return null;
+        var move = new ProjectMovedDto(project.Name, Projects.Load(folder).Name, project.Folder, folder);
+        return new WaitReply(move.Project, session.Name, null, WaitReasons.ProjectMoved, 0, 0, null, [], move);
     }
 
     /// <summary>Agents of a session: waiting, thinking, away or gone; see <see cref="AgentState"/>.</summary>
@@ -351,7 +470,7 @@ public sealed class AgentsState
             return
             [
                 .. _agents.Where(a => a.Value.Session is not null).Select(a => new AgentDto(
-                    a.Key, a.Value.Project, a.Value.Session!.Name,
+                    a.Key, ProjectName(a.Value.Session!), a.Value.Session!.Name,
                     StateAt(a.Value.Waits.Count > 0, a.Value.LastSeen).ToString().ToLowerInvariant(),
                     a.Value.LastSeen, a.Value.Cursor)),
             ];
@@ -470,6 +589,10 @@ public sealed class AgentsState
                 return false;
             }
 
+            if (_movedFolders.TryGetValue(Path.GetDirectoryName(session.Folder)!, out string? relocated))
+            {
+                session = new SessionInfo(session.Name, Path.Combine(relocated, session.Name));
+            }
             AgentCursors.Write(session, waiter.Agent, cursor);
             return true;
         }

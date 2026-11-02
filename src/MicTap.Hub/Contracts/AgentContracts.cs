@@ -21,10 +21,12 @@ public static class AgentHub
     public const string Sessions = nameof(Sessions);
     public const string Tail = nameof(Tail);
     public const string Wait = nameof(Wait);
+    public const string ProjectMoved = nameof(ProjectMoved);
 }
 
 public static class WaitReasons
 {
+    public const string ProjectMoved = "project_moved";
     public const string FirstEvent = "first_event";
     public const string MinWords = "min_words";
     public const string MaxWait = "max_wait";
@@ -39,7 +41,8 @@ public static class WaitReasons
 /// <paramref name="SkipBacklog"/>: a session the agent has never read counts as read up to now.
 /// </summary>
 public sealed record WaitRequest(
-    string? Project, string? Session, string Agent, int? MinWords, double? MaxWaitSeconds, bool FromStart, bool SkipBacklog = false);
+    string? Project, string? Session, string Agent, int? MinWords, double? MaxWaitSeconds, bool FromStart, bool SkipBacklog = false,
+    bool WaitForStart = false);
 
 public sealed record TailRequest(string? Project, string Session, int FromSeq);
 
@@ -52,7 +55,9 @@ public sealed record SegmentDto(int Seq, double Start, double End, DateTimeOffse
 /// <param name="SessionStarted">When the session's first recording began, with the time zone.</param>
 public sealed record WaitReply(
     string Project, string Session, DateTimeOffset? SessionStarted, string Reason, int FromSeq, int ToSeq, string? LangNow,
-    IReadOnlyList<SegmentDto> Segments);
+    IReadOnlyList<SegmentDto> Segments, ProjectMovedDto? Move = null);
+
+public sealed record ProjectMovedDto(string PreviousProject, string Project, string PreviousFolder, string ProjectFolder);
 
 /// <param name="SessionStarted">When the session's first recording began, with the time zone.</param>
 public sealed record TailReply(string Project, string Session, DateTimeOffset? SessionStarted, IReadOnlyList<SegmentDto> Segments);

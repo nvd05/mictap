@@ -82,7 +82,7 @@ public sealed class TranscriptItem(
 
     public string TimeText => ClockText;
 
-    public string LanguageText => Line.IsManual ? "ТЕКСТ" : Line.Lang.ToUpperInvariant();
+    public string LanguageText => Line.Lang.ToUpperInvariant();
 
     public string Text
     {
@@ -158,7 +158,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     /// <summary>The draft is off in the settings: the recording bar says so instead of «Слушаю…».</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RecognitionText), nameof(HasVoiceDraft))]
+    [NotifyPropertyChangedFor(nameof(RecognitionText))]
     private bool _isDraftOff;
 
     [ObservableProperty]
@@ -168,7 +168,6 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private double _downloadPercent;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasVoiceDraft))]
     private string _nowText = "";
 
     [ObservableProperty]
@@ -185,10 +184,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     /// <summary>A recording runs: its draft, the speech not yet in the text, is shown in the recording bar.</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasVoiceDraft))]
     private bool _isLive;
-
-    public bool HasVoiceDraft => IsLive && !IsDraftOff && !string.IsNullOrEmpty(NowText);
 
     private int _pending;
 
@@ -207,6 +203,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
         _pipeline.SegmentTranscribed += OnSegmentTranscribed;
+        _pipeline.ManualTextAdded += OnManualTextAdded;
         _pipeline.QueueChanged += (_, count) =>
         {
             Volatile.Write(ref _pending, count);
@@ -328,6 +325,12 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         IsLive = true;
         NowText = "";
         IsSilence = false;
+    }
+
+    /// <summary>Adds text typed by hand to the shown session, in its place in the history.</summary>
+    public void AppendManual(SessionInfo session, string text, string language, double start, double end)
+    {
+        _pipeline.AppendManual(session, text, language, start, end);
     }
 
     public void EndSession()
@@ -762,11 +765,21 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
                 AddItem(segment.Session, segment.Line);
             }
 
-            if (!segment.IsManual && _live && segment.Session == _liveSession)
+            if (_live && segment.Session == _liveSession)
             {
                 // The draft held this phrase; the next live pass, right after, brings what follows it.
                 NowText = "";
                 IsSilence = false;
+            }
+        });
+
+    /// <summary>Hand-typed text is not a draft: it appears in the history and leaves the live draft alone.</summary>
+    private void OnManualTextAdded(object? sender, SegmentTranscript segment) =>
+        _dispatcher.InvokeAsync(() =>
+        {
+            if (segment.Session == _session)
+            {
+                AddItem(segment.Session, segment.Line);
             }
         });
 

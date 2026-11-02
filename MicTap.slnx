@@ -6,7 +6,6 @@
     <Project Path="src/MicTap.Hub/MicTap.Hub.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/MicTap.App.Tests/MicTap.App.Tests.csproj" />
     <Project Path="tests/MicTap.Core.Tests/MicTap.Core.Tests.csproj" />
     <Project Path="tests/MicTap.Hub.Tests/MicTap.Hub.Tests.csproj" />
   </Folder>

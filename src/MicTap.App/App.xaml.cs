@@ -1,5 +1,4 @@
 using System.IO;
-using System.Net.Sockets;
 using System.Windows;
 using System.Windows.Threading;
 using MicTap.Core;
@@ -108,33 +107,34 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    /// <summary>The hub for agents; a taken port leaves the app working with the hub off.</summary>
+    /// <summary>
+    /// The hub for agents. The saved port is tried first; if Windows does not let it bind — a stale settings value or
+    /// another program — Kestrel takes any free port and the actual one goes back to settings.json for the CLI. If even
+    /// that fails, the window says why instead of staying at «запуск…».
+    /// </summary>
     private async Task StartHubAsync(int port, AgentsState agents, MainViewModel viewModel)
     {
         try
         {
+            _hub = await HubHost.StartAsync(port, agents);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "Agents hub could not bind port {Port}; choosing a free port", port);
             try
             {
-                _hub = await HubHost.StartAsync(port, agents);
-            }
-            catch (SocketException ex) when (ex.SocketErrorCode == SocketError.AccessDenied)
-            {
-                Log.Warning(ex, "Windows denied hub port {Port}; requesting an available port", port);
                 _hub = await HubHost.StartAsync(0, agents);
             }
-            Log.Information("Agents hub listens on 127.0.0.1:{Port}", _hub.Port);
-            viewModel.HubStarted(_hub.Port);
-        }
-        catch (Exception ex) when (ex is IOException or SocketException or UnauthorizedAccessException or InvalidOperationException)
-        {
-            if (_hub is not null)
+            catch (Exception retry)
             {
-                await _hub.DisposeAsync();
-                _hub = null;
+                Log.Error(retry, "Agents hub did not start");
+                viewModel.HubFailed($"не удалось запустить: {retry.Message}");
+                return;
             }
-            Log.Warning(ex, "Agents hub failed on port {Port}", port);
-            viewModel.HubFailed($"порт {port}: {ex.Message}");
         }
+
+        Log.Information("Agents hub listens on 127.0.0.1:{Port}", _hub.Port);
+        viewModel.HubStarted(_hub.Port);
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

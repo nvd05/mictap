@@ -23,16 +23,6 @@ public sealed class SessionRetranscriber(
         string[] chunks = SessionPhrases.Chunks(session);
 
         string transcript = Path.Combine(session.Folder, JsonlTranscriptSink.FileName);
-        var manual = new Queue<TranscriptLine>();
-        try
-        {
-            manual = new Queue<TranscriptLine>(new JsonlTranscriptSink(session.Folder).Lines.Where(line => line.IsManual).OrderBy(line => line.Start));
-        }
-        catch (Exception ex) when (ex is System.Text.Json.JsonException or InvalidDataException)
-        {
-            // Re-recognition also repairs damaged transcripts; their original bytes remain in the backup.
-            _logger.Warning(ex, "Old transcript cannot be read for manual annotations; kept intact in the backup");
-        }
         string? backup = null;
         if (File.Exists(transcript))
         {
@@ -42,23 +32,9 @@ public sealed class SessionRetranscriber(
 
         _logger.Information("Recognizing {Session} again from {Chunks} chunks; old transcript kept as {Backup}", session.Name, chunks.Length, backup);
         var sink = new JsonlTranscriptSink(session.Folder);
-        void AppendManual(TranscriptLine original)
+        foreach (SpeechSegment segment in SessionPhrases.Cut(chunks, meta, createDetector(), pause, progress))
         {
-            TranscriptLine line = sink.Append(original.Start, original.End, original.Lang, original.Text);
-            if (original.Edited) sink.Edit(line.Seq, original.Text);
-        }
-        try
-        {
-            foreach (SpeechSegment segment in SessionPhrases.Cut(chunks, meta, createDetector(), pause, progress))
-            {
-                while (manual.TryPeek(out TranscriptLine? line) && line.Start <= segment.Start.TotalSeconds) AppendManual(manual.Dequeue());
-                await RecognizeAsync(sink, segment, cancellation);
-            }
-        }
-        finally
-        {
-            // Typed annotations have no audio to reconstruct: retain them even when recognition is interrupted.
-            while (manual.Count > 0) AppendManual(manual.Dequeue());
+            await RecognizeAsync(sink, segment, cancellation);
         }
 
         _logger.Information("{Session} recognized again: {Lines} lines", session.Name, sink.Lines.Count);

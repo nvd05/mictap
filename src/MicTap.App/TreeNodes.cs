@@ -9,8 +9,13 @@ namespace MicTap.App;
 public sealed partial class ProjectNode : ObservableObject
 {
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(Name), nameof(RetentionText))]
+    [NotifyPropertyChangedFor(nameof(Name), nameof(RetentionText), nameof(PendingText), nameof(HasPendingRename))]
     private ProjectInfo _project;
+
+    /// <summary>A name promised during a recording: the folder moves after the recording, the tree shows it at once.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Name), nameof(PendingText), nameof(HasPendingRename))]
+    private string? _pendingRename;
 
     public ProjectNode(ProjectInfo project)
     {
@@ -38,7 +43,11 @@ public sealed partial class ProjectNode : ObservableObject
     [NotifyPropertyChangedFor(nameof(PinText))]
     private bool _isPinned;
 
-    public string Name => Project.Name;
+    public string Name => PendingRename ?? Project.Name;
+
+    public bool HasPendingRename => PendingRename is { Length: > 0 };
+
+    public string PendingText => HasPendingRename ? "Переименуется после остановки записи" : "";
 
     /// <summary>The project's folder under the root: what settings.json keeps for hidden and pinned projects.</summary>
     public string FolderName => Path.GetFileName(Project.Folder);

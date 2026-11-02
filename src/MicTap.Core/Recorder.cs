@@ -88,16 +88,6 @@ public sealed class Recorder
     /// <summary>Peak level of the latest captured block, 0..1.</summary>
     public event EventHandler<double>? LevelChanged;
 
-    public TimeSpan? Position
-    {
-        get
-        {
-            Session? session = Volatile.Read(ref _active);
-            return session is null ? null : session.Offset + PcmFormat.Mono16k.DurationOf(Interlocked.Read(ref session.CapturedBytes));
-        }
-    }
-    public SessionInfo? CurrentSession => Volatile.Read(ref _active)?.Info;
-
     public event EventHandler<RecordingProgress>? ProgressChanged;
 
     /// <summary>
@@ -429,8 +419,8 @@ public sealed class Recorder
     /// </summary>
     private static TimeSpan AudioEnd(SessionInfo session, SessionMeta meta)
     {
-        double end = meta.Starts.Max(s => s.Offset + (s.Duration ?? 0));
-        end = Math.Max(end, meta.LanguageMarks.Max(m => m.At));
+        double end = meta.Starts.Count == 0 ? 0 : meta.Starts.Max(s => s.Offset + (s.Duration ?? 0));
+        end = Math.Max(end, meta.LanguageMarks.Count == 0 ? 0 : meta.LanguageMarks.Max(m => m.At));
         if (Directory.Exists(session.AudioFolder))
         {
             long audioBytes = Directory.EnumerateFiles(session.AudioFolder, "*.wav")

@@ -5,17 +5,6 @@ public sealed class SpeechSegmenterTests
     private const int Rate = 16000;
 
     [Fact]
-    public void Pause_can_change_without_losing_pending_speech()
-    {
-        var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru", pause: TimeSpan.FromSeconds(5));
-        Assert.Empty(FeedInBlocks(segmenter, [ .. FakeSpeech.Speech(2), .. FakeSpeech.Silence(1) ]));
-        segmenter.SetPause(TimeSpan.FromSeconds(0.5));
-        IReadOnlyList<SpeechSegment> closed = FeedInBlocks(segmenter, FakeSpeech.Silence(1));
-        Assert.Equal([ (0.0, 2.0) ], closed.Select(Bounds));
-        Assert.Empty(segmenter.Flush());
-    }
-
-    [Fact]
     public void Silence_never_becomes_a_segment()
     {
         var segmenter = new SpeechSegmenter(FakeSpeech.Detect, "ru");

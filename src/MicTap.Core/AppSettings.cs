@@ -40,8 +40,6 @@ public sealed record AppSettings
     /// </summary>
     public int LiveDraftSeconds { get; init; } = DefaultLiveDraftSeconds;
 
-    public double ComposerHeight { get; init; } = 112;
-
     /// <summary>Days a deleted project or session stays in the archive before it is deleted for good; 0 keeps it forever.</summary>
     public int ArchiveDays { get; init; } = DefaultArchiveDays;
 
@@ -60,9 +58,11 @@ public sealed record AppSettings
     /// </summary>
     public IReadOnlyList<string> LikedModels { get; init; } = [];
 
-    public NewProjectDefaults NewProjectDefaults { get; init; } = new();
-
+    /// <summary>Languages shown first in the language lists; Russian and Japanese by default.</summary>
     public IReadOnlyList<string> FavoriteLanguages { get; init; } = [ "ru", "ja" ];
+
+    /// <summary>What a new project starts with; existing project.json files are never rewritten from these.</summary>
+    public NewProjectDefaults NewProjectDefaults { get; init; } = new();
 
     /// <summary>Whether the user liked <paramref name="model"/> (null — the graphics card).</summary>
     public bool Likes(string? model) => LikedModels.Contains(model ?? LocalModel);
@@ -75,6 +75,16 @@ public sealed record AppSettings
         return this with { LikedModels = [ .. liked ? others.Append(id) : others ] };
     }
 
+    /// <summary>Whether a language is among the favorites.</summary>
+    public bool LikesLanguage(string code) => FavoriteLanguages.Contains(code, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>These settings with a language liked or not.</summary>
+    public AppSettings WithLanguageLike(string code, bool liked)
+    {
+        IEnumerable<string> others = FavoriteLanguages.Where(language => !string.Equals(language, code, StringComparison.OrdinalIgnoreCase));
+        return this with { FavoriteLanguages = [ .. liked ? others.Append(code) : others ] };
+    }
+
     // The lists compare by their items: a record compares them by reference.
     public bool Equals(AppSettings? other) =>
         other is not null
@@ -84,7 +94,6 @@ public sealed record AppSettings
         && Hotkeys == other.Hotkeys
         && HubPort == other.HubPort
         && LiveDraftSeconds == other.LiveDraftSeconds
-        && ComposerHeight == other.ComposerHeight
         && ArchiveDays == other.ArchiveDays
         && HiddenProjects.SequenceEqual(other.HiddenProjects)
         && PinnedProjects.SequenceEqual(other.PinnedProjects)
@@ -96,23 +105,40 @@ public sealed record AppSettings
         HashCode.Combine(RootFolder, DeviceName, ChunkSeconds, Hotkeys, HubPort, LiveDraftSeconds, ArchiveDays, HiddenProjects.Count);
 }
 
-/// <summary>Only used when creating a project; existing project files retain their settings.</summary>
+/// <summary>
+/// Values a new project is created with. They come from the settings page and never rewrite existing projects.
+/// The model defaults to the remote model the user's projects already use and marks as liked; the settings expose it
+/// explicitly, so a wrong guess is one click away from being fixed.
+/// </summary>
 public sealed record NewProjectDefaults
 {
     public IReadOnlyList<string> Languages { get; init; } = [ "ru" ];
+
     public AudioRetention AudioRetention { get; init; } = AudioRetention.DeleteAfterTranscript;
-    public int LiveDraftSeconds { get; init; }
+
+    /// <summary>The project's own draft frequency; 0 is off, null follows the app setting.</summary>
+    public int? LiveDraftSeconds { get; init; } = 0;
+
     public double PhrasePauseSeconds { get; init; } = 3;
+
     public TranscriptionEngine Engine { get; init; } = TranscriptionEngine.RouterAi;
+
     public string CloudModel { get; init; } = "mistralai/voxtral-small-transcribe-3-0";
 
-    public ProjectSettings ForProject(string name) => new(name, Languages, AudioRetention, PhrasePauseSeconds, Engine, CloudModel, LiveDraftSeconds);
+    public ProjectSettings ForProject(string name) =>
+        new(name, Languages, AudioRetention, PhrasePauseSeconds, Engine, CloudModel, LiveDraftSeconds);
 
-    public bool Equals(NewProjectDefaults? other) => other is not null && Languages.SequenceEqual(other.Languages)
-        && AudioRetention == other.AudioRetention && LiveDraftSeconds == other.LiveDraftSeconds && PhrasePauseSeconds == other.PhrasePauseSeconds
-        && Engine == other.Engine && CloudModel == other.CloudModel;
+    public bool Equals(NewProjectDefaults? other) =>
+        other is not null
+        && Languages.SequenceEqual(other.Languages)
+        && AudioRetention == other.AudioRetention
+        && LiveDraftSeconds == other.LiveDraftSeconds
+        && PhrasePauseSeconds == other.PhrasePauseSeconds
+        && Engine == other.Engine
+        && CloudModel == other.CloudModel;
 
-    public override int GetHashCode() => HashCode.Combine(AudioRetention, LiveDraftSeconds, PhrasePauseSeconds, Engine, CloudModel);
+    public override int GetHashCode() =>
+        HashCode.Combine(AudioRetention, LiveDraftSeconds, PhrasePauseSeconds, Engine, CloudModel, Languages.Count);
 }
 
 /// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>

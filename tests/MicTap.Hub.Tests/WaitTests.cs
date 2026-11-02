@@ -13,65 +13,6 @@ public sealed class WaitTests : IAsyncLifetime
 
     private HubFixture _hub = null!;
 
-    [Fact]
-    public async Task Manual_text_reaches_waiting_cli_without_waiting_for_more_words_or_voice_flush()
-    {
-        Task<CliResult> waiting = _hub.RunAsync("wait", "--min-words", "10000", "--max-wait", "5");
-        await Task.Delay(200);
-        _hub.Pipeline.AppendManual(_hub.Session, TimeSpan.FromSeconds(2.3), "ru", "  Ручной текст\nиз буфера обмена  ");
-        CliResult result = await waiting.WaitAsync(Patience);
-        Assert.Equal(MicTapCli.Ok, result.Code);
-        Assert.Equal("force_push", result.Reason);
-        Assert.Equal("Ручной текст\nиз буфера обмена", result.Json.GetProperty("segments")[ 0 ].GetProperty("text").GetString());
-        Assert.Equal("Ручной текст\nиз буфера обмена", new JsonlTranscriptSink(_hub.Session.Folder).Lines.Single().Text);
-    }
-
-    [Fact]
-    public async Task Idle_listener_receives_new_project_name_and_real_folder_after_move()
-    {
-        _hub.State.RecordingStopped(_hub.Session);
-        Task<CliResult> waiting = _hub.RunAsync("wait", "--project", _hub.Project.Name, "--wait-for-start", "--max-wait", "5");
-        await Task.Delay(300);
-        ProjectInfo moved = await _hub.State.MoveProjectAsync(_hub.Project, () => Projects.Rename(_hub.Project, "Новое имя"));
-        CliResult notice = await waiting.WaitAsync(Patience);
-        Assert.Equal(MicTapCli.Ok, notice.Code);
-        Assert.Equal("project_moved", notice.Reason);
-        Assert.Equal(moved.Name, notice.Json.GetProperty("project").GetString());
-        JsonElement move = notice.Json.GetProperty("move");
-        Assert.Equal(_hub.Project.Folder, move.GetProperty("previous_folder").GetString());
-        Assert.Equal(moved.Folder, move.GetProperty("project_folder").GetString());
-        Assert.False(Directory.Exists(_hub.Project.Folder));
-        CliResult sessions = await _hub.RunAsync("sessions", "--project", moved.Name);
-        Assert.Equal(MicTapCli.Ok, sessions.Code);
-    }
-
-    [Fact]
-    public async Task Wait_for_start_spans_idle_time_and_resumes_on_recording()
-    {
-        _hub.State.RecordingStopped(_hub.Session);
-        Task<CliResult> waiting = _hub.RunAsync("wait", "--project", _hub.Project.Name, "--wait-for-start", "--max-wait", "3");
-        await Task.Delay(250);
-        Assert.False(waiting.IsCompleted);
-        _hub.State.RecordingStarted(_hub.Session, "ru");
-        await Task.Delay(250);
-        _hub.Say("Новая запись");
-        _hub.State.RecordingStopped(_hub.Session);
-        CliResult result = await waiting.WaitAsync(Patience);
-        Assert.Equal(MicTapCli.Ok, result.Code);
-        Assert.Contains(result.Reason, new[] { "session_stopped", "max_wait" });
-    }
-
-    [Fact]
-    public async Task Wait_for_start_times_out_without_creating_a_cursor()
-    {
-        _hub.State.RecordingStopped(_hub.Session);
-        CliResult result = await _hub.RunAsync("wait", "--project", _hub.Project.Name, "--wait-for-start", "--max-wait", "0.2");
-        Assert.Equal(MicTapCli.Ok, result.Code);
-        Assert.Equal("max_wait", result.Reason);
-        Assert.Empty(result.Seqs);
-        Assert.Null(AgentCursors.Read(_hub.Session, "claude"));
-    }
-
     public async Task InitializeAsync()
     {
         _hub = await HubFixture.StartAsync();

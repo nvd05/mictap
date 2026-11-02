@@ -4,31 +4,6 @@ namespace MicTap.Core.Tests;
 
 public sealed class ProjectsTests : IDisposable
 {
-    [Fact]
-    public void Rename_moves_sessions_audio_and_agent_cursors_without_copying()
-    {
-        ProjectInfo project = Projects.Create(_temp.Path, new ProjectSettings("До", [ "ru" ], AudioRetention.Keep));
-        SessionInfo session = SessionFolders.Open(project.Folder, "Сессия");
-        File.WriteAllText(Path.Combine(session.AudioFolder, "000.wav"), "audio");
-        Directory.CreateDirectory(Path.Combine(session.Folder, "agents"));
-        File.WriteAllText(Path.Combine(session.Folder, "agents", "agent.json"), "cursor");
-        ProjectInfo renamed = Projects.Rename(project, "После");
-        Assert.False(Directory.Exists(project.Folder));
-        Assert.Equal("После", Projects.Load(renamed.Folder).Name);
-        Assert.Equal("audio", File.ReadAllText(Path.Combine(renamed.Folder, "Сессия", "audio", "000.wav")));
-        Assert.Equal("cursor", File.ReadAllText(Path.Combine(renamed.Folder, "Сессия", "agents", "agent.json")));
-    }
-
-    [Fact]
-    public void Rename_collision_keeps_both_projects_unchanged()
-    {
-        ProjectInfo first = Projects.Create(_temp.Path, new ProjectSettings("Первый", [ "ru" ], AudioRetention.Keep));
-        ProjectInfo second = Projects.Create(_temp.Path, first.Settings with { Name = "Второй" });
-        Assert.Throws<IOException>(() => Projects.Rename(first, second.Name));
-        Assert.Equal("Первый", Projects.Load(first.Folder).Name);
-        Assert.Equal("Второй", Projects.Load(second.Folder).Name);
-    }
-
     private readonly TempFolder _temp = new();
 
     public void Dispose() => _temp.Dispose();

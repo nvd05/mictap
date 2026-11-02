@@ -16,10 +16,13 @@ Console.CancelKeyPress += (_, e) =>
 
 return await MicTapCli.RunAsync(args, HubPort(), Console.Out, Console.Error, cancellation.Token);
 
-// The app's settings.json says where its hub listens; the default otherwise.
+// The app's settings.json says where its hub listens; the default otherwise. MICTA_SETTINGS points at another file,
+// which is how a profile (--profile) is reached.
 static int HubPort()
 {
-    var settingsPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mictap", "settings.json");
+    string settingsPath = Environment.GetEnvironmentVariable("MICTA_SETTINGS") is { Length: > 0 } named
+        ? Path.GetFullPath(named)
+        : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "mictap", "settings.json");
 
     if (!File.Exists(settingsPath))
     {

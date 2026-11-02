@@ -13,10 +13,6 @@ public sealed record TranscriptLine(int Seq, double Start, double End, string La
 
     [JsonPropertyOrder(-1)]
     public int SchemaVersion => CurrentSchemaVersion;
-
-    /// <summary>A point-in-time text annotation, with no audio span.</summary>
-    [JsonIgnore]
-    public bool IsManual => Start == End;
 }
 
 /// <summary>Receives recognized segments and the user's corrections of them.</summary>

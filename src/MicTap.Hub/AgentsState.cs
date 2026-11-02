@@ -34,6 +34,8 @@ public sealed class AgentsState
     /// </summary>
     public static readonly TimeSpan ThinkingFor = TimeSpan.FromMinutes(2);
 
+    private const string RecordingChanges = "\0recordings";
+
     private readonly Func<SessionInfo, IReadOnlyList<TranscriptLine>> _readLines;
     private readonly TimeProvider _time;
     private readonly string _version;
@@ -41,52 +43,12 @@ public sealed class AgentsState
     private readonly Dictionary<string, TaskCompletionSource> _changes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Presence> _agents = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, List<Waiter>> _waiters = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, List<Waiter>> _startWaiters = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<string> _pushes = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, Transcribing> _transcribing = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _startAnchors = new(StringComparer.OrdinalIgnoreCase);
+    private readonly HashSet<string> _renamePending = new(StringComparer.OrdinalIgnoreCase);
     private Recording? _active;
-    private TaskCompletionSource<SessionInfo> _nextStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private TaskCompletionSource<ProjectMovedDto> _nextMove = new(TaskCreationOptions.RunContinuationsAsynchronously);
-    private readonly Dictionary<string, string> _movedFolders = new(StringComparer.OrdinalIgnoreCase);
-
-    public event Func<ProjectMovedDto, Task>? ProjectRelocated;
-
-    public async Task<ProjectInfo> MoveProjectAsync(ProjectInfo before, Func<ProjectInfo> rename)
-    {
-        ProjectInfo after;
-        ProjectMovedDto move;
-        lock (_gate)
-        {
-            // Cursor commits use the same lock: none may recreate the old folder during the move.
-            if (_active is { } active && SameFolder(Path.GetDirectoryName(active.Session.Folder)!, before.Folder))
-                throw new InvalidOperationException("Остановите запись перед переносом проекта.");
-            after = rename();
-            move = new ProjectMovedDto(before.Name, after.Name, before.Folder, after.Folder);
-            foreach (string source in _movedFolders.Where(p => SameFolder(p.Value, before.Folder)).Select(p => p.Key).ToArray())
-            {
-                _movedFolders[ source ] = after.Folder;
-            }
-            _movedFolders[ before.Folder ] = after.Folder;
-            foreach (Presence presence in _agents.Values.Where(p => p.Session is not null &&
-                         SameFolder(Path.GetDirectoryName(p.Session.Folder)!, before.Folder)))
-            {
-                presence.Project = after.Name;
-                presence.Session = new SessionInfo(presence.Session!.Name, Path.Combine(after.Folder, presence.Session.Name));
-            }
-            _nextMove.TrySetResult(move);
-            _nextMove = new(TaskCreationOptions.RunContinuationsAsynchronously);
-            foreach (string folder in _changes.Keys.Where(f => SameFolder(Path.GetDirectoryName(f)!, before.Folder)).ToArray())
-            {
-                _changes.Remove(folder, out TaskCompletionSource? change);
-                change?.TrySetResult();
-            }
-        }
-        if (ProjectRelocated is { } handlers)
-        {
-            foreach (Func<ProjectMovedDto, Task> handler in handlers.GetInvocationList()) await handler(move);
-        }
-        AgentsChanged?.Invoke(this, EventArgs.Empty);
-        return after;
-    }
     private bool _transcriptionFailed;
     private string _root;
 
@@ -126,11 +88,8 @@ public sealed class AgentsState
         recorder.Started += (_, started) => RecordingStarted(started.Session, started.Language);
         recorder.LanguageMarked += (_, marked) => LanguageChanged(marked.Session, marked.Mark.Lang);
         recorder.Stopped += (_, stopped) => RecordingStopped(stopped.Session, transcribing: true);
-        pipeline.SegmentTranscribed += (_, segment) =>
-        {
-            if (segment.IsManual) Push(segment.Session);
-            else Pulse(segment.Session.Folder);
-        };
+        pipeline.SegmentTranscribed += (_, segment) => Pulse(segment.Session.Folder);
+        pipeline.ManualTextAdded += (_, segment) => Pulse(segment.Session.Folder);
         pipeline.Pushed += (_, session) => Push(session);
         pipeline.RecordingTranscribed += (_, session) => Transcribed(session);
         pipeline.Failed += (_, _) => TranscriptionFailed();
@@ -138,15 +97,16 @@ public sealed class AgentsState
 
     public void RecordingStarted(SessionInfo session, string language)
     {
+        int anchor = _readLines(session).Select(line => line.Seq).DefaultIfEmpty(0).Max();
         lock (_gate)
         {
             _active = new Recording(session, ProjectName(session), language);
+            _startAnchors[ session.Folder ] = anchor;
             _pushes.Remove(session.Folder);
-            _nextStart.TrySetResult(session);
-            _nextStart = new(TaskCreationOptions.RunContinuationsAsynchronously);
         }
 
         Pulse(session.Folder);
+        Pulse(RecordingChanges);
     }
 
     public void LanguageChanged(SessionInfo session, string language)
@@ -181,6 +141,7 @@ public sealed class AgentsState
         }
 
         Pulse(session.Folder);
+        Pulse(RecordingChanges);
     }
 
     /// <summary>Every phrase of a stopped recording is in the transcript. May come before <see cref="RecordingStopped"/>.</summary>
@@ -192,6 +153,7 @@ public sealed class AgentsState
         }
 
         Pulse(session.Folder);
+        Pulse(RecordingChanges);
     }
 
     /// <summary>Recognition stopped for good: no more phrases will come, so no wait holds for them.</summary>
@@ -209,6 +171,8 @@ public sealed class AgentsState
         {
             Pulse(folder);
         }
+
+        Pulse(RecordingChanges);
     }
 
     /// <summary>
@@ -224,17 +188,36 @@ public sealed class AgentsState
                 return;
             }
 
-            if (_waiters.GetValueOrDefault(session.Folder) is { Count: > 0 } waiters)
-            {
-                waiters.ForEach(w => w.Pushed = true);
-            }
-            else
-            {
-                _pushes.Add(session.Folder);
-            }
+            SetPush(session);
         }
 
         Pulse(session.Folder);
+    }
+
+    /// <summary>
+    /// The user sent text by hand and asked for an answer: waits on the session end with force_push without a
+    /// recording. Useful after session_stopped, when the next recording has not begun yet.
+    /// </summary>
+    public void PushText(SessionInfo session)
+    {
+        lock (_gate)
+        {
+            SetPush(session);
+        }
+
+        Pulse(session.Folder);
+    }
+
+    private void SetPush(SessionInfo session)
+    {
+        if (_waiters.GetValueOrDefault(session.Folder) is { Count: > 0 } waiters)
+        {
+            waiters.ForEach(w => w.Pushed = true);
+        }
+        else
+        {
+            _pushes.Add(session.Folder);
+        }
     }
 
     /// <summary>Something changed in the session (a new segment, a stop): waiting agents look again.</summary>
@@ -249,6 +232,86 @@ public sealed class AgentsState
         change?.TrySetResult();
     }
 
+    /// <summary>
+    /// A rename was promised during a recording: waits under this project hold until the folder actually moves, so a
+    /// listening CLI gets project_moved instead of session_stopped for a project whose name it no longer has.
+    /// </summary>
+    public void ProjectRenamePending(string projectFolder)
+    {
+        lock (_gate)
+        {
+            _renamePending.Add(projectFolder);
+        }
+
+        Pulse(RecordingChanges);
+    }
+
+    /// <summary>The promised rename did not happen: waits under the project are released at once.</summary>
+    public void ProjectRenameCancelled(string projectFolder)
+    {
+        string[] folders;
+        lock (_gate)
+        {
+            _renamePending.Remove(projectFolder);
+            folders = [ .. _waiters.Keys.Where(folder => IsUnder(folder, projectFolder)) ];
+        }
+
+        foreach (string folder in folders)
+        {
+            Pulse(folder);
+        }
+
+        Pulse(RecordingChanges);
+    }
+
+    /// <summary>
+    /// A project folder moved: the active recording, waiters, presence and per-session signals move with it. Agents
+    /// waiting there get reason project_moved with both names and folders, and keep their cursors for the new place.
+    /// </summary>
+    public void ProjectRenamed(string oldFolder, string newFolder, string oldName, string newName)
+    {
+        var move = new ProjectMoveDto(oldName, newName, oldFolder, newFolder);
+        List<string> folders = [];
+        List<TaskCompletionSource> changed = [];
+        lock (_gate)
+        {
+            _renamePending.Remove(oldFolder);
+            foreach ((string key, TaskCompletionSource change) in _changes.Where(entry => IsUnder(entry.Key, oldFolder)).ToList())
+            {
+                _changes.Remove(key);
+                changed.Add(change);
+            }
+
+            if (_active is { } active && IsUnder(active.Session.Folder, oldFolder))
+            {
+                _active = new Recording(
+                    new SessionInfo(active.Session.Name, Moved(active.Session.Folder, oldFolder, newFolder)), newName, active.Language);
+            }
+
+            MoveKeys(_transcribing, oldFolder, newFolder, value => value with
+            {
+                Session = new SessionInfo(value.Session.Name, Moved(value.Session.Folder, oldFolder, newFolder)),
+            });
+            MoveSet(_pushes, oldFolder, newFolder);
+            MoveKeys(_startAnchors, oldFolder, newFolder, value => value);
+            MoveWaiters(oldFolder, newFolder, folders, move);
+            MoveStartWaiters(oldFolder, newFolder, oldName, move);
+            foreach (Presence presence in _agents.Values.Where(presence => presence.Session is not null && IsUnder(presence.Session.Folder, oldFolder)))
+            {
+                presence.Project = newName;
+                presence.Session = new SessionInfo(presence.Session!.Name, Moved(presence.Session.Folder, oldFolder, newFolder));
+            }
+        }
+
+        changed.ForEach(change => change.TrySetResult());
+        foreach (string folder in folders.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            Pulse(folder);
+        }
+
+        Pulse(RecordingChanges);
+    }
+
     public StatusReply Status()
     {
         Recording? active;
@@ -259,7 +322,7 @@ public sealed class AgentsState
 
         return new StatusReply(
             _version,
-            active is null ? null : new RecordingDto(ProjectName(active.Session), active.Session.Name, active.Language),
+            active is null ? null : new RecordingDto(active.Project, active.Session.Name, active.Language),
             [ .. AllAgents() ]);
     }
 
@@ -287,78 +350,46 @@ public sealed class AgentsState
     /// Holds until the agent's condition is met and returns the segments it has not read: at once if there are some
     /// and no condition is given; at <see cref="WaitRequest.MinWords"/> words; at <see cref="WaitRequest.MaxWaitSeconds"/>;
     /// at a <see cref="Push"/>; or when the session is not recording and its last phrases are in. The agent's cursor
-    /// moves to the last returned seq.
+    /// moves to the last returned seq. With <see cref="WaitRequest.WaitForStart"/> no running recording is required:
+    /// the wait begins when the next matching recording starts.
     /// A newer wait of the same agent on the session takes over: this one then ends without moving the cursor, since
     /// nobody reads it any more (a tool call that gave up while the CLI went on waiting).
     /// </summary>
     public async Task<WaitReply> WaitAsync(WaitRequest request, string connectionId, CancellationToken cancellation)
     {
-        DateTimeOffset? deadline = request.MaxWaitSeconds is { } seconds ? _time.GetUtcNow().AddSeconds(seconds) : null;
-        if (request.WaitForStart)
-        {
-            // Validate names before waiting: a typo must not turn into an endless wait.
-            if (request.Project is not null) FindProject(request.Project);
-            if (request.Session is not null) Resolve(request.Project, request.Session);
-            while (true)
-            {
-                SessionInfo? current;
-                Task<SessionInfo> next;
-                Task<ProjectMovedDto> moved;
-                lock (_gate)
-                {
-                    current = CurrentSession();
-                    next = _nextStart.Task;
-                    moved = _nextMove.Task;
-                }
-                bool matches = current is not null
-                    && (request.Project is null || SameFolder(Path.GetDirectoryName(current.Folder)!, FindProject(request.Project).Folder))
-                    && (request.Session is null || string.Equals(current.Name, request.Session, StringComparison.OrdinalIgnoreCase));
-                if (matches)
-                {
-                    request = request with { Project = Projects.Load(Path.GetDirectoryName(current!.Folder)!).Name, Session = current.Name };
-                    break;
-                }
-                if (deadline is { } end && _time.GetUtcNow() >= end)
-                {
-                    return new WaitReply(request.Project ?? "", request.Session ?? "", null, WaitReasons.MaxWait, 0, 0, null, []);
-                }
-
-                try
-                {
-                    TimeSpan left = deadline is { } limit ? limit - _time.GetUtcNow() : Timeout.InfiniteTimeSpan;
-                    Task changed = await Task.WhenAny(next, moved).WaitAsync(left < TimeSpan.Zero && deadline is not null ? TimeSpan.Zero : left, _time, cancellation);
-                    if (changed == moved)
-                    {
-                        ProjectMovedDto move = await moved;
-                        if (request.Project is null || string.Equals(request.Project, move.PreviousProject, StringComparison.OrdinalIgnoreCase)
-                            || string.Equals(request.Project, Path.GetFileName(move.PreviousFolder), StringComparison.OrdinalIgnoreCase))
-                        {
-                            return new WaitReply(move.Project, request.Session ?? "", null, WaitReasons.ProjectMoved, 0, 0, null, [], move);
-                        }
-                        continue;
-                    }
-                    SessionInfo started = await next;
-                    if ((request.Project is null || SameFolder(Path.GetDirectoryName(started.Folder)!, FindProject(request.Project).Folder))
-                        && (request.Session is null || string.Equals(started.Name, request.Session, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        request = request with { Project = Projects.Load(Path.GetDirectoryName(started.Folder)!).Name, Session = started.Name };
-                        break;
-                    }
-                }
-                catch (TimeoutException)
-                {
-                    return new WaitReply(request.Project ?? "", request.Session ?? "", null, WaitReasons.MaxWait, 0, 0, null, []);
-                }
-            }
-        }
-
-        (ProjectInfo project, SessionInfo session) = Resolve(request.Project, request.Session);
         using var waiter = new Waiter(request.Agent);
+        SessionInfo? session = null;
+        ProjectInfo? project = null;
+        bool waitedForStart = false;
         try
         {
-            int? backlogEnd = request.SkipBacklog ? BacklogEnd(session) : null;
-            int cursor = Enter(session, waiter, request.FromStart, backlogEnd);
-            Joined(request.Agent, connectionId, project, session, cursor);
+            if (request.WaitForStart)
+            {
+                waitedForStart = true;
+                if (ActiveMatching(request) is { } active)
+                {
+                    (project, session) = (Projects.Load(Path.GetDirectoryName(active.Folder)!), active);
+                }
+                else
+                {
+                    EnterStart(request, waiter);
+                    (project, session) = await WaitForStartAsync(request, waiter, cancellation);
+                }
+            }
+            else
+            {
+                (project, session) = Resolve(request.Project, request.Session);
+            }
+
+            if (waiter.Move is { } earlyMove)
+            {
+                return MovedReply(project?.Name ?? earlyMove.NewName, session?.Name ?? request.Session ?? "", earlyMove, 0);
+            }
+
+            int? backlogEnd = request.SkipBacklog ? BacklogEnd(session!) : null;
+            int cursor = Enter(session!, waiter, request.FromStart, backlogEnd, waitedForStart);
+            Joined(request.Agent, connectionId, project!, session!, cursor);
+            DateTimeOffset? deadline = request.MaxWaitSeconds is { } seconds ? _time.GetUtcNow().AddSeconds(seconds) : null;
             bool unconditional = request.MinWords is null && request.MaxWaitSeconds is null;
             using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation, waiter.TakenOver);
 
@@ -367,11 +398,19 @@ public sealed class AgentsState
             while (true)
             {
                 Task change = ChangeOf(session.Folder); // taken before reading, so a segment written meanwhile wakes us
-                lock (_gate)
-                {
-                    if (MoveReply(project, session) is { } moved) return moved;
-                }
                 unread = [ .. _readLines(session).Where(l => l.Seq > cursor) ];
+                if (waiter.Move is { } move)
+                {
+                    SessionInfo moved = waiter.Session ?? new SessionInfo(session.Name, Path.Combine(move.NewPath, session.Name));
+                    if (Commit(moved, waiter, new AgentCursor(cursor, _time.GetUtcNow(), new AgentPolicy(request.MinWords, request.MaxWaitSeconds))))
+                    {
+                        Answered(request.Agent, cursor);
+                        return MovedReply(move.NewName, moved.Name, move, cursor);
+                    }
+
+                    throw TakenOver(request.Agent);
+                }
+
                 if (waiter.Pushed)
                 {
                     reason = WaitReasons.ForcePush;
@@ -418,13 +457,9 @@ public sealed class AgentsState
             }
 
             int toSeq = unread.Count > 0 ? unread[ ^1 ].Seq : cursor;
-            lock (_gate)
+            if (!Commit(session, waiter, new AgentCursor(toSeq, _time.GetUtcNow(), new AgentPolicy(request.MinWords, request.MaxWaitSeconds))))
             {
-                if (MoveReply(project, session) is { } moved) return moved;
-                if (!Commit(session, waiter, new AgentCursor(toSeq, _time.GetUtcNow(), new AgentPolicy(request.MinWords, request.MaxWaitSeconds))))
-                {
-                    throw TakenOver(request.Agent);
-                }
+                throw TakenOver(request.Agent);
             }
 
             Answered(request.Agent, toSeq);
@@ -434,17 +469,18 @@ public sealed class AgentsState
         }
         finally
         {
-            Leave(session, waiter);
-            Left(request.Agent, connectionId);
-        }
-    }
+            SessionInfo? current = waiter.Session ?? session;
+            if (current is not null)
+            {
+                Leave(current, waiter);
+            }
 
-    // Called under _gate, including immediately before a cursor commit.
-    private WaitReply? MoveReply(ProjectInfo project, SessionInfo session)
-    {
-        if (!_movedFolders.TryGetValue(project.Folder, out string? folder) || SameFolder(folder, project.Folder)) return null;
-        var move = new ProjectMovedDto(project.Name, Projects.Load(folder).Name, project.Folder, folder);
-        return new WaitReply(move.Project, session.Name, null, WaitReasons.ProjectMoved, 0, 0, null, [], move);
+            LeaveStart(waiter);
+            if (session is not null)
+            {
+                Left(request.Agent, connectionId);
+            }
+        }
     }
 
     /// <summary>Agents of a session: waiting, thinking, away or gone; see <see cref="AgentState"/>.</summary>
@@ -474,7 +510,7 @@ public sealed class AgentsState
             return
             [
                 .. _agents.Where(a => a.Value.Session is not null).Select(a => new AgentDto(
-                    a.Key, ProjectName(a.Value.Session!), a.Value.Session!.Name,
+                    a.Key, a.Value.Project, a.Value.Session!.Name,
                     StateAt(a.Value.Waits.Count > 0, a.Value.LastSeen).ToString().ToLowerInvariant(),
                     a.Value.LastSeen, a.Value.Cursor)),
             ];
@@ -542,27 +578,43 @@ public sealed class AgentsState
     }
 
     /// <summary>
-    /// Registers a wait and reads its cursor: an older wait of the same agent on the session is taken over before it
-    /// could write its cursor, and a push made while nobody waited goes to this one.
-    /// </summary>
-    /// <summary>
-    /// For --skip-backlog: the last phrase said before the session's recording now going on began — what is said in it
-    /// still comes, however late the listener joins; all of them when the session is not recording.
+    /// For --skip-backlog and a wait that began before the recording: the last seq that existed when the recording now
+    /// going on began — what is said in it still comes, however late the listener joins; all lines when nothing runs.
+    /// The anchor is a seq, not a time: a text session starts at 0 s like the recording appended to it.
     /// </summary>
     private int BacklogEnd(SessionInfo session)
     {
-        double before = IsGoingOn(session) && MetaOf(session) is { Starts.Count: > 0 } meta ? meta.Starts[ ^1 ].Offset : double.MaxValue;
-        return _readLines(session).Where(l => l.Start < before).Select(l => l.Seq).DefaultIfEmpty(0).Max();
+        if (!IsGoingOn(session))
+        {
+            return _readLines(session).Select(line => line.Seq).DefaultIfEmpty(0).Max();
+        }
+
+        lock (_gate)
+        {
+            return _startAnchors.GetValueOrDefault(session.Folder);
+        }
     }
 
-    /// <param name="backlogEnd">With --skip-backlog: where the cursor of an agent new to the session starts.</param>
-    private int Enter(SessionInfo session, Waiter waiter, bool fromStart, int? backlogEnd)
+    /// <summary>
+    /// Registers a wait and reads its cursor: an older wait of the same agent on the session is taken over before it
+    /// could write its cursor, and a push made while nobody waited goes to this one.
+    /// </summary>
+    /// <param name="startAnchor">
+    /// A wait that began before the recording: with no earlier cursor it starts where the new recording starts, not
+    /// with the session's old text.
+    /// </param>
+    private int Enter(SessionInfo session, Waiter waiter, bool fromStart, int? backlogEnd, bool startAnchor = false)
     {
         Waiter? older;
         int cursor;
+        int startCursor = startAnchor ? BacklogEnd(session) : 0;
         lock (_gate)
         {
-            cursor = fromStart ? 0 : AgentCursors.Read(session, waiter.Agent)?.Cursor ?? backlogEnd ?? 0;
+            cursor = fromStart ? 0
+                : AgentCursors.Read(session, waiter.Agent)?.Cursor
+                ?? backlogEnd
+                ?? startCursor;
+            waiter.Session = session;
             if (!_waiters.TryGetValue(session.Folder, out List<Waiter>? waiters))
             {
                 waiters = [];
@@ -583,6 +635,108 @@ public sealed class AgentsState
         return cursor;
     }
 
+    /// <summary>Waits for the next recording that matches the request; project_moved ends it with no recording.</summary>
+    private async Task<(ProjectInfo Project, SessionInfo Session)> WaitForStartAsync(
+        WaitRequest request, Waiter waiter, CancellationToken cancellation)
+    {
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(cancellation, waiter.TakenOver);
+        while (true)
+        {
+            Task change = ChangeOf(RecordingChanges);
+            if (waiter.Move is { } move)
+            {
+                return (
+                    new ProjectInfo(move.NewPath, new ProjectSettings(move.NewName, [ "ru" ], AudioRetention.Keep)),
+                    new SessionInfo(request.Session ?? "", Path.Combine(move.NewPath, request.Session ?? "")));
+            }
+
+            if (ActiveMatching(request) is { } active)
+            {
+                if (!LeaveStart(waiter))
+                {
+                    throw TakenOver(request.Agent);
+                }
+
+                return (Projects.Load(Path.GetDirectoryName(active.Folder)!), active);
+            }
+
+            try
+            {
+                await change.WaitAsync(Timeout.InfiniteTimeSpan, _time, stop.Token);
+            }
+            catch (OperationCanceledException) when (waiter.TakenOver.IsCancellationRequested && !cancellation.IsCancellationRequested)
+            {
+                throw TakenOver(request.Agent);
+            }
+        }
+    }
+
+    /// <summary>A recording going on that matches where the wait looks; null until one starts.</summary>
+    private SessionInfo? ActiveMatching(WaitRequest request)
+    {
+        lock (_gate)
+        {
+            if (_active is not { } active)
+            {
+                return null;
+            }
+
+            bool sameProject = request.Project is null
+                || string.Equals(active.Project, request.Project, StringComparison.OrdinalIgnoreCase)
+                || SameFolder(Path.GetDirectoryName(active.Session.Folder)!, request.Project);
+            bool sameSession = request.Session is null || string.Equals(active.Session.Name, request.Session, StringComparison.OrdinalIgnoreCase);
+            return sameProject && sameSession ? active.Session : null;
+        }
+    }
+
+    private static string StartKey(WaitRequest request) =>
+        request.Project is { } project && request.Session is { } session ? $"{project}\n{session}"
+        : request.Project is { } onlyProject ? onlyProject
+        : request.Session is { } onlySession ? $"\n{onlySession}"
+        : "*";
+
+    /// <summary>Registers a wait for the next recording; a newer wait of the same agent for the same target takes over.</summary>
+    private void EnterStart(WaitRequest request, Waiter waiter)
+    {
+        Waiter? older;
+        lock (_gate)
+        {
+            string key = StartKey(request);
+            if (!_startWaiters.TryGetValue(key, out List<Waiter>? waiters))
+            {
+                waiters = [];
+                _startWaiters[ key ] = waiters;
+            }
+
+            older = waiters.Find(w => string.Equals(w.Agent, waiter.Agent, StringComparison.OrdinalIgnoreCase));
+            if (older is not null)
+            {
+                waiters.Remove(older);
+            }
+
+            waiters.Add(waiter);
+        }
+
+        older?.TakeOver();
+    }
+
+    /// <summary>Removes a wait for the next recording; false when a newer one has taken it over.</summary>
+    private bool LeaveStart(Waiter waiter)
+    {
+        lock (_gate)
+        {
+            foreach (List<Waiter> waiters in _startWaiters.Values)
+            {
+                if (waiters.Remove(waiter))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return !waiter.TakenOver.IsCancellationRequested;
+    }
+
     /// <summary>Writes the cursor of a wait that answers; false when a newer wait has taken it over.</summary>
     private bool Commit(SessionInfo session, Waiter waiter, AgentCursor cursor)
     {
@@ -593,10 +747,6 @@ public sealed class AgentsState
                 return false;
             }
 
-            if (_movedFolders.TryGetValue(Path.GetDirectoryName(session.Folder)!, out string? relocated))
-            {
-                session = new SessionInfo(session.Name, Path.Combine(relocated, session.Name));
-            }
             AgentCursors.Write(session, waiter.Agent, cursor);
             return true;
         }
@@ -615,6 +765,13 @@ public sealed class AgentsState
                 }
             }
         }
+    }
+
+    private static WaitReply MovedReply(string project, string session, ProjectMoveDto move, int cursor, int? toSeq = null)
+    {
+        int from = cursor + 1;
+        return new WaitReply(
+            project, session, null, WaitReasons.ProjectMoved, from, toSeq ?? cursor, null, [], move);
     }
 
     private static HubException TakenOver(string agent) =>
@@ -639,7 +796,9 @@ public sealed class AgentsState
     {
         lock (_gate)
         {
-            return _active?.Session == session || _transcribing.GetValueOrDefault(session.Folder)?.Pending > 0;
+            return _active?.Session == session
+                || _transcribing.GetValueOrDefault(session.Folder)?.Pending > 0
+                || _renamePending.Any(folder => IsUnder(session.Folder, folder));
         }
     }
 
@@ -692,7 +851,8 @@ public sealed class AgentsState
         {
             return CurrentSession() is { } current
                 ? (Projects.Load(Path.GetDirectoryName(current.Folder)!), current)
-                : throw new HubException($"{AgentHub.NotFound} no recording is running; name --project and --session");
+                : throw new HubException(
+                    $"{AgentHub.NotFound} no recording is running; name --project and --session, or use --wait-for-start");
         }
 
         if (session is null)
@@ -701,7 +861,8 @@ public sealed class AgentsState
             ProjectInfo named = FindProject(project!);
             return CurrentSession() is { } current && SameFolder(Path.GetDirectoryName(current.Folder)!, named.Folder)
                 ? (named, current)
-                : throw new HubException($"{AgentHub.NotFound} project '{named.Name}' is not recording; name --session");
+                : throw new HubException(
+                    $"{AgentHub.NotFound} project '{named.Name}' is not recording; name --session, or use --wait-for-start");
         }
 
         IEnumerable<ProjectInfo> candidates = project is null ? Projects.List(Root) : [ FindProject(project) ];
@@ -728,6 +889,88 @@ public sealed class AgentsState
         string.Equals(
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)), Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
             StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsUnder(string folder, string parent) =>
+        folder.StartsWith(Path.TrimEndingDirectorySeparator(parent) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+
+    private static string Moved(string folder, string oldParent, string newParent) =>
+        Path.Combine(newParent, Path.GetRelativePath(oldParent, folder));
+
+    private void MoveKeys<T>(Dictionary<string, T> values, string oldFolder, string newFolder, Func<T, T> moved)
+    {
+        foreach ((string key, T value) in values.Where(entry => IsUnder(entry.Key, oldFolder)).ToList())
+        {
+            values.Remove(key);
+            values[ Moved(key, oldFolder, newFolder) ] = moved(value);
+        }
+    }
+
+    private static void MoveSet(HashSet<string> values, string oldFolder, string newFolder)
+    {
+        foreach (string value in values.Where(value => IsUnder(value, oldFolder)).ToList())
+        {
+            values.Remove(value);
+            values.Add(Moved(value, oldFolder, newFolder));
+        }
+    }
+
+    private void MoveWaiters(string oldFolder, string newFolder, List<string> folders, ProjectMoveDto move)
+    {
+        foreach ((string folder, List<Waiter> waiters) in _waiters.Where(entry => IsUnder(entry.Key, oldFolder)).ToList())
+        {
+            _waiters.Remove(folder);
+            string target = Moved(folder, oldFolder, newFolder);
+            if (!_waiters.TryGetValue(target, out List<Waiter>? movedWaiters))
+            {
+                movedWaiters = [];
+                _waiters[ target ] = movedWaiters;
+            }
+
+            foreach (Waiter waiter in waiters)
+            {
+                waiter.Move = move;
+                waiter.Session = waiter.Session is null
+                    ? new SessionInfo(Path.GetFileName(folder), target)
+                    : new SessionInfo(waiter.Session.Name, Moved(waiter.Session.Folder, oldFolder, newFolder));
+                movedWaiters.Add(waiter);
+            }
+
+            folders.Add(target);
+        }
+    }
+
+    private void MoveStartWaiters(string oldFolder, string newFolder, string oldName, ProjectMoveDto move)
+    {
+        string oldFolderName = Path.GetFileName(oldFolder);
+        foreach ((string key, List<Waiter> waiters) in _startWaiters.ToList())
+        {
+            bool belongs = SameFolder(key, oldFolder)
+                || string.Equals(key, oldName, StringComparison.OrdinalIgnoreCase)
+                || key.StartsWith(oldFolderName + "\n", StringComparison.OrdinalIgnoreCase)
+                || key.StartsWith(oldName + "\n", StringComparison.OrdinalIgnoreCase);
+            if (!belongs)
+            {
+                continue;
+            }
+
+            _startWaiters.Remove(key);
+            string target = key
+                .Replace(oldFolderName, Path.GetFileName(newFolder), StringComparison.OrdinalIgnoreCase)
+                .Replace(oldName, move.NewName, StringComparison.OrdinalIgnoreCase);
+            if (!_startWaiters.TryGetValue(target, out List<Waiter>? movedWaiters))
+            {
+                movedWaiters = [];
+                _startWaiters[ target ] = movedWaiters;
+            }
+
+            foreach (Waiter waiter in waiters)
+            {
+                waiter.Move = move;
+            }
+
+            movedWaiters.AddRange(waiters);
+        }
+    }
 
     private static string ProjectName(SessionInfo session)
     {
@@ -761,6 +1004,10 @@ public sealed class AgentsState
         private bool _pushed;
 
         public string Agent { get; } = agent;
+
+        public SessionInfo? Session { get; set; }
+
+        public ProjectMoveDto? Move { get; set; }
 
         public bool Pushed
         {

@@ -18,6 +18,9 @@ public partial class MainWindow : Window
     private System.Drawing.Icon? _trayIcon;
     private Point _dragStart;
     private bool _searchingEngines;
+    private bool _searchingLanguages;
+    private bool _followingBottom = true;
+    private bool _adjustingScroll;
 
     public MainWindow(MainViewModel viewModel)
     {
@@ -29,12 +32,14 @@ public partial class MainWindow : Window
         viewModel.NewProjectRequested += (_, _) => _ = ShowProjectDialogAsync(viewModel.NewProjectEditor(), viewModel.CreateProject);
         viewModel.EditProjectRequested += (_, project) =>
             _ = ShowProjectDialogAsync(viewModel.ProjectEditorFor(project), settings => viewModel.SaveProject(project, settings));
+        viewModel.RenameProjectRequested += (_, project) => _ = ShowRenameProjectDialogAsync(project);
         viewModel.RenameSessionRequested += (_, session) => _ = ShowRenameDialogAsync(session);
+        viewModel.AudioCleanupRequested += (_, request) => _ = ShowAudioCleanupAsync(request);
         viewModel.DeleteRequested += (_, request) => _ = ConfirmDeleteAsync(request);
         viewModel.ArchiveRequested += (_, _) => _ = ShowArchiveAsync();
         viewModel.CompareRequested += (_, editor) => _ = ShowComparisonAsync(editor);
         viewModel.SpendRequested += (_, spend) => _ = ShowSpendAsync(spend);
-        viewModel.Transcript.Items.CollectionChanged += (_, _) => FollowTranscript();
+        viewModel.Transcript.Items.CollectionChanged += OnTranscriptItemsChanged;
         viewModel.Transcript.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName is nameof(TranscriptViewModel.NowText))
@@ -94,6 +99,7 @@ public partial class MainWindow : Window
         }
 
         await _viewModel.StopRecordingAsync();
+        await _viewModel.CompletePendingProjectRenameAsync();
         _closeConfirmed = true;
         Close();
     }
@@ -130,6 +136,42 @@ public partial class MainWindow : Window
         if (await DialogHost.Show(content, "MainDialog") is true)
         {
             await _viewModel.ApplyRenameAsync(session, editor.Name);
+        }
+    }
+
+    private async Task ShowRenameProjectDialogAsync(ProjectNode? project)
+    {
+        var content = (FrameworkElement)FindResource("RenameDialog");
+        var editor = new RenameEditor(
+            "Переименовать проект",
+            _viewModel.ProjectNameToRename(project),
+            project?.HasPendingRename == true
+                ? "Уже ждёт остановки записи; новое имя заменит прежнее."
+                : "Папка проекта переедет вместе со всеми сессиями. Во время записи — после её остановки.",
+            "Переименовать");
+        content.DataContext = editor;
+        if (await DialogHost.Show(content, "MainDialog") is true)
+        {
+            await _viewModel.ApplyRenameProjectAsync(project, editor.Name);
+        }
+    }
+
+    private async Task ShowAudioCleanupAsync(AudioCleanupRequest request)
+    {
+        var content = (FrameworkElement)FindResource("AudioCleanupDialog");
+        content.DataContext = request;
+        object? answer = await DialogHost.Show(content, "MainDialog");
+        if (answer is "apply")
+        {
+            await _viewModel.ApplyAudioCleanupAsync(request);
+        }
+        else if (answer is "keep")
+        {
+            _viewModel.KeepOldAudio(request);
+        }
+        else
+        {
+            _viewModel.CancelAudioCleanup(request);
         }
     }
 
@@ -178,6 +220,63 @@ public partial class MainWindow : Window
     }
 
     private void OnEngineDropDownClosed(object sender, EventArgs e) => ((IEngineSearch)((ComboBox)sender).DataContext).EngineSearchClosed();
+
+    /// <summary>Typing into a language box searches Russian names, English names and codes. Selection is separate.</summary>
+    private void OnLanguageSearchChanged(object sender, TextChangedEventArgs e)
+    {
+        var box = (ComboBox)sender;
+        var search = (ILanguageSearch)box.DataContext;
+        if (_searchingLanguages || search.IsUpdatingLanguages || !box.IsKeyboardFocusWithin
+            || (box.SelectedItem is LanguageChoice chosen && box.Text == chosen.ToString()))
+        {
+            return;
+        }
+
+        var editor = (TextBox)e.OriginalSource;
+        string typed = editor.Text;
+        int caret = editor.CaretIndex;
+        _searchingLanguages = true;
+        try
+        {
+            search.Languages.Search(typed);
+            if (editor.Text != typed)
+            {
+                editor.Text = typed;
+                editor.CaretIndex = caret;
+            }
+        }
+        finally
+        {
+            _searchingLanguages = false;
+        }
+
+        box.IsDropDownOpen = true;
+    }
+
+    private void OnLanguageDropDownClosed(object sender, EventArgs e) =>
+        ((ILanguageSearch)((ComboBox)sender).DataContext).LanguageSearchClosed();
+
+    /// <summary>Enter sends the typed text; Ctrl+Enter also asks the agents for an answer (force push).</summary>
+    private void OnManualTextKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+        {
+            return;
+        }
+
+        e.Handled = true;
+        if (Keyboard.Modifiers.HasFlag(ModifierKeys.Control))
+        {
+            if (_viewModel.SendManualTextAndPushCommand.CanExecute(null))
+            {
+                _viewModel.SendManualTextAndPushCommand.Execute(null);
+            }
+        }
+        else if (_viewModel.SendManualTextCommand.CanExecute(null))
+        {
+            _viewModel.SendManualTextCommand.Execute(null);
+        }
+    }
 
     private async Task ShowComparisonAsync(ComparisonEditor editor)
     {
@@ -306,9 +405,17 @@ public partial class MainWindow : Window
     private void OnRouterAiKeyChanged(object sender, RoutedEventArgs e) =>
         _viewModel.CanSaveRouterAiKey = ((PasswordBox)sender).Password.Trim().Length > 0;
 
-    /// <summary>The day of the topmost phrase in view sticks to the top while the text is scrolled away from its start.</summary>
+    /// <summary>
+    /// The day of the topmost phrase in view sticks to the top while the text is scrolled away from its start. Whether
+    /// new phrases follow the end is decided by where the user is: scrolled up, they keep their place.
+    /// </summary>
     private void OnTranscriptScrolled(object sender, ScrollChangedEventArgs e)
     {
+        if (!_adjustingScroll && e.ExtentHeightChange == 0)
+        {
+            _followingBottom = TranscriptScroll.VerticalOffset >= TranscriptScroll.ScrollableHeight - 48;
+        }
+
         TranscriptItem? first = null;
         for (int i = 0; i < TranscriptItems.Items.Count; i++)
         {
@@ -328,14 +435,30 @@ public partial class MainWindow : Window
         }
     }
 
-    /// <summary>New lines scroll the transcript to its end unless the user scrolled up to read.</summary>
-    private void FollowTranscript()
+    /// <summary>
+    /// New lines keep the reader where they are when they scrolled up; a reader at the bottom stays at the bottom. A
+    /// rebuilt transcript (another session) starts at its end.
+    /// </summary>
+    private void OnTranscriptItemsChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)
     {
-        bool atEnd = TranscriptScroll.VerticalOffset >= TranscriptScroll.ScrollableHeight - 48;
-        if (atEnd)
+        if (e.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Reset)
         {
-            Dispatcher.InvokeAsync(TranscriptScroll.ScrollToEnd, System.Windows.Threading.DispatcherPriority.Background);
+            _followingBottom = true;
         }
+
+        if (!_followingBottom)
+        {
+            return;
+        }
+
+        Dispatcher.InvokeAsync(
+            () =>
+            {
+                _adjustingScroll = true;
+                TranscriptScroll.ScrollToEnd();
+                _adjustingScroll = false;
+            },
+            System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private void ShowFromTray()

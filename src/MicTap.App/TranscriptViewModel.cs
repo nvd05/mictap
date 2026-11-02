@@ -203,6 +203,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         _pipeline.LiveTextChanged += OnLiveText;
         _pipeline.LiveBusyChanged += (_, busy) => _dispatcher.InvokeAsync(() => IsLiveBusy = busy && _live);
         _pipeline.SegmentTranscribed += OnSegmentTranscribed;
+        _pipeline.ManualTextAdded += OnManualTextAdded;
         _pipeline.QueueChanged += (_, count) =>
         {
             Volatile.Write(ref _pending, count);
@@ -324,6 +325,12 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
         IsLive = true;
         NowText = "";
         IsSilence = false;
+    }
+
+    /// <summary>Adds text typed by hand to the shown session, in its place in the history.</summary>
+    public void AppendManual(SessionInfo session, string text, string language, double start, double end)
+    {
+        _pipeline.AppendManual(session, text, language, start, end);
     }
 
     public void EndSession()
@@ -763,6 +770,16 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
                 // The draft held this phrase; the next live pass, right after, brings what follows it.
                 NowText = "";
                 IsSilence = false;
+            }
+        });
+
+    /// <summary>Hand-typed text is not a draft: it appears in the history and leaves the live draft alone.</summary>
+    private void OnManualTextAdded(object? sender, SegmentTranscript segment) =>
+        _dispatcher.InvokeAsync(() =>
+        {
+            if (segment.Session == _session)
+            {
+                AddItem(segment.Session, segment.Line);
             }
         });
 

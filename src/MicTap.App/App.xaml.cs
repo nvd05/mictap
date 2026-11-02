@@ -107,20 +107,34 @@ public partial class App : Application
         base.OnExit(e);
     }
 
-    /// <summary>The hub for agents; a taken port leaves the app working with the hub off.</summary>
+    /// <summary>
+    /// The hub for agents. The saved port is tried first; if Windows does not let it bind — a stale settings value or
+    /// another program — Kestrel takes any free port and the actual one goes back to settings.json for the CLI. If even
+    /// that fails, the window says why instead of staying at «запуск…».
+    /// </summary>
     private async Task StartHubAsync(int port, AgentsState agents, MainViewModel viewModel)
     {
         try
         {
             _hub = await HubHost.StartAsync(port, agents);
-            Log.Information("Agents hub listens on 127.0.0.1:{Port}", _hub.Port);
-            viewModel.HubStarted(_hub.Port);
         }
-        catch (IOException ex)
+        catch (Exception ex)
         {
-            Log.Warning(ex, "Agents hub is off: port {Port} is taken", port);
-            viewModel.HubFailed($"порт {port} занят");
+            Log.Warning(ex, "Agents hub could not bind port {Port}; choosing a free port", port);
+            try
+            {
+                _hub = await HubHost.StartAsync(0, agents);
+            }
+            catch (Exception retry)
+            {
+                Log.Error(retry, "Agents hub did not start");
+                viewModel.HubFailed($"не удалось запустить: {retry.Message}");
+                return;
+            }
         }
+
+        Log.Information("Agents hub listens on 127.0.0.1:{Port}", _hub.Port);
+        viewModel.HubStarted(_hub.Port);
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

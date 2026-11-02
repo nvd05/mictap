@@ -67,32 +67,118 @@
             </DataTemplate.Triggers>
         </DataTemplate>
 
-        <StackPanel x:Key="ProjectDialog" x:Shared="False" Margin="24" Width="460" d:DataContext="{d:DesignInstance Type=local:ProjectEditor}">
+        <!-- A language in a list with search: the star makes it a favorite; favorites come first. -->
+        <DataTemplate x:Key="LanguageRow" DataType="{x:Type local:LanguageChoice}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="Like" Width="26" Height="26" Margin="-6,-4,6,-4" Padding="0" Focusable="False"
+                        Style="{StaticResource MaterialDesignToolButton}"
+                        AutomationProperties.Name="{Binding Name, StringFormat='Избранный язык: {0}'}"
+                        ToolTip="Отметить язык избранным: такие — наверху списка"
+                        Command="{Binding DataContext.ToggleLanguageLikeCommand, RelativeSource={RelativeSource AncestorType=ComboBox}}"
+                        CommandParameter="{Binding}">
+                    <materialDesign:PackIcon x:Name="Star" Kind="StarOutline" Width="16" Height="16" Opacity="0.45" />
+                </Button>
+                <TextBlock Grid.Column="1" Text="{Binding Name}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="12,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding EnglishName}" Opacity="0.5" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                    <TextBlock Margin="8,0,0,0" Text="{Binding Code}" Opacity="0.5" Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
+                </StackPanel>
+            </Grid>
+            <DataTemplate.Triggers>
+                <DataTrigger Binding="{Binding IsFavorite}" Value="True">
+                    <Setter TargetName="Star" Property="Kind" Value="Star" />
+                    <Setter TargetName="Star" Property="Opacity" Value="1" />
+                    <Setter TargetName="Star" Property="Foreground" Value="{DynamicResource MaterialDesign.Brush.Primary}" />
+                    <Setter TargetName="Like" Property="ToolTip" Value="Избранный; нажмите, чтобы снять отметку" />
+                </DataTrigger>
+            </DataTemplate.Triggers>
+        </DataTemplate>
+
+        <StackPanel x:Key="ProjectDialog" x:Shared="False" Margin="24" Width="500" d:DataContext="{d:DesignInstance Type=local:ProjectEditor}">
             <TextBlock Text="{Binding Title}" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
-            <TextBox Margin="0,20,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:HintAssist.Hint="Название"
+            <Border Margin="0,14,0,0" Padding="12,8" CornerRadius="10" Background="{StaticResource InfoContainerBrush}">
+                <TextBlock Text="{Binding ApplyNote}" TextWrapping="Wrap" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+            </Border>
+            <TextBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:HintAssist.Hint="Название"
                      materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                      AutomationProperties.Name="Название проекта" IsEnabled="{Binding IsNew}"
                      Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" />
-            <TextBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedTextBox}"
-                     materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
-                     materialDesign:HintAssist.Hint="Языки: ja, ru — первый по умолчанию" AutomationProperties.Name="Языки проекта"
-                     Text="{Binding LanguagesText, UpdateSourceTrigger=PropertyChanged}" />
+
+            <TextBlock Margin="0,16,0,2" Text="Языки проекта" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+            <ItemsControl ItemsSource="{Binding SelectedLanguages}" AutomationProperties.Name="Языки проекта">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Margin="0,4,8,0" Padding="8,2,4,2" CornerRadius="10" Background="{StaticResource InfoContainerBrush}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding RussianName}" VerticalAlignment="Center" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                                <TextBlock Margin="6,0,0,0" Text="{Binding Code}" VerticalAlignment="Center" Opacity="0.5"
+                                           Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                                <Button Width="24" Height="24" Margin="4,0,0,0" Padding="0" Focusable="False"
+                                        Style="{StaticResource MaterialDesignToolButton}" ToolTip="Сделать языком по умолчанию"
+                                        Command="{Binding DataContext.MakeDefaultLanguageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}">
+                                    <materialDesign:PackIcon Kind="ArrowUpBold" Width="12" Height="12" Opacity="0.6" />
+                                </Button>
+                                <Button Width="24" Height="24" Padding="0" Focusable="False" Style="{StaticResource MaterialDesignToolButton}"
+                                        ToolTip="Убрать язык"
+                                        Command="{Binding DataContext.RemoveLanguageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}">
+                                    <materialDesign:PackIcon Kind="Close" Width="12" Height="12" Opacity="0.6" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ComboBox Margin="0,8,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                      materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                      materialDesign:HintAssist.Hint="Добавить язык" AutomationProperties.Name="Добавить язык проекта"
+                      materialDesign:HintAssist.HelperText="Первый язык — по умолчанию. Поиск: «рус», Russian или ru. Звёздочка — в избранное."
+                      MaxDropDownHeight="360" Grid.IsSharedSizeScope="True"
+                      IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                      TextBoxBase.TextChanged="OnLanguageSearchChanged" DropDownClosed="OnLanguageDropDownClosed"
+                      ItemTemplate="{StaticResource LanguageRow}"
+                      ItemsSource="{Binding Languages.View}" SelectedItem="{Binding SelectedLanguage}" />
+
             <ComboBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
                       materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                       materialDesign:HintAssist.Hint="Звук после распознавания" AutomationProperties.Name="Звук после распознавания"
+                      materialDesign:HintAssist.HelperText="Новое правило — со следующей записи; старый звук можно удалить отдельно."
                       ItemsSource="{x:Static local:ProjectEditor.RetentionOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
                       SelectedValue="{Binding Retention}" />
             <!-- As the engine box above the session's text: type to search, hearts for every project. -->
             <ComboBox Margin="0,16,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
                       materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                       materialDesign:HintAssist.Hint="Кто распознаёт фразы" AutomationProperties.Name="Кто распознаёт фразы"
-                      materialDesign:HintAssist.HelperText="Видеокарта — бесплатно, Router AI — платно. Можно искать по имени."
+                      materialDesign:HintAssist.HelperText="Видеокарта — бесплатно, Router AI — платно. Действует со следующей фразы. Можно искать по имени."
                       MaxDropDownHeight="420" Grid.IsSharedSizeScope="True"
                       IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
                       TextBoxBase.TextChanged="OnEngineSearchChanged" DropDownClosed="OnEngineDropDownClosed"
                       ItemTemplate="{StaticResource EngineRow}"
                       ItemsSource="{Binding Engines.View}" SelectedItem="{Binding SelectedEngine}" />
-            <TextBlock Margin="0,34,0,0" Text="Фраза заканчивается после паузы" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+
+            <TextBlock Margin="0,24,0,0" Text="Черновик в панели записи" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
+            <DockPanel Margin="0,4,0,0">
+                <TextBlock DockPanel.Dock="Right" Width="90" TextAlignment="Right" VerticalAlignment="Center"
+                           Text="{Binding DraftText}" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                        AutomationProperties.Name="Частота черновика этого проекта, секунды; 0 — выключен"
+                        Value="{Binding DraftSeconds}" />
+            </DockPanel>
+            <TextBlock Margin="0,4,0,0" TextWrapping="Wrap" Opacity="0.7" Style="{StaticResource MaterialDesignBodySmallTextBlock}"
+                       Text="Действует сразу, и на идущей записи. 0 — черновик выключен, видеокарта работает только для готовых фраз." />
+
+            <TextBlock Margin="0,24,0,0" Text="Фраза заканчивается после паузы" Style="{StaticResource MaterialDesignTitleSmallTextBlock}" />
             <DockPanel Margin="0,4,0,0">
                 <TextBlock DockPanel.Dock="Right" Width="52" TextAlignment="Right" VerticalAlignment="Center"
                            Text="{Binding PhrasePauseText}" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
@@ -285,6 +371,31 @@
             </StackPanel>
         </StackPanel>
 
+        <!-- Changing audio retention: offer the same rule for the audio already on disk. -->
+        <StackPanel x:Key="AudioCleanupDialog" x:Shared="False" Margin="24" Width="520"
+                    d:DataContext="{d:DesignInstance Type=local:AudioCleanupRequest}">
+            <TextBlock Text="{Binding Title}" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+            <TextBlock Margin="0,14,0,0" TextWrapping="Wrap" Text="{Binding Details}" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+            <ScrollViewer Margin="0,12,0,0" MaxHeight="240" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Sessions}" AutomationProperties.Name="Сессии со старым звуком">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" Margin="0,2" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+            <StackPanel Margin="0,20,0,0" Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Content="Отмена" IsCancel="True" Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" CommandParameter="cancel" />
+                <Button Content="Только будущие записи" Margin="8,0,0,0" Style="{StaticResource MaterialDesignFlatButton}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" CommandParameter="keep" />
+                <Button Content="Удалить старый звук" Margin="8,0,0,0" Style="{StaticResource MaterialDesignFlatButton}"
+                        Foreground="{StaticResource RecordBrush}"
+                        Command="{x:Static materialDesign:DialogHost.CloseDialogCommand}" CommandParameter="apply" />
+            </StackPanel>
+        </StackPanel>
+
         <Style x:Key="SettingsHeader" TargetType="TextBlock" BasedOn="{StaticResource MaterialDesignTitleSmallTextBlock}">
             <Setter Property="Margin" Value="0,14,0,4" />
         </Style>
@@ -303,8 +414,8 @@
             <Setter Property="Background" Value="{StaticResource InfoContainerBrush}" />
         </Style>
 
-        <!-- The settings page: what used to be the settings dialog. -->
-        <StackPanel x:Key="SettingsBody" x:Shared="False" Margin="0,0,12,0">
+        <!-- General: where the projects live. -->
+        <StackPanel x:Key="GeneralSettingsBody" x:Shared="False" Margin="0,0,12,0">
             <TextBlock Text="Папка проектов" Style="{StaticResource SettingsHeader}" />
             <DockPanel>
                 <Button DockPanel.Dock="Right" Margin="12,0,0,0" VerticalAlignment="Center" Style="{StaticResource MaterialDesignOutlinedButton}"
@@ -318,7 +429,12 @@
                 <TextBox IsReadOnly="True" TextWrapping="Wrap" Text="{Binding RootFolder, Mode=OneWay}" AutomationProperties.Name="Папка проектов"
                          Style="{StaticResource MaterialDesignOutlinedTextBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12" />
             </DockPanel>
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Здесь лежат проекты и их сессии. Смена папки не переносит старые проекты: они остаются на прежнем месте." />
+        </StackPanel>
 
+        <!-- Recording and recognition: the device, the draft and the cloud key. -->
+        <StackPanel x:Key="RecordingSettingsBody" x:Shared="False" Margin="0,0,12,0">
             <TextBlock Text="Микрофон" Style="{StaticResource SettingsHeader}" />
             <DockPanel>
                 <Button DockPanel.Dock="Right" Margin="8,0,0,0" Style="{StaticResource MaterialDesignIconButton}"
@@ -330,6 +446,8 @@
                           AutomationProperties.Name="Микрофон" DisplayMemberPath="Name"
                           ItemsSource="{Binding Devices}" SelectedItem="{Binding SelectedDevice}" IsEnabled="{Binding CanEditSettings}" />
             </DockPanel>
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Микрофон меняется, когда запись не идёт. Настройки проекта можно менять и во время записи." />
 
             <TextBlock Text="Черновик в панели записи" Style="{StaticResource SettingsHeader}" />
             <DockPanel>
@@ -339,15 +457,129 @@
                         AutomationProperties.Name="Частота черновика, секунды; 0 — выключен" Value="{Binding DraftSeconds}" />
             </DockPanel>
             <TextBlock Style="{StaticResource SettingsNote}"
-                       Text="Черновик — главная постоянная нагрузка на видеокарту: то, что звучит сейчас, распознаётся заново с каждым обновлением. Готовые фразы распознаются один раз при любой частоте. Реже или выключен — меньше расход батареи." />
+                       Text="Черновик — главная постоянная нагрузка на видеокарту: то, что звучит сейчас, распознаётся заново с каждым обновлением. Готовые фразы распознаются один раз при любой частоте. Реже или выключен — меньше расход батареи. В проекте можно задать своё значение." />
 
+            <TextBlock Text="Router AI" Style="{StaticResource SettingsHeader}" />
+            <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}" TextWrapping="Wrap" Text="{Binding RouterAiKeyText}"
+                       AutomationProperties.Name="Состояние ключа Router AI" />
+            <StackPanel Margin="0,8,0,0" Orientation="Horizontal"
+                        Visibility="{Binding ShowRouterAiKeyActions, Converter={StaticResource VisibleWhenTrue}}">
+                <Button Content="Заменить" Style="{StaticResource MaterialDesignOutlinedButton}" Click="OnReplaceRouterAiKey"
+                        AutomationProperties.Name="Заменить ключ Router AI" />
+                <Button Margin="8,0,0,0" Content="Удалить" Style="{StaticResource MaterialDesignFlatButton}"
+                        Click="OnDeleteRouterAiKey" AutomationProperties.Name="Удалить ключ Router AI" />
+            </StackPanel>
+            <DockPanel Margin="0,8,0,0" Visibility="{Binding ShowRouterAiKeyInput, Converter={StaticResource VisibleWhenTrue}}">
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Отмена" Style="{StaticResource MaterialDesignFlatButton}"
+                        Click="OnCancelRouterAiKey" AutomationProperties.Name="Не менять ключ Router AI"
+                        Visibility="{Binding HasRouterAiKey, Converter={StaticResource VisibleWhenTrue}}" />
+                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Сохранить" Style="{StaticResource MaterialDesignOutlinedButton}"
+                        IsEnabled="{Binding CanSaveRouterAiKey}"
+                        Click="OnSaveRouterAiKey" AutomationProperties.Name="Сохранить ключ Router AI" />
+                <PasswordBox Style="{StaticResource MaterialDesignOutlinedPasswordBox}" PasswordChanged="OnRouterAiKeyChanged"
+                             materialDesign:TextFieldAssist.TextFieldCornerRadius="12" materialDesign:HintAssist.Hint="Ключ Router AI (sk-…)"
+                             AutomationProperties.Name="Ключ Router AI" />
+            </DockPanel>
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Ключ хранится в диспетчере учётных данных Windows, не в файле настроек. Облако выбирается в настройках проекта: его фразы уходят в Router AI, черновик — на этом компьютере." />
+        </StackPanel>
+
+        <!-- Defaults for new projects; existing project.json files are never rewritten from these. -->
+        <StackPanel x:Key="NewProjectSettingsBody" x:Shared="False" Margin="0,0,12,0"
+                    DataContext="{Binding NewProjectDefaults}">
+            <TextBlock Text="Языки новых проектов" Style="{StaticResource SettingsHeader}" />
+            <ItemsControl ItemsSource="{Binding SelectedLanguages}" AutomationProperties.Name="Языки новых проектов">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                        <WrapPanel />
+                    </ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <Border Margin="0,4,8,0" Padding="8,2,4,2" CornerRadius="10" Background="{StaticResource InfoContainerBrush}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding RussianName}" VerticalAlignment="Center" Style="{StaticResource MaterialDesignLabelLargeTextBlock}" />
+                                <TextBlock Margin="6,0,0,0" Text="{Binding Code}" VerticalAlignment="Center" Opacity="0.5"
+                                           Style="{StaticResource MaterialDesignLabelMediumTextBlock}" />
+                                <Button Width="24" Height="24" Margin="4,0,0,0" Padding="0" Focusable="False"
+                                        Style="{StaticResource MaterialDesignToolButton}" ToolTip="Сделать языком по умолчанию"
+                                        Command="{Binding DataContext.MakeDefaultLanguageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}">
+                                    <materialDesign:PackIcon Kind="ArrowUpBold" Width="12" Height="12" Opacity="0.6" />
+                                </Button>
+                                <Button Width="24" Height="24" Padding="0" Focusable="False" Style="{StaticResource MaterialDesignToolButton}"
+                                        ToolTip="Убрать язык"
+                                        Command="{Binding DataContext.RemoveLanguageCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        CommandParameter="{Binding}">
+                                    <materialDesign:PackIcon Kind="Close" Width="12" Height="12" Opacity="0.6" />
+                                </Button>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+            <ComboBox Margin="0,8,0,0" Style="{StaticResource MaterialDesignOutlinedComboBox}"
+                      materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                      materialDesign:HintAssist.Hint="Добавить язык" AutomationProperties.Name="Добавить язык новых проектов"
+                      materialDesign:HintAssist.HelperText="Поиск: «рус», Russian или ru. Звёздочка — в избранное; избранные языки общие для всех списков."
+                      MaxDropDownHeight="360" Grid.IsSharedSizeScope="True"
+                      IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                      TextBoxBase.TextChanged="OnLanguageSearchChanged" DropDownClosed="OnLanguageDropDownClosed"
+                      ItemTemplate="{StaticResource LanguageRow}"
+                      ItemsSource="{Binding Languages.View}" SelectedItem="{Binding SelectedLanguage}" />
+
+            <TextBlock Text="Звук после распознавания" Style="{StaticResource SettingsHeader}" />
+            <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                      AutomationProperties.Name="Звук новых проектов"
+                      ItemsSource="{x:Static local:ProjectEditor.RetentionOptions}" DisplayMemberPath="Name" SelectedValuePath="Value"
+                      SelectedValue="{Binding Retention}" />
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Старый звук существующих проектов новое правило не трогает: при смене хранения в проекте mictap предложит удалить его отдельно." />
+
+            <TextBlock Text="Кто распознаёт фразы" Style="{StaticResource SettingsHeader}" />
+            <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                      materialDesign:HintAssist.Hint="Модель новых проектов" AutomationProperties.Name="Модель новых проектов"
+                      materialDesign:HintAssist.HelperText="Видеокарта или модель Router AI с ценой; избранные — наверху. Можно искать по имени."
+                      MaxDropDownHeight="380" Grid.IsSharedSizeScope="True"
+                      IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                      TextBoxBase.TextChanged="OnEngineSearchChanged" DropDownClosed="OnEngineDropDownClosed"
+                      ItemTemplate="{StaticResource EngineRow}"
+                      ItemsSource="{Binding Engines.View}" SelectedItem="{Binding SelectedEngine}" />
+
+            <TextBlock Text="Черновик в панели записи" Style="{StaticResource SettingsHeader}" />
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Width="90" TextAlignment="Right" VerticalAlignment="Center"
+                           Text="{Binding DraftText}" Style="{StaticResource MaterialDesignBodyMediumTextBlock}" />
+                <Slider Minimum="0" Maximum="30" TickFrequency="1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                        AutomationProperties.Name="Черновик новых проектов, секунды; 0 — выключен" Value="{Binding DraftSeconds}" />
+            </DockPanel>
+
+            <TextBlock Text="Фраза заканчивается после паузы" Style="{StaticResource SettingsHeader}" />
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Right" Width="52" TextAlignment="Right" VerticalAlignment="Center"
+                           Text="{Binding PhrasePauseText}" Style="{StaticResource MaterialDesignBodyLargeTextBlock}" />
+                <Slider Minimum="0.5" Maximum="10" TickFrequency="0.1" IsSnapToTickEnabled="True" VerticalAlignment="Center"
+                        AutomationProperties.Name="Пауза новых проектов, секунды" Value="{Binding PhrasePauseSeconds}" />
+            </DockPanel>
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Эти значения подставляются при создании проекта; потом их можно изменить в самом проекте. Существующие проекты не перезаписываются." />
+        </StackPanel>
+
+        <!-- Storage: the archive; audio retention is a project setting. -->
+        <StackPanel x:Key="StorageSettingsBody" x:Shared="False" Margin="0,0,12,0">
             <TextBlock Text="Архив удалённого хранится" Style="{StaticResource SettingsHeader}" />
             <ComboBox Style="{StaticResource MaterialDesignOutlinedComboBox}" materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
                       AutomationProperties.Name="Срок хранения архива"
                       ItemsSource="{x:Static local:MainViewModel.ArchiveOptions}" SelectedItem="{Binding SelectedArchive}" />
             <TextBlock Style="{StaticResource SettingsNote}"
                        Text="Удалённые проекты и сессии лежат в архиве (кнопка над проектами), потом удаляются насовсем." />
+            <TextBlock Text="Звук записей" Style="{StaticResource SettingsHeader}" />
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Что делать со звуком — хранить, удалять после распознавания или не писать — решается в настройках проекта. При смене правила mictap предложит применить его и к уже сохранённому звуку, показав сессии, файлы и объём. Без подтверждения старые файлы не удаляются." />
+        </StackPanel>
 
+        <!-- Hotkeys. -->
+        <StackPanel x:Key="HotkeySettingsBody" x:Shared="False" Margin="0,0,12,0">
             <TextBlock Text="Хоткеи" Style="{StaticResource SettingsHeader}" />
             <Border CornerRadius="12" BorderThickness="1" BorderBrush="{DynamicResource MaterialDesign.Brush.Separator.Background}">
                 <Grid Margin="14,6">
@@ -385,42 +617,24 @@
                     </Border>
                 </Grid>
             </Border>
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Хоткеи меняются в settings.json и действуют после перезапуска mictap." />
+        </StackPanel>
 
+        <!-- Integrations: the hub and the agents. -->
+        <StackPanel x:Key="IntegrationSettingsBody" x:Shared="False" Margin="0,0,12,0">
             <TextBlock Text="Хаб для агентов" Style="{StaticResource SettingsHeader}" />
             <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}">
                 <Run Text="Адрес: " Foreground="Gray" /><Run Text="{Binding HubText, Mode=OneWay}" />
             </TextBlock>
-            <TextBlock Style="{StaticResource SettingsNote}" Text="Хоткеи и порт хаба меняются в файле:" />
+            <TextBlock Style="{StaticResource SettingsNote}"
+                       Text="Хаб выбирает свободный порт и сохраняет фактический адрес в settings.json; CLI читает его оттуда при каждом вызове. Если порт занят, mictap берёт другой, а не оставляет окно в состоянии «запуск…»." />
+            <TextBlock Text="Файл настроек" Style="{StaticResource SettingsHeader}" />
             <TextBox IsReadOnly="True" TextWrapping="Wrap" Text="{Binding SettingsFile, Mode=OneWay}" AutomationProperties.Name="Файл настроек"
                      materialDesign:TextFieldAssist.DecorationVisibility="Hidden" BorderThickness="0"
                      Style="{StaticResource MaterialDesignTextBox}" />
-            <TextBlock Style="{StaticResource SettingsNote}" Text="Изменения в файле действуют после перезапуска mictap." />
-
-            <TextBlock Text="Router AI" Style="{StaticResource SettingsHeader}" />
-            <TextBlock Style="{StaticResource MaterialDesignBodyMediumTextBlock}" TextWrapping="Wrap" Text="{Binding RouterAiKeyText}"
-                       AutomationProperties.Name="Состояние ключа Router AI" />
-            <!-- A saved key: replace or delete it. -->
-            <StackPanel Margin="0,8,0,0" Orientation="Horizontal"
-                        Visibility="{Binding ShowRouterAiKeyActions, Converter={StaticResource VisibleWhenTrue}}">
-                <Button Content="Заменить" Style="{StaticResource MaterialDesignOutlinedButton}" Click="OnReplaceRouterAiKey"
-                        AutomationProperties.Name="Заменить ключ Router AI" />
-                <Button Margin="8,0,0,0" Content="Удалить" Style="{StaticResource MaterialDesignFlatButton}"
-                        Click="OnDeleteRouterAiKey" AutomationProperties.Name="Удалить ключ Router AI" />
-            </StackPanel>
-            <!-- No key yet, or replacing it: paste and save; «Сохранить» only with something pasted. -->
-            <DockPanel Margin="0,8,0,0" Visibility="{Binding ShowRouterAiKeyInput, Converter={StaticResource VisibleWhenTrue}}">
-                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Отмена" Style="{StaticResource MaterialDesignFlatButton}"
-                        Click="OnCancelRouterAiKey" AutomationProperties.Name="Не менять ключ Router AI"
-                        Visibility="{Binding HasRouterAiKey, Converter={StaticResource VisibleWhenTrue}}" />
-                <Button DockPanel.Dock="Right" Margin="8,0,0,0" Content="Сохранить" Style="{StaticResource MaterialDesignOutlinedButton}"
-                        IsEnabled="{Binding CanSaveRouterAiKey}"
-                        Click="OnSaveRouterAiKey" AutomationProperties.Name="Сохранить ключ Router AI" />
-                <PasswordBox Style="{StaticResource MaterialDesignOutlinedPasswordBox}" PasswordChanged="OnRouterAiKeyChanged"
-                             materialDesign:TextFieldAssist.TextFieldCornerRadius="12" materialDesign:HintAssist.Hint="Ключ Router AI (sk-…)"
-                             AutomationProperties.Name="Ключ Router AI" />
-            </DockPanel>
             <TextBlock Style="{StaticResource SettingsNote}"
-                       Text="Ключ хранится в диспетчере учётных данных Windows, не в файле настроек. Облако выбирается в настройках проекта: его фразы уходят в Router AI, черновик — на этом компьютере." />
+                       Text="Порт хаба и другие значения меняются в файле и действуют после перезапуска. Агент запускает mictap wait; --wait-for-start ждёт следующей записи." />
         </StackPanel>
 
         <Style x:Key="TreeExpander" TargetType="ToggleButton">
@@ -493,6 +707,10 @@
             <MenuItem Header="Открыть папку" Command="{Binding OpenSessionFolderCommand}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       Icon="{materialDesign:PackIcon Kind=FolderOpenOutline}" />
+            <MenuItem Header="Скопировать текст сессии" Command="{Binding CopySessionTextCommand}"
+                      CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                      ToolTip="Весь текст сессии в буфер обмена; отдельные фразы можно выделять прямо в истории"
+                      Icon="{materialDesign:PackIcon Kind=ContentCopy}" />
             <MenuItem Header="Распознать заново" Command="{Binding RetranscribeCommand}"
                       CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                       ToolTip="Прогнать звук сессии через VAD и Whisper ещё раз; прежний текст сохранится в transcript.&lt;время&gt;.bak"
@@ -753,6 +971,9 @@
                                                 <MenuItem Header="Настройки проекта" Command="{Binding EditProjectCommand}"
                                                           CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                           Icon="{materialDesign:PackIcon Kind=CogOutline}" />
+                                                <MenuItem Header="Переименовать проект" Command="{Binding RenameProjectCommand}"
+                                                          CommandParameter="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                                          Icon="{materialDesign:PackIcon Kind=PencilOutline}" />
                                                 <Separator />
                                                 <MenuItem Header="{Binding PlacementTarget.DataContext.PinText, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
                                                           Command="{Binding TogglePinProjectCommand}"
@@ -777,6 +998,9 @@
                                             <materialDesign:PackIcon DockPanel.Dock="Right" Kind="EyeOffOutline" Width="14" Height="14" Margin="4,0,0,0" Opacity="0.5"
                                                                      VerticalAlignment="Center" ToolTip="Скрытый проект"
                                                                      Visibility="{Binding IsHidden, Converter={StaticResource VisibleWhenTrue}}" />
+                                            <materialDesign:PackIcon DockPanel.Dock="Right" Kind="TimerSand" Width="14" Height="14" Margin="4,0,0,0" Opacity="0.7"
+                                                                     VerticalAlignment="Center" ToolTip="{Binding PendingText}" AutomationProperties.Name="{Binding PendingText}"
+                                                                     Visibility="{Binding HasPendingRename, Converter={StaticResource VisibleWhenTrue}}" />
                                             <Border DockPanel.Dock="Right" Style="{StaticResource AgentBadge}" ToolTip="Агентов в сессиях проекта">
                                                 <TextBlock Text="{Binding AgentCount}" Foreground="White" VerticalAlignment="Center"
                                                            Style="{StaticResource MaterialDesignLabelSmallTextBlock}" />
@@ -900,6 +1124,36 @@
                                     AutomationProperties.Name="{Binding SendToAgentsTitle}">
                                 <materialDesign:PackIcon Kind="Send" Width="24" Height="24" />
                             </Button>
+
+                            <!-- Typed text: works without the microphone and does not replace the grey voice draft. -->
+                            <Border DockPanel.Dock="Bottom" Margin="0,10,0,0" Padding="12,8" CornerRadius="12" Background="#0A000000">
+                                <DockPanel>
+                                    <TextBlock DockPanel.Dock="Top" Margin="2,0,0,4" TextWrapping="Wrap" Opacity="0.65"
+                                               Text="{Binding ManualTargetText}" Style="{StaticResource MaterialDesignBodySmallTextBlock}" />
+                                    <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Bottom">
+                                        <Button Width="40" Height="40" Margin="6,0,0,0" Style="{StaticResource MaterialDesignIconButton}"
+                                                Command="{Binding SendManualTextCommand}" ToolTip="Отправить текст (Enter)"
+                                                AutomationProperties.Name="Отправить текст">
+                                            <materialDesign:PackIcon Kind="Send" Width="22" Height="22" />
+                                        </Button>
+                                        <Button Width="40" Height="40" Margin="2,0,0,0" Style="{StaticResource MaterialDesignIconButton}"
+                                                Command="{Binding SendManualTextAndPushCommand}"
+                                                ToolTip="Отправить и позвать агента: мысль закончена, ждите ответа (Ctrl+Enter)"
+                                                AutomationProperties.Name="Отправить текст и позвать агента">
+                                            <materialDesign:PackIcon Kind="RobotOutline" Width="22" Height="22" />
+                                        </Button>
+                                    </StackPanel>
+                                    <TextBox Margin="0,0,4,0" MinHeight="38" MaxHeight="90" AcceptsReturn="True" TextWrapping="Wrap"
+                                             VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Center"
+                                             Style="{StaticResource MaterialDesignOutlinedTextBox}"
+                                             materialDesign:TextFieldAssist.TextFieldCornerRadius="12"
+                                             materialDesign:HintAssist.Hint="Написать текстом — микрофон не нужен"
+                                             materialDesign:HintAssist.HelperText="{Binding ManualSendHint}"
+                                             AutomationProperties.Name="Текст для истории"
+                                             KeyDown="OnManualTextKeyDown"
+                                             Text="{Binding ManualText, UpdateSourceTrigger=PropertyChanged}" />
+                                </DockPanel>
+                            </Border>
 
                             <!-- The draft: speech not yet in the text above, replaced every few seconds; the latest lines stay in view. -->
                             <Border MinHeight="56" CornerRadius="12" Padding="14,8" Background="#0A000000" DataContext="{Binding Transcript}">
@@ -1219,16 +1473,49 @@
                 </DockPanel>
             </materialDesign:Card>
 
-            <!-- Settings: a page instead of the old dialog. -->
-            <materialDesign:Card Margin="12" Padding="28,20,12,16" MaxWidth="860" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}"
-                                 Visibility="{Binding IsSettingsPage, Converter={StaticResource VisibleWhenTrue}}">
-                <DockPanel>
-                    <TextBlock DockPanel.Dock="Top" Text="Настройки" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
-                    <ScrollViewer Margin="0,4,0,0" VerticalScrollBarVisibility="Auto">
-                        <ContentControl Content="{StaticResource SettingsBody}" Focusable="False" />
+            <!-- Settings: sections in a side navigation, in the look of the rest of the window. -->
+            <Grid Margin="12" Visibility="{Binding IsSettingsPage, Converter={StaticResource VisibleWhenTrue}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="250" MinWidth="210" MaxWidth="340" />
+                    <ColumnDefinition Width="12" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <materialDesign:Card Style="{StaticResource MaterialDesignElevatedCard}" UniformCornerRadius="16" Padding="8">
+                    <DockPanel>
+                        <TextBlock DockPanel.Dock="Top" Margin="10,8,0,10" Text="Настройки" Style="{StaticResource MaterialDesignHeadlineSmallTextBlock}" />
+                        <ListBox SelectedIndex="{Binding SettingsSectionIndex}" AutomationProperties.Name="Разделы настроек"
+                                 ItemContainerStyle="{StaticResource ReleaseRow}" Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBoxItem Content="Общие" AutomationProperties.Name="Общие" ToolTip="Папка проектов" />
+                            <ListBoxItem Content="Запись и распознавание" AutomationProperties.Name="Запись и распознавание"
+                                         ToolTip="Микрофон, черновик, Router AI" />
+                            <ListBoxItem Content="Новые проекты" AutomationProperties.Name="Новые проекты"
+                                         ToolTip="Языки, звук, модель, черновик и пауза по умолчанию" />
+                            <ListBoxItem Content="Хранение" AutomationProperties.Name="Хранение" ToolTip="Архив и звук записей" />
+                            <ListBoxItem Content="Горячие клавиши" AutomationProperties.Name="Горячие клавиши" ToolTip="Хоткеи mictap" />
+                            <ListBoxItem Content="Интеграции" AutomationProperties.Name="Интеграции" ToolTip="Хаб для агентов и файл настроек" />
+                        </ListBox>
+                    </DockPanel>
+                </materialDesign:Card>
+                <materialDesign:Card Grid.Column="2" Padding="28,20,12,16" UniformCornerRadius="16" Style="{StaticResource MaterialDesignElevatedCard}">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <Grid>
+                            <ContentControl Content="{StaticResource GeneralSettingsBody}" Focusable="False"
+                                            Visibility="{Binding IsGeneralSettings, Converter={StaticResource VisibleWhenTrue}}" />
+                            <ContentControl Content="{StaticResource RecordingSettingsBody}" Focusable="False"
+                                            Visibility="{Binding IsRecordingSettings, Converter={StaticResource VisibleWhenTrue}}" />
+                            <ContentControl Content="{StaticResource NewProjectSettingsBody}" Focusable="False"
+                                            Visibility="{Binding IsNewProjectSettings, Converter={StaticResource VisibleWhenTrue}}" />
+                            <ContentControl Content="{StaticResource StorageSettingsBody}" Focusable="False"
+                                            Visibility="{Binding IsStorageSettings, Converter={StaticResource VisibleWhenTrue}}" />
+                            <ContentControl Content="{StaticResource HotkeySettingsBody}" Focusable="False"
+                                            Visibility="{Binding IsHotkeySettings, Converter={StaticResource VisibleWhenTrue}}" />
+                            <ContentControl Content="{StaticResource IntegrationSettingsBody}" Focusable="False"
+                                            Visibility="{Binding IsIntegrationSettings, Converter={StaticResource VisibleWhenTrue}}" />
+                        </Grid>
                     </ScrollViewer>
-                </DockPanel>
-            </materialDesign:Card>
+                </materialDesign:Card>
+            </Grid>
 
             <!-- What's new, in the look of «Записи»: the versions like the project tree at 9 o'clock, the chosen one's changes like a session's text at 3 o'clock. -->
             <Grid Margin="12" Visibility="{Binding IsWhatsNewPage, Converter={StaticResource VisibleWhenTrue}}">

@@ -327,6 +327,16 @@ public partial class MainWindow : Window
     private void OnRouterAiKeyChanged(object sender, RoutedEventArgs e) =>
         _viewModel.CanSaveRouterAiKey = ((PasswordBox)sender).Password.Trim().Length > 0;
 
+    private void OnComposerMouseDown(object sender, MouseButtonEventArgs e) => ComposerInput.Focus();
+
+    private void OnComposerResize(object sender, System.Windows.Controls.Primitives.DragDeltaEventArgs e)
+    {
+        ComposerSurface.Height = Math.Clamp(ComposerSurface.Height - e.VerticalChange, 88, Math.Max(88, Math.Min(420, ActualHeight - 280)));
+    }
+
+    private void OnComposerResizeCompleted(object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e) =>
+        _viewModel.SaveComposerHeight(ComposerSurface.ActualHeight);
+
     /// <summary>The day of the topmost phrase in view sticks to the top while the text is scrolled away from its start.</summary>
     private void OnTranscriptScrolled(object sender, ScrollChangedEventArgs e)
     {

@@ -82,7 +82,7 @@ public sealed class TranscriptItem(
 
     public string TimeText => ClockText;
 
-    public string LanguageText => Line.Lang.ToUpperInvariant();
+    public string LanguageText => Line.IsManual ? "ТЕКСТ" : Line.Lang.ToUpperInvariant();
 
     public string Text
     {
@@ -158,7 +158,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     /// <summary>The draft is off in the settings: the recording bar says so instead of «Слушаю…».</summary>
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(RecognitionText))]
+    [NotifyPropertyChangedFor(nameof(RecognitionText), nameof(HasVoiceDraft))]
     private bool _isDraftOff;
 
     [ObservableProperty]
@@ -168,6 +168,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
     private double _downloadPercent;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasVoiceDraft))]
     private string _nowText = "";
 
     [ObservableProperty]
@@ -184,7 +185,10 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
 
     /// <summary>A recording runs: its draft, the speech not yet in the text, is shown in the recording bar.</summary>
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasVoiceDraft))]
     private bool _isLive;
+
+    public bool HasVoiceDraft => IsLive && !IsDraftOff && !string.IsNullOrEmpty(NowText);
 
     private int _pending;
 
@@ -758,7 +762,7 @@ public sealed partial class TranscriptViewModel : ObservableObject, IDisposable
                 AddItem(segment.Session, segment.Line);
             }
 
-            if (_live && segment.Session == _liveSession)
+            if (!segment.IsManual && _live && segment.Session == _liveSession)
             {
                 // The draft held this phrase; the next live pass, right after, brings what follows it.
                 NowText = "";

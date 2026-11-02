@@ -2,6 +2,8 @@ using System.IO;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using MicTap.App;
 using MicTap.Core;
 using Serilog;
@@ -20,7 +22,7 @@ public sealed class TranscriptScrollTests
             MainWindow? window = null;
             try
             {
-                AppPaths.UseProfile(root);
+                AppPaths.UseProfile(Path.Combine(root, "макет"));
                 var app = new global::MicTap.App.App();
                 app.InitializeComponent();
                 SynchronizationContext.SetSynchronizationContext(new DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher));
@@ -30,11 +32,32 @@ public sealed class TranscriptScrollTests
                     new ModelStore(AppPaths.ModelsFolder, ModelSpec.LargeV3Turbo),
                     new ModelStore(AppPaths.ModelsFolder, ModelSpec.SileroVad), recorder, logger);
                 var settings = new AppSettings { RootFolder = root };
-                var vm = new MainViewModel(new SettingsStore(Path.Combine(root, "settings.json")), settings, recorder, transcript, "test", logger);
+                var vm = new MainViewModel(new SettingsStore(Path.Combine(root, "settings.json")), settings, recorder, transcript,
+                    typeof(MainWindow).Assembly.GetName().Version!.ToString(3), logger);
                 window = new MainWindow(vm) { Width = 1050, Height = 750 };
                 window.Show();
                 var scroll = (ScrollViewer)window.FindName("TranscriptScroll");
                 void Pump() => window.Dispatcher.Invoke(() => { }, DispatcherPriority.ApplicationIdle);
+                void Export(string name)
+                {
+                    if (Environment.GetEnvironmentVariable("MICTAP_UI_PREVIEW_FOLDER") is not { Length: > 0 } output) return;
+                    Directory.CreateDirectory(output);
+                    Pump();
+                    var bitmap = new RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, PixelFormats.Pbgra32);
+                    bitmap.Render(window);
+                    var encoder = new PngBitmapEncoder();
+                    encoder.Frames.Add(BitmapFrame.Create(bitmap));
+                    using var file = File.Create(Path.Combine(output, name + ".png"));
+                    encoder.Save(file);
+                }
+
+                vm.PageIndex = (int)AppPage.Settings;
+                vm.SettingsSection = 2;
+                window.Height = 860;
+                Export("mictap-settings-new-projects");
+                window.Height = 750;
+                vm.PageIndex = (int)AppPage.Records;
+                Pump();
                 void Append(int seq) => transcript.Items.Add(new TranscriptItem(
                     new TranscriptLine(seq, seq, seq + 1, "ru", string.Join(" ", Enumerable.Repeat($"Фраза {seq}.", 80)), false),
                     DateTimeOffset.Now, false, null, false, _ => { }));
@@ -79,6 +102,66 @@ public sealed class TranscriptScrollTests
                 Assert.False(Directory.Exists(project.Folder));
                 Assert.Equal(Path.Combine(root, "Новый проект"), vm.SelectedProject!.Folder);
                 Assert.Equal("Новый проект", Projects.Load(vm.SelectedProject.Folder).Name);
+
+                string existingProject = File.ReadAllText(vm.SelectedProject.SettingsFile);
+                ProjectEditor defaults = vm.DefaultProjectEditor;
+                defaults.Languages.Choices.Single(c => c.Language.Code == "ja").IsSelected = true;
+                defaults.PhrasePauseSeconds = 4;
+                defaults.LiveDraftSeconds = 8;
+                vm.SaveProjectDefaultsCommand.Execute(null);
+                var restarted = new SettingsStore(Path.Combine(root, "settings.json")).Load();
+                Assert.Equal([ "ru", "ja" ], restarted.NewProjectDefaults.Languages);
+                Assert.Equal(8, restarted.NewProjectDefaults.LiveDraftSeconds);
+                Assert.Equal(existingProject, File.ReadAllText(vm.SelectedProject.SettingsFile));
+                ProjectEditor next = vm.NewProjectEditor();
+                Assert.Equal([ "ru", "ja" ], next.Languages.SelectedCodes);
+                Assert.Equal(4, next.PhrasePauseSeconds);
+                Assert.Equal(8, next.LiveDraftSeconds);
+
+                SessionInfo session = SessionFolders.Open(vm.SelectedProject.Folder, "Ручной ввод");
+                ProjectNode projectNode = vm.Projects.Single(p => p.Project.Folder == vm.SelectedProject.Folder);
+                var sessionNode = new SessionNode(session, projectNode);
+                projectNode.Sessions.Add(sessionNode);
+                vm.Select(sessionNode);
+                vm.DismissMessage();
+                using var source = new MicTap.Core.Tests.FakeAudioSource();
+                recorder.Start(new RecordingOptions(session, "Synthetic", 60, "test", "ru", AudioRetention.None), source);
+                vm.IsRecording = true;
+                transcript.BeginSession(session, null);
+                foreach (int draft in new[] { 3, 0 })
+                {
+                    transcript.SetDraftInterval(draft);
+                    transcript.NowText = draft > 0 ? "Незаконченная голосовая мысль" : "";
+                    string originalDraft = transcript.NowText;
+                    source.Push(new byte[ 3200 ]);
+                    vm.ManualText = $"Ручной текст · черновик {draft}";
+                    if (draft == 3) Export("mictap-unified-composer");
+                    Assert.True(vm.SendToAgentsCommand.CanExecute(null));
+                    vm.SendToAgentsCommand.Execute(null);
+                    Pump();
+                    Assert.Equal(originalDraft, transcript.NowText);
+                    Assert.Equal(draft == 0, transcript.IsDraftOff);
+                    Assert.Equal("", vm.ManualText);
+                    Assert.Contains(transcript.Items, item => item.Text == $"Ручной текст · черновик {draft}");
+                }
+                Task stop = vm.StopRecordingAsync();
+                while (!stop.IsCompleted) { Pump(); Thread.Sleep(10); }
+                stop.GetAwaiter().GetResult();
+                Assert.Equal(2, new JsonlTranscriptSink(session.Folder).Lines.Count);
+                var surface = (FrameworkElement)window.FindName("ComposerSurface");
+                var grip = (System.Windows.Controls.Primitives.Thumb)window.FindName("ComposerResize");
+                double oldHeight = surface.Height;
+                grip.RaiseEvent(new System.Windows.Controls.Primitives.DragDeltaEventArgs(0, -50)
+                {
+                    RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragDeltaEvent,
+                });
+                Pump();
+                Assert.Equal(oldHeight + 50, surface.Height);
+                grip.RaiseEvent(new System.Windows.Controls.Primitives.DragCompletedEventArgs(0, -50, false)
+                {
+                    RoutedEvent = System.Windows.Controls.Primitives.Thumb.DragCompletedEvent,
+                });
+                Assert.Equal(surface.Height, new SettingsStore(Path.Combine(root, "settings.json")).Load().ComposerHeight);
                 done.SetResult();
             }
             catch (Exception ex)

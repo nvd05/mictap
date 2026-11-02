@@ -17,7 +17,7 @@ public sealed record RetentionOption(AudioRetention Value, string Name)
 /// </summary>
 public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
 {
-    private readonly IReadOnlyList<CloudModelInfo> _catalog;
+    private IReadOnlyList<CloudModelInfo> _catalog;
     private readonly Func<AppSettings> _settings;
     private readonly Action<string?, bool> _setLike;
 
@@ -30,8 +30,12 @@ public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
     [ObservableProperty]
     private string _name = "";
 
+    public LanguageSelection Languages { get; private set; } = null!;
+
     [ObservableProperty]
-    private string _languagesText = "ru, ja";
+    private int _liveDraftSeconds;
+
+    public bool IsDefaults { get; init; }
 
     [ObservableProperty]
     private AudioRetention _retention = AudioRetention.Keep;
@@ -48,7 +52,7 @@ public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
 
     private ProjectEditor(
         bool isNew, string? engine, string cloudModel, IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings,
-        Action<string?, bool> setLike)
+        Action<string?, bool> setLike, Action<IReadOnlyList<string>> setFavorites)
     {
         IsNew = isNew;
         _catalog = catalog;
@@ -56,6 +60,7 @@ public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
         _setLike = setLike;
         _cloudModel = cloudModel;
         _picked = engine;
+        Languages = new LanguageSelection([ "ru" ], settings().FavoriteLanguages, setFavorites);
         ShowPicked();
     }
 
@@ -68,7 +73,7 @@ public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
 
     public bool IsNew { get; }
 
-    public string Title => IsNew ? "Новый проект" : "Настройки проекта";
+    public string Title => IsDefaults ? "Новые проекты" : IsNew ? "Новый проект" : "Настройки проекта";
 
     public string PhrasePauseText => $"{PhrasePauseSeconds:0.0} с";
 
@@ -77,18 +82,27 @@ public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
     public bool IsUpdatingEngines => Engines.IsRebuilding;
 
     /// <param name="setLike">Likes a model for every project (settings.json and the engine box of the window).</param>
-    public static ProjectEditor ForNew(IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings, Action<string?, bool> setLike) =>
-        new(isNew: true, engine: null, RouterAiTranscriber.DefaultModel, catalog, settings, setLike);
+    public static ProjectEditor ForNew(IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings, Action<string?, bool> setLike,
+        Action<IReadOnlyList<string>> setFavorites) => For(new ProjectInfo("", settings().NewProjectDefaults.ForProject("")), catalog, settings, setLike, setFavorites, isNew: true);
 
     /// <inheritdoc cref="ForNew"/>
-    public static ProjectEditor For(ProjectInfo project, IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings, Action<string?, bool> setLike) =>
-        new(isNew: false, project.Settings.CloudModelInUse, project.Settings.CloudModel, catalog, settings, setLike)
+    public static ProjectEditor For(ProjectInfo project, IReadOnlyList<CloudModelInfo> catalog, Func<AppSettings> settings, Action<string?, bool> setLike,
+        Action<IReadOnlyList<string>> setFavorites, bool isNew = false, bool isDefaults = false) =>
+        new(isNew, project.Settings.CloudModelInUse, project.Settings.CloudModel, catalog, settings, setLike, setFavorites)
         {
             Name = project.Name,
-            LanguagesText = string.Join(", ", project.Settings.Languages),
+            Languages = new LanguageSelection(project.Settings.Languages, settings().FavoriteLanguages, setFavorites),
             Retention = project.Settings.AudioRetention,
             PhrasePauseSeconds = project.Settings.PhrasePauseSeconds,
+            LiveDraftSeconds = project.Settings.LiveDraftSeconds ?? settings().LiveDraftSeconds,
+            IsDefaults = isDefaults,
         };
+
+    public void UpdateCatalog(IReadOnlyList<CloudModelInfo> catalog)
+    {
+        _catalog = catalog;
+        ShowPicked();
+    }
 
     public void EngineSearchClosed()
     {
@@ -102,11 +116,12 @@ public sealed partial class ProjectEditor : ObservableObject, IEngineSearch
     public ProjectSettings? Build()
     {
         var settings = new ProjectSettings(
-            Name.Trim(), Projects.ParseLanguages(LanguagesText), Retention, Math.Round(PhrasePauseSeconds, 1),
-            _picked is null ? TranscriptionEngine.Local : TranscriptionEngine.RouterAi, _picked ?? _cloudModel);
+            Name.Trim(), Languages.SelectedCodes, Retention, Math.Round(PhrasePauseSeconds, 1),
+            _picked is null ? TranscriptionEngine.Local : TranscriptionEngine.RouterAi, _picked ?? _cloudModel, LiveDraftSeconds);
         try
         {
             Projects.Validate(settings);
+            if (settings.Languages.Any(code => !LanguageCatalog.Supports(code))) throw new ArgumentException("Выберите поддерживаемый язык из списка.");
         }
         catch (ArgumentException ex)
         {

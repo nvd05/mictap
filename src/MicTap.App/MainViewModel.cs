@@ -37,6 +37,18 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     private readonly DispatcherTimer _infoTimer;
     private AppSettings _settings;
     private bool _refreshingDevices;
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SendManualCommand))]
+    private string _manualText = "";
+
+    [ObservableProperty] private int _settingsSection;
+    [ObservableProperty] private string _defaultsStatus = "";
+    public static IReadOnlyList<string> SettingsSections { get; } =
+    [
+        "Общие", "Запись и распознавание", "Новые проекты", "Языки", "Хранение", "Горячие клавиши", "Интеграции",
+    ];
+    public ProjectEditor DefaultProjectEditor { get; }
+    public LanguageSelection FavoriteLanguagesSelection { get; }
     private bool _quietLanguage = true; // no tone and no mark while the language follows the selected project
     private bool _quietEngine; // the engine box follows the selected project without saving it back
     private bool _likesChanged; // a heart was clicked: the open list gets the liked models on top when it closes
@@ -57,7 +69,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     [ObservableProperty]
     [NotifyPropertyChangedFor(
         nameof(CanEditSettings), nameof(IsIdle), nameof(TrayToolTip), nameof(EmptyText), nameof(SessionNote), nameof(SessionHeader),
-        nameof(HasRecordingAgents))]
+        nameof(HasRecordingAgents), nameof(ComposerHint))]
     [NotifyCanExecuteChangedFor(
         nameof(StartCommand), nameof(StopCommand), nameof(ChooseFolderCommand), nameof(RefreshDevicesCommand),
         nameof(RetranscribeCommand), nameof(CompareModelsCommand), nameof(NewProjectCommand), nameof(EditProjectCommand), nameof(NewSessionCommand),
@@ -192,6 +204,11 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         _recorder = recorder;
         _appVersion = appVersion;
         _logger = logger.ForContext<MainViewModel>();
+        DefaultProjectEditor = ProjectEditor.For(new ProjectInfo("", settings.NewProjectDefaults.ForProject("Новый проект")),
+            _cloudModels, () => _settings, SetLike, SetFavoriteLanguages, isDefaults: true);
+        FavoriteLanguagesSelection = new LanguageSelection([], settings.FavoriteLanguages, SetFavoriteLanguages);
+        DefaultProjectEditor.PropertyChanged += (_, _) => DefaultsStatus = "";
+        DefaultProjectEditor.Languages.PropertyChanged += (_, _) => DefaultsStatus = "";
         RootFolder = settings.RootFolder ?? Core.Projects.DefaultRoot;
         SelectedRelease = Releases.FirstOrDefault();
         _infoTimer = new DispatcherTimer(InfoShownFor, DispatcherPriority.Background, (_, _) => ClearInfo(), _dispatcher);
@@ -345,17 +362,28 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     public string LanguageToolTip => $"Следующий язык проекта — {Hotkeys.ToggleLanguage}, работает и из трея.";
 
     public string IdleDraftText =>
-        $"Нажмите запись или {Hotkeys.ToggleRecording} — здесь появится то, что вы говорите. {Hotkeys.ForcePush} — отправить агенту.";
+        $"Нажмите запись или {Hotkeys.ToggleRecording}.\nГоворите, печатайте или вставьте текст.\nCtrl+Enter или {Hotkeys.ForcePush} — отправить агенту.";
+
+    public string ComposerHint => IsRecording
+        ? "Напишите или вставьте текст.\nCtrl+Enter — отправить · Enter — новая строка."
+        : IdleDraftText;
+
+    public double ComposerHeight => _settings.ComposerHeight;
+
+    public void SaveComposerHeight(double height)
+    {
+        Save(_settings with { ComposerHeight = Math.Clamp(height, 88, 420) });
+        OnPropertyChanged(nameof(ComposerHeight));
+    }
 
     public bool HasRecordingAgents => IsRecording && RecordingAgents > 0;
 
     public string SendToAgentsTitle => RecordingAgents > 1 ? "Отправить агентам сейчас" : "Отправить агенту сейчас";
 
     public string SendToAgentsToolTip =>
-        $"{SendToAgentsTitle} — {Hotkeys.ForcePush}, во время записи и из трея.\n"
-        + (RecordingAgents > 1
-            ? "Фраза, которую вы договорили, сразу уходит в текст, агенты получают всё, что ещё не читали."
-            : "Фраза, которую вы договорили, сразу уходит в текст, агент получает всё, что ещё не читал.");
+        $"{SendToAgentsTitle} · Ctrl+Enter или {Hotkeys.ForcePush}.\n"
+        + "Есть набранный текст — отправить его, сохранив голосовой черновик.\n"
+        + "Без набранного текста — завершить и отправить текущую голосовую фразу.";
 
     public HotkeySettings Hotkeys => _settings.Hotkeys;
 
@@ -470,6 +498,12 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     /// </summary>
     public void SendToAgentsNow()
     {
+        if (CanSendManual())
+        {
+            SendManual();
+            return;
+        }
+
         if (!IsRecording || _recordingNode is null)
         {
             ShowMessage("Отправлять агенту нечего: запись не идёт.", isError: true);
@@ -522,6 +556,51 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         }
     }
 
+    private bool CanSendManual() => IsRecording && _recorder.CurrentSession is not null && !string.IsNullOrWhiteSpace(ManualText);
+
+    [RelayCommand(CanExecute = nameof(CanSendManual))]
+    private void SendManual()
+    {
+        if (_recorder.CurrentSession is not { } session || _recorder.Position is not { } at) return;
+        try
+        {
+            Transcript.Pipeline.AppendManual(session, at, Language, ManualText);
+            ManualText = "";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            _logger.Error(ex, "Manual text was not saved");
+            ShowMessage($"Текст не отправлен: {ex.Message}", isError: true);
+        }
+    }
+
+    [RelayCommand]
+    private void SaveProjectDefaults()
+    {
+        if (DefaultProjectEditor.Build() is not { } project) return;
+        Save(_settings with
+        {
+            NewProjectDefaults = new NewProjectDefaults
+            {
+                Languages = project.Languages,
+                AudioRetention = project.AudioRetention,
+                LiveDraftSeconds = project.LiveDraftSeconds ?? 0,
+                PhrasePauseSeconds = project.PhrasePauseSeconds,
+                Engine = project.Engine,
+                CloudModel = project.CloudModel,
+            }
+        });
+        ShowMessage("Значения для новых проектов сохранены. Существующие проекты не изменены.", isError: false);
+        DefaultsStatus = "Сохранено · применяется к новым проектам";
+    }
+
+    private void SetFavoriteLanguages(IReadOnlyList<string> codes)
+    {
+        Save(_settings with { FavoriteLanguages = codes });
+        DefaultProjectEditor.Languages.SetFavorites(codes);
+        FavoriteLanguagesSelection.SetFavorites(codes);
+    }
+
     /// <summary>Saves a project's settings from the dialog.</summary>
     public async Task SaveProjectAsync(ProjectInfo project, ProjectSettings settings)
     {
@@ -557,6 +636,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
             {
                 Transcript.Pipeline.SetPhrasePause(recording.Session, saved.Settings.PhrasePause);
                 Transcript.EngineSwitched(recording.Session, saved.Settings.CloudModelInUse);
+                Transcript.SetDraftInterval(saved.Settings.LiveDraftSeconds ?? _settings.LiveDraftSeconds);
             }
             ShowMessage(_pendingProjectNames.TryGetValue(project.Folder, out string? pending)
                 ? $"Настройки сохранены. Папка проекта получит имя «{pending}» после остановки записи и распознавания."
@@ -1152,6 +1232,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
 
     partial void OnIsRecordingChanged(bool value)
     {
+        SendManualCommand.NotifyCanExecuteChanged();
         // A sleeping laptop stops capture: block system sleep for the length of the recording.
         if (value ? SystemSleep.Block() : SystemSleep.Allow())
         {
@@ -1209,7 +1290,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         }
 
         Save(_settings with { LiveDraftSeconds = value });
-        Transcript.SetDraftInterval(value);
+        if (_recordingNode?.Project.Project.Settings.LiveDraftSeconds is null) Transcript.SetDraftInterval(value);
         _logger.Information("Live draft {Draft}", value == 0 ? "off" : $"every {value} s");
     }
 
@@ -1314,6 +1395,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         _recordingNode = node;
         node.IsRecording = true;
         Transcript.BeginSession(session, project.Settings.CloudModelInUse);
+        Transcript.SetDraftInterval(project.Settings.LiveDraftSeconds ?? _settings.LiveDraftSeconds);
         IsRecording = true;
         SessionText = session.Name;
         SessionName = session.Name;
@@ -1337,7 +1419,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     [RelayCommand(CanExecute = nameof(IsRecording))]
     private Task StopAsync() => StopRecordingAsync();
 
-    [RelayCommand(CanExecute = nameof(HasRecordingAgents))]
+    [RelayCommand(CanExecute = nameof(IsRecording))]
     private void SendToAgents() => SendToAgentsNow();
 
     private bool CanRetranscribe(SessionNode? node) =>
@@ -1435,6 +1517,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         }
 
         RefreshEngineChoices();
+        DefaultProjectEditor.UpdateCatalog(_cloudModels);
     }
 
     /// <summary>The engine box for the selected project: its engine chosen, the liked models on top.</summary>
@@ -1472,12 +1555,12 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
     }
 
     /// <summary>The project dialog for a new project; its engine list is the engine box's, with the same hearts.</summary>
-    public ProjectEditor NewProjectEditor() => ProjectEditor.ForNew(_cloudModels, () => _settings, SetLike);
+    public ProjectEditor NewProjectEditor() => ProjectEditor.ForNew(_cloudModels, () => _settings, SetLike, SetFavoriteLanguages);
 
     /// <inheritdoc cref="NewProjectEditor"/>
     public ProjectEditor ProjectEditorFor(ProjectInfo project)
     {
-        ProjectEditor editor = ProjectEditor.For(project, _cloudModels, () => _settings, SetLike);
+        ProjectEditor editor = ProjectEditor.For(project, _cloudModels, () => _settings, SetLike, SetFavoriteLanguages);
         if (_pendingProjectNames.TryGetValue(project.Folder, out string? name)) editor.Name = name;
         return editor;
     }
@@ -1497,6 +1580,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
         }
 
         RefreshEngineChoices();
+        DefaultProjectEditor.UpdateCatalog(_cloudModels);
     }
 
     /// <summary>
@@ -1532,7 +1616,7 @@ public sealed partial class MainViewModel : ObservableObject, IEngineSearch
             projects = Core.Projects.List(RootFolder);
             if (projects.Count == 0)
             {
-                ProjectInfo first = Core.Projects.Create(RootFolder, Core.Projects.FirstProject);
+                ProjectInfo first = Core.Projects.Create(RootFolder, _settings.NewProjectDefaults.ForProject(Core.Projects.FirstProject.Name));
                 _logger.Information("First project {Project} created in {Folder}", first.Name, first.Folder);
                 projects = [ first ];
             }

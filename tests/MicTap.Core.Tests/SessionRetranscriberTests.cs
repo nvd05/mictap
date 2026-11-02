@@ -58,6 +58,18 @@ public sealed class SessionRetranscriberTests : IDisposable
     private SessionRetranscriber Retranscriber() =>
         new(_host, () => FakeSpeech.Detect, new ManualTimeProvider(Now), Logger.None);
 
+    [Fact]
+    public async Task Manual_annotations_survive_recognition_again()
+    {
+        WriteChunks(2, FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        WriteMeta(new LanguageMark(0, "ru"));
+        var original = new JsonlTranscriptSink(_session.Folder);
+        original.Append(0.5, 0.5, "ru", "Добавлено вручную");
+        RetranscribeResult result = await Retranscriber().RunAsync(_session, "ru", new Progress<double>(), CancellationToken.None);
+        Assert.Contains(result.Lines, line => line.IsManual && line.Text == "Добавлено вручную");
+        Assert.Contains(result.Lines, line => !line.IsManual && line.Text == "ru:1000ms");
+    }
+
     private void WriteChunks(int chunkSeconds, params byte[][] parts)
     {
         using var writer = new ChunkedWavWriter(_session.AudioFolder, PcmFormat.Mono16k, chunkSeconds);

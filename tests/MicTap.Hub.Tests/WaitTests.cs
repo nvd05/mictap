@@ -14,6 +14,19 @@ public sealed class WaitTests : IAsyncLifetime
     private HubFixture _hub = null!;
 
     [Fact]
+    public async Task Manual_text_reaches_waiting_cli_without_waiting_for_more_words_or_voice_flush()
+    {
+        Task<CliResult> waiting = _hub.RunAsync("wait", "--min-words", "10000", "--max-wait", "5");
+        await Task.Delay(200);
+        _hub.Pipeline.AppendManual(_hub.Session, TimeSpan.FromSeconds(2.3), "ru", "  Ручной текст\nиз буфера обмена  ");
+        CliResult result = await waiting.WaitAsync(Patience);
+        Assert.Equal(MicTapCli.Ok, result.Code);
+        Assert.Equal("force_push", result.Reason);
+        Assert.Equal("Ручной текст\nиз буфера обмена", result.Json.GetProperty("segments")[ 0 ].GetProperty("text").GetString());
+        Assert.Equal("Ручной текст\nиз буфера обмена", new JsonlTranscriptSink(_hub.Session.Folder).Lines.Single().Text);
+    }
+
+    [Fact]
     public async Task Idle_listener_receives_new_project_name_and_real_folder_after_move()
     {
         _hub.State.RecordingStopped(_hub.Session);

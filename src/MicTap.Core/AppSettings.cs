@@ -40,6 +40,8 @@ public sealed record AppSettings
     /// </summary>
     public int LiveDraftSeconds { get; init; } = DefaultLiveDraftSeconds;
 
+    public double ComposerHeight { get; init; } = 112;
+
     /// <summary>Days a deleted project or session stays in the archive before it is deleted for good; 0 keeps it forever.</summary>
     public int ArchiveDays { get; init; } = DefaultArchiveDays;
 
@@ -57,6 +59,10 @@ public sealed record AppSettings
     /// graphics card. They come first in the engine lists.
     /// </summary>
     public IReadOnlyList<string> LikedModels { get; init; } = [];
+
+    public NewProjectDefaults NewProjectDefaults { get; init; } = new();
+
+    public IReadOnlyList<string> FavoriteLanguages { get; init; } = [ "ru", "ja" ];
 
     /// <summary>Whether the user liked <paramref name="model"/> (null — the graphics card).</summary>
     public bool Likes(string? model) => LikedModels.Contains(model ?? LocalModel);
@@ -78,13 +84,35 @@ public sealed record AppSettings
         && Hotkeys == other.Hotkeys
         && HubPort == other.HubPort
         && LiveDraftSeconds == other.LiveDraftSeconds
+        && ComposerHeight == other.ComposerHeight
         && ArchiveDays == other.ArchiveDays
         && HiddenProjects.SequenceEqual(other.HiddenProjects)
         && PinnedProjects.SequenceEqual(other.PinnedProjects)
-        && LikedModels.SequenceEqual(other.LikedModels);
+        && LikedModels.SequenceEqual(other.LikedModels)
+        && FavoriteLanguages.SequenceEqual(other.FavoriteLanguages)
+        && NewProjectDefaults.Equals(other.NewProjectDefaults);
 
     public override int GetHashCode() =>
         HashCode.Combine(RootFolder, DeviceName, ChunkSeconds, Hotkeys, HubPort, LiveDraftSeconds, ArchiveDays, HiddenProjects.Count);
+}
+
+/// <summary>Only used when creating a project; existing project files retain their settings.</summary>
+public sealed record NewProjectDefaults
+{
+    public IReadOnlyList<string> Languages { get; init; } = [ "ru" ];
+    public AudioRetention AudioRetention { get; init; } = AudioRetention.DeleteAfterTranscript;
+    public int LiveDraftSeconds { get; init; }
+    public double PhrasePauseSeconds { get; init; } = 3;
+    public TranscriptionEngine Engine { get; init; } = TranscriptionEngine.RouterAi;
+    public string CloudModel { get; init; } = "mistralai/voxtral-small-transcribe-3-0";
+
+    public ProjectSettings ForProject(string name) => new(name, Languages, AudioRetention, PhrasePauseSeconds, Engine, CloudModel, LiveDraftSeconds);
+
+    public bool Equals(NewProjectDefaults? other) => other is not null && Languages.SequenceEqual(other.Languages)
+        && AudioRetention == other.AudioRetention && LiveDraftSeconds == other.LiveDraftSeconds && PhrasePauseSeconds == other.PhrasePauseSeconds
+        && Engine == other.Engine && CloudModel == other.CloudModel;
+
+    public override int GetHashCode() => HashCode.Combine(AudioRetention, LiveDraftSeconds, PhrasePauseSeconds, Engine, CloudModel);
 }
 
 /// <summary>Global hotkeys, in the form "Ctrl+Alt+L"; see <see cref="Hotkey.TryParse"/>.</summary>

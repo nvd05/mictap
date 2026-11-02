@@ -48,9 +48,9 @@ public sealed class ProjectsTests : IDisposable
         Assert.Equal("ja", loaded.Settings.DefaultLanguage);
         JsonElement root = JsonDocument.Parse(File.ReadAllText(project.SettingsFile)).RootElement;
         Assert.Equal(
-            [ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds", "engine", "cloudModel" ],
+            [ "schemaVersion", "name", "languages", "audioRetention", "phrasePauseSeconds", "engine", "cloudModel", "liveDraftSeconds" ],
             root.EnumerateObject().Select(p => p.Name));
-        Assert.Equal(5, root.GetProperty("schemaVersion").GetInt32());
+        Assert.Equal(6, root.GetProperty("schemaVersion").GetInt32());
         Assert.Equal("local", root.GetProperty("engine").GetString());
         Assert.Equal(1.2, root.GetProperty("phrasePauseSeconds").GetDouble());
         Assert.Equal("deleteAfterTranscript", root.GetProperty("audioRetention").GetString());
@@ -151,7 +151,7 @@ public sealed class ProjectsTests : IDisposable
         Assert.Empty(second);
         string json = File.ReadAllText(Path.Combine(_temp.Path, "Отношения", "project.json"));
         Assert.DoesNotContain("likedModels", json);
-        Assert.Contains("\"schemaVersion\": 5", json);
+        Assert.Contains("\"schemaVersion\": 6", json);
     }
 
     [Theory]

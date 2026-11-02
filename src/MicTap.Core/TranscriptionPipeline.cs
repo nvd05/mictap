@@ -10,7 +10,7 @@ namespace MicTap.Core;
 /// </summary>
 public sealed record LiveTranscript(SessionInfo Session, string Text, bool Silence);
 
-public sealed record SegmentTranscript(SessionInfo Session, TranscriptLine Line);
+public sealed record SegmentTranscript(SessionInfo Session, TranscriptLine Line, bool IsManual = false);
 
 /// <summary>
 /// Second consumer of the recorder. Final text: captured audio goes through the VAD into phrases, each is recognized
@@ -63,6 +63,7 @@ public sealed class TranscriptionPipeline : IDisposable
 
     private readonly CancellationTokenSource _stop = new();
     private readonly Lock _gate = new();
+    private readonly Lock _transcriptWrites = new();
     private readonly Dictionary<string, JsonlTranscriptSink> _sinks = [];
     private readonly ConcurrentDictionary<string, ChunkJanitor> _janitors = new();
     private LiveLanguage? _liveLanguage;
@@ -115,6 +116,23 @@ public sealed class TranscriptionPipeline : IDisposable
 
     /// <summary>A segment's text was appended to transcript.jsonl.</summary>
     public event EventHandler<SegmentTranscript>? SegmentTranscribed;
+
+    /// <summary>Persists typed text without flushing speech, changing its draft, or moving the audio boundary.</summary>
+    public TranscriptLine AppendManual(SessionInfo session, TimeSpan at, string language, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text)) throw new ArgumentException("Введите текст сообщения.", nameof(text));
+        return AppendLine(session, Seconds(at), Seconds(at), language, text.Trim(), isManual: true);
+    }
+
+    private TranscriptLine AppendLine(SessionInfo session, double start, double end, string language, string text, bool isManual = false)
+    {
+        lock (_transcriptWrites)
+        {
+            TranscriptLine line = SinkFor(session).Append(start, end, language, text);
+            SegmentTranscribed?.Invoke(this, new SegmentTranscript(session, line, isManual));
+            return line;
+        }
+    }
 
     /// <summary>
     /// After <see cref="Push"/>: everything said before it is in the transcript. Not raised for a push that comes after
@@ -332,9 +350,8 @@ public sealed class TranscriptionPipeline : IDisposable
                 }
                 else if (text.Length > 0) // empty: the VAD heard a sound Whisper did not take for words
                 {
-                    TranscriptLine line = SinkFor(pending.Session).Append(
+                    AppendLine(pending.Session,
                         Seconds(segment.Start), Seconds(segment.End), segment.Language, text);
-                    SegmentTranscribed?.Invoke(this, new SegmentTranscript(pending.Session, line));
                 }
 
                 Volatile.Write(ref _finished, new Finished(pending.Session, segment.End));

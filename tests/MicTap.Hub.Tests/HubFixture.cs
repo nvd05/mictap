@@ -1,12 +1,14 @@
 using System.Text.Json;
 using MicTap.Cli;
 using MicTap.Core;
+using Serilog.Core;
 
 namespace MicTap.Hub.Tests;
 
 /// <summary>A hub on a free port over a temporary root with one project and one recording session.</summary>
 public sealed class HubFixture : IAsyncDisposable
 {
+    private readonly TranscriberHost _transcriber = new(_ => throw new InvalidOperationException("No recognition in hub tests"), Logger.None, TimeProvider.System);
     private readonly string _root = Path.Combine(Path.GetTempPath(), "mictap-hub-tests", Guid.NewGuid().ToString("N"));
 
     private HubFixture()
@@ -17,10 +19,12 @@ public sealed class HubFixture : IAsyncDisposable
         new SessionMeta(
             [ new SessionStart(DateTimeOffset.Now, 0) ], "Mic", MetaFormat.From(PcmFormat.Mono16k), 60, "0.5.0-test",
             [ new LanguageMark(0, "ja") ]).WriteTo(Session);
-        Transcript = new JsonlTranscriptSink(Session.Folder);
+        Pipeline = new TranscriptionPipeline(_transcriber, Task.FromResult<Func<SpeechDetector>>(() => _ => []), Logger.None);
+        Transcript = Pipeline.SinkFor(Session);
         // One sink per session, as the pipeline keeps them: reading the file while Say appends to it would fail.
         State = new AgentsState(
             _root, s => (s == Session ? Transcript : new JsonlTranscriptSink(s.Folder)).Lines, TimeProvider.System, "0.5.0-test");
+        State.Attach(new Recorder(Logger.None, TimeProvider.System), Pipeline);
     }
 
     public ProjectInfo Project { get; }
@@ -28,6 +32,7 @@ public sealed class HubFixture : IAsyncDisposable
     public SessionInfo Session { get; }
 
     public JsonlTranscriptSink Transcript { get; }
+    public TranscriptionPipeline Pipeline { get; }
 
     public AgentsState State { get; }
 
@@ -61,6 +66,8 @@ public sealed class HubFixture : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         await Host.DisposeAsync();
+        Pipeline.Dispose();
+        _transcriber.Dispose();
         Directory.Delete(_root, recursive: true);
     }
 }

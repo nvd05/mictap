@@ -41,9 +41,10 @@ public sealed record ProjectSettings(
     AudioRetention AudioRetention,
     double PhrasePauseSeconds = ProjectSettings.DefaultPhrasePauseSeconds,
     TranscriptionEngine Engine = TranscriptionEngine.Local,
-    string CloudModel = RouterAiTranscriber.DefaultModel)
+    string CloudModel = RouterAiTranscriber.DefaultModel,
+    int? LiveDraftSeconds = null)
 {
-    public const int CurrentSchemaVersion = 5;
+    public const int CurrentSchemaVersion = 6;
 
     public const double DefaultPhrasePauseSeconds = 1.2;
 
@@ -211,6 +212,8 @@ public static partial class Projects
         }
 
         double minPause = SpeechSegmenter.MinSilence.TotalSeconds;
+        if (settings.LiveDraftSeconds is < 0 or > AppSettings.MaxLiveDraftSeconds)
+            throw new ArgumentException("Частота черновика — от 0 до 60 секунд.");
         if (settings.PhrasePauseSeconds < minPause || settings.PhrasePauseSeconds > ProjectSettings.MaxPhrasePauseSeconds)
         {
             throw new ArgumentException(

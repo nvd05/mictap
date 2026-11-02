@@ -126,7 +126,11 @@ public sealed class AgentsState
         recorder.Started += (_, started) => RecordingStarted(started.Session, started.Language);
         recorder.LanguageMarked += (_, marked) => LanguageChanged(marked.Session, marked.Mark.Lang);
         recorder.Stopped += (_, stopped) => RecordingStopped(stopped.Session, transcribing: true);
-        pipeline.SegmentTranscribed += (_, segment) => Pulse(segment.Session.Folder);
+        pipeline.SegmentTranscribed += (_, segment) =>
+        {
+            if (segment.IsManual) Push(segment.Session);
+            else Pulse(segment.Session.Folder);
+        };
         pipeline.Pushed += (_, session) => Push(session);
         pipeline.RecordingTranscribed += (_, session) => Transcribed(session);
         pipeline.Failed += (_, _) => TranscriptionFailed();

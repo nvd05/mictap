@@ -88,6 +88,16 @@ public sealed class Recorder
     /// <summary>Peak level of the latest captured block, 0..1.</summary>
     public event EventHandler<double>? LevelChanged;
 
+    public TimeSpan? Position
+    {
+        get
+        {
+            Session? session = Volatile.Read(ref _active);
+            return session is null ? null : session.Offset + PcmFormat.Mono16k.DurationOf(Interlocked.Read(ref session.CapturedBytes));
+        }
+    }
+    public SessionInfo? CurrentSession => Volatile.Read(ref _active)?.Info;
+
     public event EventHandler<RecordingProgress>? ProgressChanged;
 
     /// <summary>

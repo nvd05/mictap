@@ -15,6 +15,26 @@ public sealed class TranscriptionPipelineTests : IDisposable
     private readonly List<SegmentTranscript> _lines = [];
     private TranscriberHost? _host;
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(3)]
+    public async Task Manual_send_does_not_cut_pending_speech_with_or_without_drafts(int draftSeconds)
+    {
+        using TranscriptionPipeline pipeline = Run(FakeTranscriber.Saying((samples, _) => $"speech:{samples.Length / 16}ms"));
+        pipeline.LiveInterval = draftSeconds == 0 ? null : TimeSpan.FromSeconds(draftSeconds);
+        SessionInfo session = _recorder.Start(Options("ru"), _source);
+        Push(FakeSpeech.SpeechPcm(1));
+        TranscriptLine manual = pipeline.AppendManual(session, _recorder.Position!.Value, "ru", "Вставлено вручную");
+        Assert.True(manual.IsManual);
+        Assert.Equal("Вставлено вручную", Lines().Single().Text);
+        Push(FakeSpeech.SpeechPcm(1), FakeSpeech.SilencePcm(1));
+        await _recorder.StopAsync();
+        await Eventually(() => Lines().Length == 2);
+        Assert.Equal("speech:2000ms", Lines()[ 1 ].Text);
+        Assert.Equal(0, Lines()[ 1 ].Start);
+        Assert.Equal(2, Lines()[ 1 ].End);
+    }
+
     public void Dispose()
     {
         _host?.Dispose();
